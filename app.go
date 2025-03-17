@@ -3,9 +3,13 @@ package fork2
 import (
 	"database/sql"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
+	"os"
 	"time"
+
+	"bytes"
 
 	"github.com/google/wire"
 	"github.com/hayeah/goo"
@@ -257,7 +261,7 @@ func (app *App) handleSayCommand(message string) error {
 		return fmt.Errorf("failed to get current chat: %w", err)
 	}
 
-	// Call Anthropic API first - don't save the message until we get a successful response
+	// Call Anthropic API with streaming - this will print the response as it comes in
 	response, inputTokens, outputTokens, cacheHit, err := app.callAnthropicAPI(chatID, message)
 	if err != nil {
 		return fmt.Errorf("failed to call Anthropic API: %w", err)
@@ -275,8 +279,9 @@ func (app *App) handleSayCommand(message string) error {
 		return fmt.Errorf("failed to add assistant message: %w", err)
 	}
 
-	// Print the response
-	fmt.Println(response)
+	// No need to print the response again as it was already printed during streaming
+	// Just add a newline for better formatting
+	fmt.Println()
 
 	return nil
 }
@@ -357,7 +362,7 @@ func (app *App) callAnthropicAPI(chatID int64, userMessage string) (string, int,
 		"content": userMessage,
 	})
 
-	// Call Anthropic API
+	// Call Anthropic API with streaming enabled
 	opts := &fetch.Options{
 		BaseURL: "https://api.anthropic.com",
 		Header: http.Header{
@@ -368,28 +373,158 @@ func (app *App) callAnthropicAPI(chatID int64, userMessage string) (string, int,
 		Logger: app.Logger,
 	}
 
-	resp, err := opts.JSON("POST", "/v1/messages", &fetch.Options{
+	// Prepare the request body with stream=true
+	sseResp, err := opts.SSE("POST", "/v1/messages", &fetch.Options{
 		Body: `{
 			"model": "claude-3-opus-20240229",
 			"messages": {{Messages}},
-			"max_tokens": 4096
+			"max_tokens": 4096,
+			"stream": true
 		}`,
 		BodyParams: map[string]any{
 			"Messages": apiMessages,
 		},
+		Logger: app.Logger,
 	})
 	if err != nil {
 		return "", 0, 0, false, fmt.Errorf("API request failed: %w", err)
 	}
 
-	// Extract the response content and token usage
-	content := resp.Get("content.0.text").String()
-	inputTokens := int(resp.Get("usage.input_tokens").Int())
-	outputTokens := int(resp.Get("usage.output_tokens").Int())
+	// Create an SSEReader to process the streaming response
+	reader := NewAnthropicStreamReader(sseResp)
+	defer reader.Close()
+
+	// Create a buffer to store the content
+	var contentBuffer bytes.Buffer
+
+	// Use io.TeeReader to copy the stream to both the buffer and stdout
+	teeReader := io.TeeReader(reader, &contentBuffer)
+
+	// Copy from the teeReader to stdout
+	_, err = io.Copy(os.Stdout, teeReader)
+	if err != nil && err != io.EOF {
+		return "", 0, 0, false, fmt.Errorf("error reading stream: %w", err)
+	}
+
+	// Get the final content
+	content := contentBuffer.String()
+
+	// Get token usage directly from the stream reader
+	inputTokens, outputTokens := reader.TokenUsage()
 
 	// Check if this was a cache hit (Anthropic doesn't provide this directly, so we'll assume false for now)
-	// In a real implementation, you might track this based on response time or other indicators
 	cacheHit := false
 
 	return content, inputTokens, outputTokens, cacheHit, nil
+}
+
+// AnthropicStreamReader implements io.Reader interface for SSE events
+type AnthropicStreamReader struct {
+	sseResp      *fetch.SSEResponse
+	buffer       bytes.Buffer
+	err          error
+	inputTokens  int
+	outputTokens int
+}
+
+// NewAnthropicStreamReader creates a Reader to stream the text of a message
+func NewAnthropicStreamReader(sseResp *fetch.SSEResponse) *AnthropicStreamReader {
+	return &AnthropicStreamReader{
+		sseResp:      sseResp,
+		inputTokens:  0,
+		outputTokens: 0,
+	}
+}
+
+// Read implements the io.Reader interface
+func (r *AnthropicStreamReader) Read(p []byte) (n int, err error) {
+	// If we have data in the buffer, return it
+	if r.buffer.Len() > 0 {
+		return r.readFromBuffer(p)
+	}
+
+	// If we've encountered an error before, return it
+	if r.err != nil {
+		return 0, r.err
+	}
+
+	// Try to get the next event
+	if !r.sseResp.Next() {
+		// Check if there was an error during scanning
+		if err := r.sseResp.Err(); err != nil {
+			r.err = err
+			return 0, err
+		}
+		// No more events, return EOF
+		r.err = io.EOF
+		return 0, io.EOF
+	}
+
+	// Get the event and process it
+	event := r.sseResp.Event()
+
+	// Process the event data based on event type
+	switch event.Event {
+	case "message_start":
+		// Extract input tokens from message_start event
+		inputTokens := event.GJSON("message.usage.input_tokens").Int()
+		if inputTokens > 0 {
+			r.inputTokens = int(inputTokens)
+		}
+	case "content_block_start":
+		// Nothing to do here, just acknowledging the start of a content block
+	case "content_block_delta":
+		// Extract the text from the delta
+		text := event.GJSON("delta.text").String()
+		if text != "" {
+			r.buffer.WriteString(text)
+		}
+	case "content_block_stop":
+		// Nothing to do here, just acknowledging the end of a content block
+	case "message_delta":
+		// Update output tokens from message_delta event
+		outputTokens := event.GJSON("usage.output_tokens").Int()
+		if outputTokens > 0 {
+			r.outputTokens = int(outputTokens)
+		}
+	case "message_stop":
+		// End of message, we'll return what's in the buffer and then EOF on next call
+		if r.buffer.Len() == 0 {
+			r.err = io.EOF
+			return 0, io.EOF
+		}
+	case "error":
+		// Handle error events
+		errorType := event.GJSON("error.type").String()
+		errorMsg := event.GJSON("error.message").String()
+
+		// Set the error and return it
+		r.err = fmt.Errorf("anthropic stream error: %s - %s", errorType, errorMsg)
+		return 0, r.err
+	}
+
+	// If we have data in the buffer now, return it
+	if r.buffer.Len() > 0 {
+		return r.readFromBuffer(p)
+	}
+
+	// No data in this event, try again
+	return r.Read(p)
+}
+
+// readFromBuffer reads data from the internal buffer into p
+func (r *AnthropicStreamReader) readFromBuffer(p []byte) (n int, err error) {
+	// Read directly from the buffer into p
+	// bytes.Buffer.Read already handles the case where len(p) < buffer.Len()
+	return r.buffer.Read(p)
+}
+
+// TokenUsage returns the input and output token counts
+func (r *AnthropicStreamReader) TokenUsage() (int, int) {
+	return r.inputTokens, r.outputTokens
+}
+
+// Close closes the underlying SSE response
+func (r *AnthropicStreamReader) Close() error {
+	return r.sseResp.Close()
 }

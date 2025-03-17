@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/hayeah/prompt-experiments/fork2"
+	"github.com/hayeah/fork2"
 )
 
 func main() {
