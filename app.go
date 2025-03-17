@@ -390,6 +390,16 @@ func (app *App) callAnthropicAPI(chatID int64, userMessage string) (string, int,
 		return "", 0, 0, false, fmt.Errorf("API request failed: %w", err)
 	}
 
+	// Open a file to tee the response. ./tmp/transcript-*.log
+	transcriptFile, err := os.CreateTemp("./tmp", "transcript-*.log")
+	if err != nil {
+		return "", 0, 0, false, fmt.Errorf("failed to create transcript file: %w", err)
+	}
+	defer transcriptFile.Close()
+
+	// Tee the response to a file for debugging purposes
+	sseResp.Tee(transcriptFile)
+
 	// Create an SSEReader to process the streaming response
 	reader := NewAnthropicStreamReader(sseResp)
 	defer reader.Close()
