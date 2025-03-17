@@ -107,12 +107,15 @@ type Chat struct {
 }
 
 type Message struct {
-	ID        int64     `db:"id"`
-	ChatID    int64     `db:"chat_id"`
-	Role      string    `db:"role"`
-	Content   string    `db:"content"`
-	Tokens    int       `db:"tokens"`
-	CreatedAt time.Time `db:"created_at"`
+	ID           int64     `db:"id"`
+	ChatID       int64     `db:"chat_id"`
+	Role         string    `db:"role"`
+	Content      string    `db:"content"`
+	InputTokens  int       `db:"input_tokens"`
+	OutputTokens int       `db:"output_tokens"`
+	TotalTokens  int       `db:"total_tokens"`
+	CacheHit     bool      `db:"cache_hit"`
+	CreatedAt    time.Time `db:"created_at"`
 }
 
 func (cs *ChatStore) CreateChat(title string) (int64, error) {
@@ -168,10 +171,11 @@ func (cs *ChatStore) GetMessages(chatID int64) ([]Message, error) {
 	return messages, nil
 }
 
-func (cs *ChatStore) AddMessage(chatID int64, role, content string, tokens int) error {
+func (cs *ChatStore) AddMessage(chatID int64, role, content string, inputTokens, outputTokens int, cacheHit bool) error {
+	totalTokens := inputTokens + outputTokens
 	_, err := cs.DB.Exec(
-		"INSERT INTO messages (chat_id, role, content, tokens, created_at) VALUES (?, ?, ?, ?, ?)",
-		chatID, role, content, tokens, time.Now(),
+		"INSERT INTO messages (chat_id, role, content, input_tokens, output_tokens, total_tokens, cache_hit, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+		chatID, role, content, inputTokens, outputTokens, totalTokens, cacheHit, time.Now(),
 	)
 	if err != nil {
 		return fmt.Errorf("failed to add message: %w", err)
@@ -217,7 +221,10 @@ func (app *App) Run() error {
 					chat_id INTEGER NOT NULL,
 					role TEXT NOT NULL,
 					content TEXT NOT NULL,
-					tokens INTEGER NOT NULL,
+					input_tokens INTEGER NOT NULL,
+					output_tokens INTEGER NOT NULL,
+					total_tokens INTEGER NOT NULL,
+					cache_hit BOOLEAN NOT NULL DEFAULT 0,
 					created_at TIMESTAMP NOT NULL,
 					FOREIGN KEY (chat_id) REFERENCES chats (id)
 				);
@@ -250,21 +257,20 @@ func (app *App) handleSayCommand(message string) error {
 		return fmt.Errorf("failed to get current chat: %w", err)
 	}
 
-	// Add user message to the database (estimate tokens for now)
-	userTokens := estimateTokens(message)
-	err = app.ChatStore.AddMessage(chatID, "user", message, userTokens)
-	if err != nil {
-		return fmt.Errorf("failed to add user message: %w", err)
-	}
-
-	// Call Anthropic API
-	response, tokens, err := app.callAnthropicAPI(chatID)
+	// Call Anthropic API first - don't save the message until we get a successful response
+	response, inputTokens, outputTokens, cacheHit, err := app.callAnthropicAPI(chatID, message)
 	if err != nil {
 		return fmt.Errorf("failed to call Anthropic API: %w", err)
 	}
 
+	// Now that we have a successful response, save both the user message and the response
+	err = app.ChatStore.AddMessage(chatID, "user", message, inputTokens, 0, false)
+	if err != nil {
+		return fmt.Errorf("failed to add user message: %w", err)
+	}
+
 	// Add assistant message to the database
-	err = app.ChatStore.AddMessage(chatID, "assistant", response, tokens)
+	err = app.ChatStore.AddMessage(chatID, "assistant", response, 0, outputTokens, cacheHit)
 	if err != nil {
 		return fmt.Errorf("failed to add assistant message: %w", err)
 	}
@@ -303,7 +309,16 @@ func (app *App) handleChatCommand(chatID int64) error {
 	fmt.Println("=========")
 
 	for _, msg := range messages {
-		fmt.Printf("[%s] (%d tokens)\n", msg.Role, msg.Tokens)
+		cacheStatus := ""
+		if msg.Role == "assistant" && msg.CacheHit {
+			cacheStatus = " (cached)"
+		}
+
+		if msg.Role == "user" {
+			fmt.Printf("[%s] (%d input tokens)\n", msg.Role, msg.InputTokens)
+		} else {
+			fmt.Printf("[%s] (%d output tokens%s)\n", msg.Role, msg.OutputTokens, cacheStatus)
+		}
 		fmt.Println(msg.Content)
 		fmt.Println("=========")
 	}
@@ -320,11 +335,11 @@ func (app *App) handleDefaultCommand() error {
 	return app.handleChatCommand(chatID)
 }
 
-func (app *App) callAnthropicAPI(chatID int64) (string, int, error) {
+func (app *App) callAnthropicAPI(chatID int64, userMessage string) (string, int, int, bool, error) {
 	// Get previous messages for context
 	messages, err := app.ChatStore.GetMessages(chatID)
 	if err != nil {
-		return "", 0, fmt.Errorf("failed to get previous messages: %w", err)
+		return "", 0, 0, false, fmt.Errorf("failed to get previous messages: %w", err)
 	}
 
 	// Format messages for API
@@ -335,6 +350,12 @@ func (app *App) callAnthropicAPI(chatID int64) (string, int, error) {
 			"content": msg.Content,
 		})
 	}
+
+	// Add the current user message for the API call
+	apiMessages = append(apiMessages, map[string]string{
+		"role":    "user",
+		"content": userMessage,
+	})
 
 	// Call Anthropic API
 	opts := &fetch.Options{
@@ -358,32 +379,17 @@ func (app *App) callAnthropicAPI(chatID int64) (string, int, error) {
 		},
 	})
 	if err != nil {
-		return "", 0, fmt.Errorf("API request failed: %w", err)
+		return "", 0, 0, false, fmt.Errorf("API request failed: %w", err)
 	}
 
 	// Extract the response content and token usage
 	content := resp.Get("content.0.text").String()
 	inputTokens := int(resp.Get("usage.input_tokens").Int())
 	outputTokens := int(resp.Get("usage.output_tokens").Int())
-	totalTokens := inputTokens + outputTokens
 
-	return content, totalTokens, nil
-}
+	// Check if this was a cache hit (Anthropic doesn't provide this directly, so we'll assume false for now)
+	// In a real implementation, you might track this based on response time or other indicators
+	cacheHit := false
 
-// Simple function to estimate tokens (very rough estimate)
-func estimateTokens(text string) int {
-	// Rough estimate: 1 token ≈ 4 characters
-	return len(text) / 4
-}
-
-// Helper function to convert API messages to the format expected by the API
-func formatMessagesForAPI(messages []Message) []map[string]string {
-	apiMessages := make([]map[string]string, 0, len(messages))
-	for _, msg := range messages {
-		apiMessages = append(apiMessages, map[string]string{
-			"role":    msg.Role,
-			"content": msg.Content,
-		})
-	}
-	return apiMessages
+	return content, inputTokens, outputTokens, cacheHit, nil
 }

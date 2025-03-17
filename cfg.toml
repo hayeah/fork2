@@ -7,4 +7,4 @@ LogLevel = "DEBUG"
 LogFormat = "console"
 
 [Anthropic]
-APIKey = "your-anthropic-api-key-here"
+APIKey = "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"

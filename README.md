@@ -40,6 +40,10 @@ Replace `your-anthropic-api-key-here` with your actual Anthropic API key.
 ### Start a new chat
 
 ```
+export CONFIG_FILE=cfg.toml
+```
+
+```
 ./fork2 new
 ```
 
