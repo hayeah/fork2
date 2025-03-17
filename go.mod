@@ -1,4 +1,4 @@
-module github.com/hayeah/prompt-experiments/fork2
+module github.com/hayeah/fork2
 
 go 1.24.1
 
