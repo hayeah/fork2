@@ -100,16 +100,19 @@ type App struct {
 	prompt *Prompt
 }
 
+// ProvideApp creates a new App instance. inject everything except prompt
+
 type ChatStore struct {
 	DB     *sqlx.DB
 	Logger *slog.Logger
 }
 
 type Chat struct {
-	ID        int64     `db:"id"`
-	Title     string    `db:"title"`
-	CreatedAt time.Time `db:"created_at"`
-	UpdatedAt time.Time `db:"updated_at"`
+	ID           int64     `db:"id"`
+	Title        string    `db:"title"`
+	SystemPrompt string    `db:"system_prompt"`
+	CreatedAt    time.Time `db:"created_at"`
+	UpdatedAt    time.Time `db:"updated_at"`
 }
 
 type Message struct {
@@ -117,6 +120,7 @@ type Message struct {
 	ChatID       int64     `db:"chat_id"`
 	Role         string    `db:"role"`
 	Content      string    `db:"content"`
+	Context      string    `db:"context"`
 	InputTokens  int       `db:"input_tokens"`
 	OutputTokens int       `db:"output_tokens"`
 	TotalTokens  int       `db:"total_tokens"`
@@ -124,15 +128,15 @@ type Message struct {
 	CreatedAt    time.Time `db:"created_at"`
 }
 
-func (cs *ChatStore) CreateChat(title string) (int64, error) {
+func (cs *ChatStore) CreateChat(title string, prompt string) (int64, error) {
 	if title == "" {
 		title = fmt.Sprintf("Chat %s", time.Now().Format("2006-01-02 15:04:05"))
 	}
 
 	now := time.Now()
 	result, err := cs.DB.Exec(
-		"INSERT INTO chats (title, created_at, updated_at) VALUES (?, ?, ?)",
-		title, now, now,
+		"INSERT INTO chats (title, system_prompt, created_at, updated_at) VALUES (?, ?, ?, ?)",
+		title, prompt, now, now,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("failed to create chat: %w", err)
@@ -152,7 +156,7 @@ func (cs *ChatStore) GetCurrentChatID() (int64, error) {
 	if err != nil {
 		if err == sql.ErrNoRows {
 			// Create a new chat if none exists
-			return cs.CreateChat("")
+			return cs.CreateChat("", "")
 		}
 		return 0, fmt.Errorf("failed to get current chat ID: %w", err)
 	}
@@ -177,11 +181,11 @@ func (cs *ChatStore) GetMessages(chatID int64) ([]Message, error) {
 	return messages, nil
 }
 
-func (cs *ChatStore) AddMessage(chatID int64, role, content string, inputTokens, outputTokens int, cacheHit bool) error {
+func (cs *ChatStore) AddMessage(chatID int64, role, content, context string, inputTokens, outputTokens int, cacheHit bool) error {
 	totalTokens := inputTokens + outputTokens
 	_, err := cs.DB.Exec(
-		"INSERT INTO messages (chat_id, role, content, input_tokens, output_tokens, total_tokens, cache_hit, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-		chatID, role, content, inputTokens, outputTokens, totalTokens, cacheHit, time.Now(),
+		"INSERT INTO messages (chat_id, role, content, context, input_tokens, output_tokens, total_tokens, cache_hit, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+		chatID, role, content, context, inputTokens, outputTokens, totalTokens, cacheHit, time.Now(),
 	)
 	if err != nil {
 		return fmt.Errorf("failed to add message: %w", err)
@@ -214,6 +218,7 @@ func (app *App) Run() error {
 				CREATE TABLE IF NOT EXISTS chats (
 					id INTEGER PRIMARY KEY,
 					title TEXT NOT NULL,
+					system_prompt TEXT,
 					created_at TIMESTAMP NOT NULL,
 					updated_at TIMESTAMP NOT NULL
 				);
@@ -227,6 +232,7 @@ func (app *App) Run() error {
 					chat_id INTEGER NOT NULL,
 					role TEXT NOT NULL,
 					content TEXT NOT NULL,
+					context TEXT,
 					input_tokens INTEGER NOT NULL,
 					output_tokens INTEGER NOT NULL,
 					total_tokens INTEGER NOT NULL,
@@ -276,13 +282,13 @@ func (app *App) handleSayCommand(message string) error {
 	}
 
 	// Now that we have a successful response, save both the user message and the response
-	err = app.ChatStore.AddMessage(chatID, "user", message, inputTokens, 0, false)
+	err = app.ChatStore.AddMessage(chatID, "user", message, app.prompt.ContextString(), inputTokens, 0, false)
 	if err != nil {
 		return fmt.Errorf("failed to add user message: %w", err)
 	}
 
 	// Add assistant message to the database
-	err = app.ChatStore.AddMessage(chatID, "assistant", response, 0, outputTokens, cacheHit)
+	err = app.ChatStore.AddMessage(chatID, "assistant", response, "", 0, outputTokens, cacheHit)
 	if err != nil {
 		return fmt.Errorf("failed to add assistant message: %w", err)
 	}
@@ -295,7 +301,7 @@ func (app *App) handleSayCommand(message string) error {
 }
 
 func (app *App) handleNewCommand(title string) error {
-	chatID, err := app.ChatStore.CreateChat(title)
+	chatID, err := app.ChatStore.CreateChat(title, app.prompt.SystemString())
 	if err != nil {
 		return fmt.Errorf("failed to create new chat: %w", err)
 	}
@@ -318,7 +324,30 @@ func (app *App) handleChatCommand(chatID int64) error {
 	fmt.Printf("Chat: %s (ID: %d)\n", chat.Title, chat.ID)
 	fmt.Println("Created at:", chat.CreatedAt.Format("2006-01-02 15:04:05"))
 	fmt.Println("Updated at:", chat.UpdatedAt.Format("2006-01-02 15:04:05"))
-	fmt.Println("Messages:")
+
+	if chat.SystemPrompt != "" {
+		fmt.Println("\nSystem Prompt:")
+		fmt.Println("--------------")
+		fmt.Println(chat.SystemPrompt)
+	}
+
+	// Find the last user message with a context
+	var lastContext string
+	for i := len(messages) - 1; i >= 0; i-- {
+		if messages[i].Role == "user" && messages[i].Context != "" {
+			lastContext = messages[i].Context
+			break
+		}
+	}
+
+	// Print the last context if found
+	if lastContext != "" {
+		fmt.Println("\nLatest Context:")
+		fmt.Println("--------------")
+		fmt.Println(lastContext)
+	}
+
+	fmt.Println("\nMessages:")
 	fmt.Println("=========")
 
 	for _, msg := range messages {
@@ -355,8 +384,25 @@ func (app *App) callAnthropicAPI(chatID int64, userMessage string) (string, int,
 		return "", 0, 0, false, fmt.Errorf("failed to get previous messages: %w", err)
 	}
 
+	// Get the chat to retrieve the system prompt
+	chat, err := app.ChatStore.GetChat(chatID)
+	if err != nil {
+		return "", 0, 0, false, fmt.Errorf("failed to get chat: %w", err)
+	}
+
 	// Format messages for API
-	apiMessages := make([]map[string]string, 0, len(messages))
+	apiMessages := make([]map[string]string, 0, len(messages)+1)
+
+	// Add context as the first user message if available
+	contextString := app.prompt.ContextString()
+	if contextString != "" {
+		apiMessages = append(apiMessages, map[string]string{
+			"role":    "user",
+			"content": contextString,
+		})
+	}
+
+	// Add previous messages
 	for _, msg := range messages {
 		apiMessages = append(apiMessages, map[string]string{
 			"role":    msg.Role,
@@ -381,16 +427,21 @@ func (app *App) callAnthropicAPI(chatID int64, userMessage string) (string, int,
 		Logger: app.Logger,
 	}
 
+	// Get system prompt - use the one from the chat record if available, otherwise use the current one
+	systemPrompt := chat.SystemPrompt
+
 	// Prepare the request body with stream=true
 	sseResp, err := opts.SSE("POST", "/v1/messages", &fetch.Options{
 		Body: `{
 			"model": "claude-3-opus-20240229",
 			"messages": {{Messages}},
+			"system": {{SystemPrompt}},
 			"max_tokens": 4096,
 			"stream": true
 		}`,
 		BodyParams: map[string]any{
-			"Messages": apiMessages,
+			"Messages":     apiMessages,
+			"SystemPrompt": systemPrompt,
 		},
 		Logger: app.Logger,
 	})
