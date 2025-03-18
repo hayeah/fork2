@@ -96,6 +96,8 @@ type App struct {
 	Migrator  *goo.DBMigrator
 	Logger    *slog.Logger
 	ChatStore *ChatStore
+
+	prompt *Prompt
 }
 
 type ChatStore struct {
@@ -241,6 +243,12 @@ func (app *App) Run() error {
 	}
 
 	args := app.Args
+
+	// Update prompt on startup
+	err = app.updatePrompt()
+	if err != nil {
+		return fmt.Errorf("failed to load the prompt: %w", err)
+	}
 
 	switch {
 	case args.Say != nil:
@@ -426,6 +434,17 @@ func (app *App) callAnthropicAPI(chatID int64, userMessage string) (string, int,
 	cacheHit := false
 
 	return content, inputTokens, outputTokens, cacheHit, nil
+}
+
+// updatePrompt sets the current prompt to the default prompt
+func (app *App) updatePrompt() error {
+	prompt, err := DefaultPrompt()
+	if err != nil {
+		return fmt.Errorf("failed to create default prompt: %w", err)
+	}
+
+	app.prompt = prompt
+	return nil
 }
 
 // AnthropicStreamReader implements io.Reader interface for SSE events
