@@ -20,13 +20,12 @@ var promptFS embed.FS
 
 // SystemInfo contains information about the system environment
 type SystemInfo struct {
-	OS                 string
-	Shell              string
-	HomeDir            string
-	WorkingDir         string
-	HomeDirPosix       string
-	WorkingDirPosix    string
-	EnvironmentDetails string
+	OS              string
+	Shell           string
+	HomeDir         string
+	WorkingDir      string
+	HomeDirPosix    string
+	WorkingDirPosix string
 }
 
 // getSystemInfo returns information about the system environment
@@ -59,49 +58,38 @@ func getSystemInfo() (SystemInfo, error) {
 		return SystemInfo{}, fmt.Errorf("failed to get working directory: %w", err)
 	}
 
-	// Build environment details
-	envDetails, err := BuildEnvironmentDetails(workingDir)
-	if err != nil {
-		return SystemInfo{}, fmt.Errorf("failed to build environment details: %w", err)
-	}
-
 	return SystemInfo{
-		OS:                 osName,
-		Shell:              shell,
-		HomeDir:            homeDir,
-		WorkingDir:         workingDir,
-		EnvironmentDetails: envDetails,
+		OS:         osName,
+		Shell:      shell,
+		HomeDir:    homeDir,
+		WorkingDir: workingDir,
 	}, nil
 }
 
 // EnvironmentDetails contains data for the environment details template
 type EnvironmentDetails struct {
 	CurrentTime string
-	WorkingDir  string
 	Files       []string
 }
 
-// BuildEnvironmentDetails creates a string with environment details including
-// current time, working directory files (respecting .gitignore), and current mode
-func BuildEnvironmentDetails(workingDir string) (string, error) {
+// environmentDetails creates an EnvironmentDetails struct with current time,
+// working directory files (respecting .gitignore), and current mode
+func environmentDetails(workingDir string) (EnvironmentDetails, error) {
 	// Prepare data
-	data := EnvironmentDetails{
-		WorkingDir: workingDir,
-	}
-
+	var data EnvironmentDetails
 	data.CurrentTime = time.Now().Format(time.RFC3339)
 
 	// List files
-	files, err := ListFilesRespectingGitIgnore(workingDir)
+	files, err := listFilesRespectingGitIgnore(workingDir)
 	if err != nil {
-		return "", fmt.Errorf("failed to list files: %w", err)
+		return EnvironmentDetails{}, fmt.Errorf("failed to list files: %w", err)
 	}
 
 	// Sort files alphabetically
 	sort.Strings(files)
 	data.Files = files
 
-	return renderTemplate("prompts/environment_details.tmpl", "environment", data)
+	return data, nil
 }
 
 // renderTemplate loads a template from the embedded filesystem, parses it, and renders it with the provided data
@@ -127,9 +115,9 @@ func renderTemplate(templatePath, templateName string, data interface{}) (string
 	return sb.String(), nil
 }
 
-// ListFilesRespectingGitIgnore reads .gitignore patterns from dir/.gitignore
+// listFilesRespectingGitIgnore reads .gitignore patterns from dir/.gitignore
 // and returns a slice of file paths that are not excluded by those patterns.
-func ListFilesRespectingGitIgnore(dir string) ([]string, error) {
+func listFilesRespectingGitIgnore(dir string) ([]string, error) {
 	// Create a filesystem for the directory
 	fs := osfs.New(dir)
 	// Read gitignore patterns using ReadPatterns
@@ -187,11 +175,81 @@ func ListFilesRespectingGitIgnore(dir string) ([]string, error) {
 	return files, nil
 }
 
-// RenderPromptWithSystemInfo renders the prompt template with system information
-func RenderPromptWithSystemInfo() (string, error) {
+// Prompt represents a structured prompt with system and context sections
+type Prompt struct {
+	// Consider relatively static, to facilitate prompt caching
+	System []string
+	// Possibly dynamically generated
+	Context []string
+}
+
+// DefaultPrompt creates a default prompt with system information and environment details
+func DefaultPrompt() (*Prompt, error) {
+	// Get system prompt
+	systemPrompt, err := renderTemplate("prompts/system.md", "prompt", nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to render system prompt: %w", err)
+	}
+
 	sysInfo, err := getSystemInfo()
 	if err != nil {
-		return "", fmt.Errorf("failed to get system info: %w", err)
+		return nil, fmt.Errorf("failed to get system info: %w", err)
 	}
-	return renderTemplate("prompts/system.md", "prompt", sysInfo)
+
+	// Get environment details for context
+	envDetails, err := environmentDetails(sysInfo.WorkingDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build environment details: %w", err)
+	}
+
+	// Create a combined struct with both system info and environment details
+	type combinedData struct {
+		SystemInfo
+		EnvironmentDetails
+	}
+
+	combined := combinedData{
+		SystemInfo:         sysInfo,
+		EnvironmentDetails: envDetails,
+	}
+
+	// Render environment details template
+	envDetailsStr, err := renderTemplate("prompts/environment_details.tmpl", "environment", combined)
+	if err != nil {
+		return nil, fmt.Errorf("failed to render environment details template: %w", err)
+	}
+
+	return &Prompt{
+		System:  []string{systemPrompt},
+		Context: []string{envDetailsStr},
+	}, nil
+}
+
+func (p Prompt) String() string {
+	return p.SystemString() + "\n\n" + p.ContextString()
+}
+
+// String renders the prompt as a single string, combining system and context sections
+func (p Prompt) SystemString() string {
+	var sb strings.Builder
+
+	// Add system content
+	for _, s := range p.System {
+		sb.WriteString(s)
+		sb.WriteString("\n\n")
+	}
+
+	return strings.TrimSpace(sb.String())
+}
+
+func (p Prompt) ContextString() string {
+	var sb strings.Builder
+
+	// Add context content
+	for _, c := range p.Context {
+		sb.WriteString(c)
+		sb.WriteString("\n\n")
+	}
+
+	return strings.TrimSpace(sb.String())
 }

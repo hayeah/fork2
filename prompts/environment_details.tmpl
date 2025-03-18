@@ -1,8 +1,18 @@
+====
+
+SYSTEM INFORMATION
+
+Operating System: {{.OS}}
+Default Shell: {{.Shell}}
+Home Directory: {{.HomeDir}}
+Current Working Directory: {{.WorkingDir}}
+
 <environment_details>
+
 # Current Time
 {{.CurrentTime}}
 
-# Current Working Directory ({{.WorkingDir}}) Files
+# Current Working Directory Files
 
 {{range .Files}}{{.}}
 {{end}}
