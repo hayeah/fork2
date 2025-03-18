@@ -1,4 +1,3 @@
 *.sqlite3
 tmp
-prompt/*
 fork2
