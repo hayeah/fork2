@@ -10,8 +10,8 @@ import (
 	"sort"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/bubbles/textinput"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 // item represents each file or directory in the listing.
@@ -86,8 +86,27 @@ func main() {
 	}
 
 	// Start Bubble Tea
-	if err := tea.NewProgram(m).Start(); err != nil {
+	p := tea.NewProgram(m, tea.WithOutput(os.Stderr))
+	if _, err := p.Run(); err != nil {
 		log.Fatal(err)
+	}
+
+	// On Enter, print all selected items to stdout, then quit
+	// Convert selected files to slice, sort them, and filter out directories
+	var selectedFiles []string
+	for path := range m.selected {
+		// Get the index of this path in allItems to check if it's a directory
+		if idx, ok := m.lookup[path]; ok && !m.allItems[idx].IsDir {
+			selectedFiles = append(selectedFiles, path)
+		}
+	}
+
+	// Sort the selected files
+	sort.Strings(selectedFiles)
+
+	// Print the sorted, filtered files
+	for _, path := range selectedFiles {
+		fmt.Println(path)
 	}
 }
 
@@ -169,10 +188,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 
 		case "enter":
-			// On Enter, print all selected items to stdout, then quit
-			for path := range m.selected {
-				fmt.Println(path)
-			}
 			m.quitting = true
 			return m, tea.Quit
 
