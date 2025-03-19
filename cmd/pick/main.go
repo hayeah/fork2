@@ -279,6 +279,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.updateViewportContent()
 			return m, nil
+
+		case "ctrl+q":
+			// Deselect all currently filtered items
+			for _, it := range m.filteredItems {
+				m.selected[it.Path] = false
+				// If it's a directory, recursively deselect all children
+				if it.IsDir {
+					m.toggleChildren(it.Path, false)
+				}
+			}
+			m.updateViewportContent()
+			return m, nil
 		}
 	}
 
@@ -322,7 +334,7 @@ func (m model) View() string {
 		len(m.allItems),
 		len(m.selected),
 	)
-	usageHint := "(↑/↓ to navigate, Space to toggle, Enter to confirm, Esc/Ctrl+C to abort)"
+	usageHint := "(↑/↓ to navigate, Space to toggle, Enter to confirm, Esc/Ctrl+C to abort, Ctrl+A to select all, Ctrl+Q to deselect all)"
 	footerView := fmt.Sprintf("\n%s\n%s", statusLine, usageHint)
 
 	// Combine everything in the correct order: header, viewport, footer
