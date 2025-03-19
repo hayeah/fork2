@@ -43,15 +43,7 @@ func InitMain() (goo.Main, error) {
 	}
 	dbMigrator := goo.ProvideDBMigrator(db, logger)
 	chatStore := ProvideChatStore(db, logger)
-	app := &App{
-		Args:      args,
-		Config:    config,
-		Shutdown:  shutdownContext,
-		DB:        db,
-		Migrator:  dbMigrator,
-		Logger:    logger,
-		ChatStore: chatStore,
-	}
+	app := ProvideApp(args, config, shutdownContext, db, dbMigrator, logger, chatStore)
 	main := goo.ProvideMain(logger, app, shutdownContext)
 	return main, nil
 }

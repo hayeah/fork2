@@ -45,6 +45,28 @@ func ProvideChatStore(db *sqlx.DB, logger *slog.Logger) *ChatStore {
 	}
 }
 
+// ProvideApp creates a new App instance. inject everything except prompt
+func ProvideApp(
+	args *Args,
+	config *Config,
+	shutdown *goo.ShutdownContext,
+	db *sqlx.DB,
+	migrator *goo.DBMigrator,
+	logger *slog.Logger,
+	chatStore *ChatStore,
+) *App {
+	return &App{
+		Args:      args,
+		Config:    config,
+		Shutdown:  shutdown,
+		DB:        db,
+		Migrator:  migrator,
+		Logger:    logger,
+		ChatStore: chatStore,
+		// prompt is intentionally not injected here and will be initialized in the Run method
+	}
+}
+
 // collect all the necessary providers
 var Wires = wire.NewSet(
 	goo.Wires,
@@ -55,9 +77,9 @@ var Wires = wire.NewSet(
 	ProvideConfig,
 	ProvideArgs,
 	ProvideChatStore,
+	ProvideApp,
 
 	// provide a goo.Runner interface for Main function, by using interface binding
-	wire.Struct(new(App), "*"),
 	wire.Bind(new(goo.Runner), new(*App)),
 )
 
@@ -78,14 +100,14 @@ type NewCmd struct {
 	Title string `arg:"-t,--title" help:"Optional title for the new chat"`
 }
 
+type ChatCmd struct {
+	ID int64 `arg:"positional" help:"Chat ID to view"`
+}
+
 type Args struct {
 	Say  *SayCmd  `arg:"subcommand:say" help:"Add a new user message to the current chat"`
 	New  *NewCmd  `arg:"subcommand:new" help:"Start a new chat"`
 	Chat *ChatCmd `arg:"subcommand:chat" help:"View a specific chat by ID"`
-}
-
-type ChatCmd struct {
-	ID int64 `arg:"positional" help:"Chat ID to view"`
 }
 
 type App struct {
@@ -99,8 +121,6 @@ type App struct {
 
 	prompt *Prompt
 }
-
-// ProvideApp creates a new App instance. inject everything except prompt
 
 type ChatStore struct {
 	DB     *sqlx.DB
@@ -433,7 +453,8 @@ func (app *App) callAnthropicAPI(chatID int64, userMessage string) (string, int,
 	// Prepare the request body with stream=true
 	sseResp, err := opts.SSE("POST", "/v1/messages", &fetch.Options{
 		Body: `{
-			"model": "claude-3-opus-20240229",
+			"model": "claude-3-5-haiku-20241022",
+			// "model": "claude-3-7-sonnet-20250219",
 			"messages": {{Messages}},
 			"system": {{SystemPrompt}},
 			"max_tokens": 4096,
