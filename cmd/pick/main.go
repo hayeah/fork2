@@ -268,6 +268,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.updateViewportContent()
 			}
 			return m, nil
+
+		case "ctrl+a":
+			// Select all currently filtered items
+			for _, it := range m.filteredItems {
+				m.selected[it.Path] = true
+				// If it's a directory, recursively select all children
+				if it.IsDir {
+					m.toggleChildren(it.Path, true)
+				}
+			}
+			m.updateViewportContent()
+			return m, nil
 		}
 	}
 
