@@ -346,27 +346,19 @@ func (m *model) updateViewportContent() {
 			dirIndicator = "/"
 		}
 
-		// Calculate indentation based on directory depth
-		// This ensures proper alignment of the file tree
+		// Display the full path instead of using indentation
 		path := it.Path
-		depth := strings.Count(path, string(filepath.Separator))
-		// Adjust depth to start from 0 for the root
-		rootDepth := strings.Count(m.allItems[0].Path, string(filepath.Separator))
-		relativeDepth := depth - rootDepth
-		indent := strings.Repeat("  ", relativeDepth)
 
-		// Get just the base name for display
-		displayName := filepath.Base(path)
-
-		// Format the line with proper indentation
-		line := fmt.Sprintf("%s [%s] %s%s%s\n", cursor, check, indent, displayName, dirIndicator)
+		// Format the line with the full path
+		line := fmt.Sprintf("%s [%s] %s%s", cursor, check, path, dirIndicator)
 
 		// Highlight the current line
 		if i == m.cursor {
 			line = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("12")).Render(line)
 		}
 
-		sb.WriteString(line)
+		// Add newline after styling to prevent lipgloss from affecting spacing
+		sb.WriteString(line + "\n")
 	}
 
 	// Set the viewport content
