@@ -1,9 +1,7 @@
 package main
 
 import (
-	"bufio"
 	"fmt"
-	"io/fs"
 	"log"
 	"os"
 	"path/filepath"
@@ -14,6 +12,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/hayeah/fork2/ignore"
 )
 
 // item represents each file or directory in the listing.
@@ -121,18 +120,18 @@ func main() {
 
 // gatherFiles recursively walks the directory and returns a sorted list of item
 // plus a children map for toggling entire subtrees.
+// It respects .gitignore patterns in the directory.
 func gatherFiles(rootPath string) ([]item, map[string][]string, error) {
 	var items []item
 	childrenMap := make(map[string][]string)
 
-	err := filepath.WalkDir(rootPath, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		// Skip the root itself? Usually we want to display it as a togglable folder as well.
-		// If you want to skip, do:
-		// if path == rootPath { return nil }
-		isDir := d.IsDir()
+	ig, err := ignore.NewIgnore(rootPath)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// Use WalkDirGitIgnore to walk the directory tree while respecting gitignore patterns
+	err = ig.WalkDir(rootPath, func(path string, d os.DirEntry, isDir bool) error {
 		items = append(items, item{
 			Path:  path,
 			IsDir: isDir,
@@ -195,11 +194,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		// Set the viewport height to fit the terminal
 		headerHeight := lipgloss.Height(m.textInput.View()) + 1 // Input field + blank line
-		footerHeight := 2 // Status line + blank line
+		footerHeight := 2                                       // Status line + blank line
 		m.viewport.Width = msg.Width
 		m.viewport.Height = msg.Height - headerHeight - footerHeight
 		m.viewport.YPosition = headerHeight // Position viewport below header
-		
+
 		if !m.ready {
 			// This is the first time we're getting a WindowSizeMsg
 			m.updateViewportContent()
@@ -457,27 +456,6 @@ func (m *model) toggleChildren(dirPath string, selected bool) {
 			m.toggleChildren(childPath, selected)
 		}
 	}
-}
-
-// previewLines returns the first n lines of the file at path.
-func previewLines(path string, n int) ([]string, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-
-	var lines []string
-	scanner := bufio.NewScanner(f)
-	for i := 0; i < n && scanner.Scan(); i++ {
-		lines = append(lines, scanner.Text())
-	}
-
-	if err := scanner.Err(); err != nil {
-		return nil, err
-	}
-
-	return lines, nil
 }
 
 // fuzzyMatch is a trivial substring match ignoring case.
