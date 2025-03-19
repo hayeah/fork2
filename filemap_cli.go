@@ -78,8 +78,17 @@ func (cli *FileMapCLI) Run() error {
 		w = f
 	}
 
+	var baseDir = cli.Args.InputDir
+	if baseDir == "" {
+		// set to cwd
+		baseDir, err = os.Getwd()
+		if err != nil {
+			return fmt.Errorf("failed to get working directory: %w", err)
+		}
+	}
+
 	// Write filemap
-	err = WriteFileMap(w, inputPaths)
+	err = WriteFileMap(w, inputPaths, baseDir)
 	if err != nil {
 		return fmt.Errorf("failed to write filemap: %w", err)
 	}

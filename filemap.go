@@ -44,21 +44,24 @@ func IsBinaryFile(content []byte) bool {
 }
 
 // WriteFileMap writes a filemap to the provided writer
-func WriteFileMap(w io.Writer, paths []string) error {
+func WriteFileMap(w io.Writer, paths []string, dir string) error {
 	for _, path := range paths {
+		// Create absolute path by joining directory and path
+		absPath := filepath.Join(dir, path)
+
 		// Skip directories
-		fileInfo, err := os.Stat(path)
+		fileInfo, err := os.Stat(absPath)
 		if err != nil {
-			return fmt.Errorf("failed to stat file %s: %w", path, err)
+			return fmt.Errorf("failed to stat file %s: %w", absPath, err)
 		}
 		if fileInfo.IsDir() {
 			continue
 		}
 
 		// Read file content
-		content, err := os.ReadFile(path)
+		content, err := os.ReadFile(absPath)
 		if err != nil {
-			return fmt.Errorf("failed to read file %s: %w", path, err)
+			return fmt.Errorf("failed to read file %s: %w", absPath, err)
 		}
 
 		// Check if file is binary
