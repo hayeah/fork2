@@ -11,7 +11,9 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 // item represents each file or directory in the listing.
@@ -39,6 +41,10 @@ type model struct {
 	// Navigation
 	cursor   int
 	quitting bool
+
+	// Viewport for scrolling
+	viewport viewport.Model
+	ready    bool
 }
 
 // main is our entrypoint: parse args, collect the files, and run the Bubble Tea program.
@@ -76,6 +82,7 @@ func main() {
 	for i, it := range items {
 		lookup[it.Path] = i
 	}
+
 	m := model{
 		textInput:     ti,
 		allItems:      items,
@@ -83,10 +90,12 @@ func main() {
 		selected:      selected,
 		lookup:        lookup,
 		childrenMap:   childrenMap,
+		viewport:      viewport.New(0, 0), // Will be properly sized in tea.WindowSizeMsg
+		ready:         false,
 	}
 
 	// Start Bubble Tea
-	p := tea.NewProgram(m, tea.WithOutput(os.Stderr))
+	p := tea.NewProgram(m, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		log.Fatal(err)
 	}
@@ -166,18 +175,36 @@ func gatherFiles(rootPath string) ([]item, map[string][]string, error) {
 
 // Init is the first function called by Bubble Tea. We return an initial command (or nil).
 func (m model) Init() tea.Cmd {
-	return textinput.Blink
+	return tea.Batch(textinput.Blink, tea.EnterAltScreen)
 }
 
 // Update is called when events occur (key presses, etc.). We handle them here,
 // then return the updated model and an optional command.
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	// If we’re quitting, no further updates needed
+	// If we're quitting, no further updates needed
 	if m.quitting {
 		return m, tea.Quit
 	}
 
+	var (
+		cmd  tea.Cmd
+		cmds []tea.Cmd
+	)
+
 	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		// Set the viewport height to fit the terminal
+		headerHeight := 2 // Input field + blank line
+		footerHeight := 2 // Status line + blank line
+		m.viewport.Width = msg.Width
+		m.viewport.Height = msg.Height - headerHeight - footerHeight
+
+		if !m.ready {
+			// This is the first time we're getting a window size
+			m.ready = true
+			// Update the viewport content immediately
+			m.updateViewportContent()
+		}
 
 	case tea.KeyMsg:
 		switch msg.String() {
@@ -194,207 +221,271 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "up":
 			if m.cursor > 0 {
 				m.cursor--
+				m.updateViewportContent()
+				// Ensure cursor is visible in viewport
+				m.ensureCursorVisible()
 			}
 			return m, nil
 
 		case "down":
 			if m.cursor < len(m.filteredItems)-1 {
 				m.cursor++
+				m.updateViewportContent()
+				// Ensure cursor is visible in viewport
+				m.ensureCursorVisible()
 			}
 			return m, nil
 
 		case " ":
-			// Space toggles selection of current item.
-			if len(m.filteredItems) == 0 {
-				return m, nil
+			// Toggle current item
+			if len(m.filteredItems) > 0 {
+				path := m.filteredItems[m.cursor].Path
+				m.toggleItem(path)
+				m.updateViewportContent()
 			}
-			currItem := m.filteredItems[m.cursor]
-			m.toggleItem(currItem.Path)
+			return m, nil
+
+		case "pgup":
+			m.viewport.HalfViewUp()
+			return m, nil
+
+		case "pgdown":
+			m.viewport.HalfViewDown()
+			return m, nil
+
+		case "home":
+			if len(m.filteredItems) > 0 {
+				m.cursor = 0
+				m.viewport.GotoTop()
+				m.updateViewportContent()
+			}
+			return m, nil
+
+		case "end":
+			if len(m.filteredItems) > 0 {
+				m.cursor = len(m.filteredItems) - 1
+				m.viewport.GotoBottom()
+				m.updateViewportContent()
+			}
 			return m, nil
 		}
-
-	case tea.WindowSizeMsg:
-		// Could handle resizing, if you want dynamic layouts. We'll ignore for now.
-		return m, nil
 	}
 
-	// Let textInput handle updates (typing, backspace, etc.)
-	var cmd tea.Cmd
+	// Handle text input updates
 	m.textInput, cmd = m.textInput.Update(msg)
-	newSearchTerm := m.textInput.Value()
+	cmds = append(cmds, cmd)
 
-	// If the search term changed, re‐filter
+	// If the search term changed, update our filtered list
+	newSearchTerm := m.textInput.Value()
 	if newSearchTerm != m.searchTerm {
 		m.searchTerm = newSearchTerm
 		m.refilter()
+		m.updateViewportContent()
 	}
 
-	return m, cmd
+	// Handle viewport updates
+	m.viewport, cmd = m.viewport.Update(msg)
+	cmds = append(cmds, cmd)
+
+	return m, tea.Batch(cmds...)
 }
 
-// View renders the TUI screen. We’ll show:
+// View renders the TUI screen. We'll show:
 //  1. The search input on top
 //  2. A two‐column layout: file list on left, preview on right
 func (m model) View() string {
-	if m.quitting {
-		return ""
+	if !m.ready {
+		return "Initializing..."
 	}
 
-	// If no files, show an error
-	if len(m.allItems) == 0 {
-		return "No files found.\n"
-	}
+	// Build the search input
+	inputView := m.textInput.View()
 
-	header := fmt.Sprintf("Pick your files from: %s\n", filepath.Dir(m.allItems[0].Path))
-	searchView := m.textInput.View()
+	// Show the viewport with our scrollable content
+	listView := m.viewport.View()
 
-	// Build the list of filtered items on left
-	var listBuilder strings.Builder
+	// Status line showing total/filtered/selected counts
+	statusLine := fmt.Sprintf(
+		"%d/%d items, %d selected",
+		len(m.filteredItems),
+		len(m.allItems),
+		len(m.selected),
+	)
+
+	// Usage hint
+	usageHint := "(↑/↓ to navigate, Space to toggle, Enter to confirm, Esc/Ctrl+C to abort)"
+
+	// Combine everything
+	return fmt.Sprintf("%s\n\n%s\n\n%s\n%s", inputView, listView, statusLine, usageHint)
+}
+
+// updateViewportContent updates the content of the viewport based on the current state
+func (m *model) updateViewportContent() {
+	var sb strings.Builder
+
+	// Build the list view with the filtered items
 	for i, it := range m.filteredItems {
+		// Determine if this item is selected
+		selected := m.selected[it.Path]
+
+		// Cursor indicator
 		cursor := " "
 		if i == m.cursor {
 			cursor = ">"
 		}
+
+		// Selection indicator
 		check := " "
-		if m.selected[it.Path] {
-			check = "x"
+		if selected {
+			check = "✓"
 		}
-		// Show just the base name or full path? Let’s do relative to root for brevity.
-		display := it.Path
-		listBuilder.WriteString(fmt.Sprintf("[%s]%s %s\n", check, cursor, display))
+
+		// Directory indicator
+		dirIndicator := ""
+		if it.IsDir {
+			dirIndicator = "/"
+		}
+
+		// Calculate indentation based on directory depth
+		// This ensures proper alignment of the file tree
+		path := it.Path
+		depth := strings.Count(path, string(filepath.Separator))
+		// Adjust depth to start from 0 for the root
+		rootDepth := strings.Count(m.allItems[0].Path, string(filepath.Separator))
+		relativeDepth := depth - rootDepth
+		indent := strings.Repeat("  ", relativeDepth)
+
+		// Get just the base name for display
+		displayName := filepath.Base(path)
+
+		// Format the line with proper indentation
+		line := fmt.Sprintf("%s [%s] %s%s%s\n", cursor, check, indent, displayName, dirIndicator)
+
+		// Highlight the current line
+		if i == m.cursor {
+			line = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("12")).Render(line)
+		}
+
+		sb.WriteString(line)
 	}
 
-	// Right side: preview of current selection
-	var previewBuilder strings.Builder
-	if len(m.filteredItems) > 0 {
-		curr := m.filteredItems[m.cursor]
-		if curr.IsDir {
-			previewBuilder.WriteString("Directory:\n")
-			previewBuilder.WriteString(curr.Path)
-		} else {
-			lines, err := previewLines(curr.Path, 10)
-			if err != nil {
-				previewBuilder.WriteString(fmt.Sprintf("Error reading file: %v\n", err))
-			} else {
-				previewBuilder.WriteString(fmt.Sprintf("Preview of %s:\n\n", curr.Path))
-				previewBuilder.WriteString(strings.Join(lines, "\n"))
-			}
-		}
-	}
+	// Set the viewport content
+	m.viewport.SetContent(sb.String())
+}
 
-	// Layout: search box on top, then a line, then a 2-col split
-	// For simplicity, we won’t do fancy width measuring.
-	return fmt.Sprintf(
-		"%s%s\n––––––––––––––––––––––––––––––––\n%s\n––––––––––––––––––––––––––––––––\n%s\n",
-		header,
-		searchView,
-		columnize(listBuilder.String(), previewBuilder.String()),
-		"(↑/↓ to navigate, Space to toggle, Enter to confirm, Esc/Ctrl+C to abort)",
-	)
+// ensureCursorVisible makes sure the cursor is visible in the viewport
+func (m *model) ensureCursorVisible() {
+	// Calculate the line number of the cursor in the viewport content
+	cursorLine := m.cursor
+
+	// Get current viewport position
+	top := m.viewport.YOffset
+	bottom := m.viewport.YOffset + m.viewport.Height - 1
+
+	if cursorLine < top {
+		// Cursor is above viewport, scroll up
+		m.viewport.SetYOffset(cursorLine)
+	} else if cursorLine > bottom {
+		// Cursor is below viewport, scroll down
+		m.viewport.SetYOffset(cursorLine - m.viewport.Height + 1)
+	}
 }
 
 // refilter updates m.filteredItems based on the current fuzzy search term.
 func (m *model) refilter() {
-	if strings.TrimSpace(m.searchTerm) == "" {
+	if m.searchTerm == "" {
+		// No search term, show all items
 		m.filteredItems = m.allItems
-		m.cursor = 0
+		m.cursor = min(m.cursor, len(m.filteredItems)-1)
 		return
 	}
 
-	var matches []item
-	term := strings.ToLower(m.searchTerm)
+	// Filter items based on fuzzy search
+	var filtered []item
 	for _, it := range m.allItems {
-		if fuzzyMatch(filepath.Base(it.Path), term) || fuzzyMatch(it.Path, term) {
-			matches = append(matches, it)
+		if fuzzyMatch(it.Path, m.searchTerm) {
+			filtered = append(filtered, it)
 		}
 	}
-	m.filteredItems = matches
-	if m.cursor >= len(m.filteredItems) {
-		m.cursor = len(m.filteredItems) - 1
-	}
-	if m.cursor < 0 {
+
+	m.filteredItems = filtered
+	// Adjust cursor if it's now out of bounds
+	if len(filtered) == 0 {
 		m.cursor = 0
+	} else {
+		m.cursor = min(m.cursor, len(filtered)-1)
 	}
 }
 
 // toggleItem toggles the given path. If it's a directory, recursively toggles everything under it.
 func (m *model) toggleItem(path string) {
-	currentlySelected := m.selected[path]
-	newVal := !currentlySelected
-	m.selected[path] = newVal
+	// Get the index of this path in allItems
+	idx, ok := m.lookup[path]
+	if !ok {
+		return
+	}
 
-	// If it's a dir, recursively toggle children
-	idx, found := m.lookup[path]
-	if !found {
-		return
+	it := m.allItems[idx]
+	// Toggle this item
+	selected := !m.selected[path]
+	m.selected[path] = selected
+
+	// If it's a directory, recursively toggle all children
+	if it.IsDir {
+		m.toggleChildren(path, selected)
 	}
-	if !m.allItems[idx].IsDir {
-		return
-	}
-	// BFS or DFS through children
-	m.toggleChildren(path, newVal)
 }
 
 // toggleChildren recursively sets the selected value for everything under dirPath.
 func (m *model) toggleChildren(dirPath string, selected bool) {
-	childList := m.childrenMap[dirPath]
-	for _, child := range childList {
-		m.selected[child] = selected
-		// If child is a directory, recurse
-		childIdx := m.lookup[child]
-		if m.allItems[childIdx].IsDir {
-			m.toggleChildren(child, selected)
+	// Get the children of this directory
+	children, ok := m.childrenMap[dirPath]
+	if !ok {
+		return
+	}
+
+	// Toggle each child
+	for _, childPath := range children {
+		m.selected[childPath] = selected
+
+		// If this child is also a directory, recursively toggle its children
+		idx, ok := m.lookup[childPath]
+		if ok && m.allItems[idx].IsDir {
+			m.toggleChildren(childPath, selected)
 		}
 	}
 }
 
 // previewLines returns the first n lines of the file at path.
 func previewLines(path string, n int) ([]string, error) {
-	file, err := os.Open(path)
+	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
 	}
-	defer file.Close()
+	defer f.Close()
 
 	var lines []string
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
+	scanner := bufio.NewScanner(f)
+	for i := 0; i < n && scanner.Scan(); i++ {
 		lines = append(lines, scanner.Text())
-		if len(lines) >= n {
-			break
-		}
 	}
-	return lines, scanner.Err()
+
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+
+	return lines, nil
 }
 
 // fuzzyMatch is a trivial substring match ignoring case.
 func fuzzyMatch(text string, term string) bool {
-	text = strings.ToLower(text)
-	return strings.Contains(text, term)
+	return strings.Contains(strings.ToLower(text), strings.ToLower(term))
 }
 
-// columnize is a naive function to produce two columns: left and right, split by a gap.
-func columnize(left string, right string) string {
-	// Split them line by line
-	leftLines := strings.Split(strings.TrimSuffix(left, "\n"), "\n")
-	rightLines := strings.Split(strings.TrimSuffix(right, "\n"), "\n")
-
-	// Determine how many lines in either
-	maxLines := len(leftLines)
-	if len(rightLines) > maxLines {
-		maxLines = len(rightLines)
+// min returns the smaller of a and b
+func min(a, b int) int {
+	if a < b {
+		return a
 	}
-
-	var b strings.Builder
-	for i := 0; i < maxLines; i++ {
-		var l, r string
-		if i < len(leftLines) {
-			l = leftLines[i]
-		}
-		if i < len(rightLines) {
-			r = rightLines[i]
-		}
-		b.WriteString(fmt.Sprintf("%-50s  %s\n", l, r))
-	}
-	return b.String()
+	return b
 }
