@@ -194,16 +194,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		// Set the viewport height to fit the terminal
-		headerHeight := 2 // Input field + blank line
+		headerHeight := lipgloss.Height(m.textInput.View()) + 1 // Input field + blank line
 		footerHeight := 2 // Status line + blank line
 		m.viewport.Width = msg.Width
 		m.viewport.Height = msg.Height - headerHeight - footerHeight
-
+		m.viewport.YPosition = headerHeight // Position viewport below header
+		
 		if !m.ready {
-			// This is the first time we're getting a window size
-			m.ready = true
-			// Update the viewport content immediately
+			// This is the first time we're getting a WindowSizeMsg
 			m.updateViewportContent()
+			m.ready = true
 		}
 
 	case tea.KeyMsg:
@@ -298,25 +298,24 @@ func (m model) View() string {
 		return "Initializing..."
 	}
 
-	// Build the search input
-	inputView := m.textInput.View()
+	// Build the header with search input
+	headerView := m.textInput.View() + "\n"
 
 	// Show the viewport with our scrollable content
 	listView := m.viewport.View()
 
-	// Status line showing total/filtered/selected counts
+	// Build the footer with status and usage hint
 	statusLine := fmt.Sprintf(
 		"%d/%d items, %d selected",
 		len(m.filteredItems),
 		len(m.allItems),
 		len(m.selected),
 	)
-
-	// Usage hint
 	usageHint := "(↑/↓ to navigate, Space to toggle, Enter to confirm, Esc/Ctrl+C to abort)"
+	footerView := fmt.Sprintf("\n%s\n%s", statusLine, usageHint)
 
-	// Combine everything
-	return fmt.Sprintf("%s\n\n%s\n\n%s\n%s", inputView, listView, statusLine, usageHint)
+	// Combine everything in the correct order: header, viewport, footer
+	return fmt.Sprintf("%s%s%s", headerView, listView, footerView)
 }
 
 // updateViewportContent updates the content of the viewport based on the current state
