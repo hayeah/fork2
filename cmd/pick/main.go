@@ -22,6 +22,7 @@ import (
 // Args defines the command-line arguments
 type Args struct {
 	TokenEstimator string `arg:"--token-estimator" help:"Token count estimator to use: 'simple' (size/4) or 'tiktoken'" default:"simple"`
+	All            bool   `arg:"-a,--all" help:"Select all files and output immediately"`
 	Directory      string `arg:"positional,required" help:"Directory to pick files from"`
 }
 
@@ -81,6 +82,29 @@ func main() {
 	}
 }
 
+// writeOutput outputs the directory tree, file map, and token count
+func writeOutput(w io.Writer, selectedFiles []string, rootPath string, totalTokenCount int, items []item) error {
+	// Sort the selected files
+	sort.Strings(selectedFiles)
+
+	// Generate directory tree structure
+	err := generateDirectoryTree(w, rootPath, items)
+	if err != nil {
+		return fmt.Errorf("failed to generate directory tree: %v", err)
+	}
+
+	// Write the file map of selected files
+	err = fork2.WriteFileMap(w, selectedFiles, rootPath)
+	if err != nil {
+		return fmt.Errorf("failed to write file map: %v", err)
+	}
+
+	// Print total token count to stderr
+	fmt.Fprintf(os.Stderr, "Total tokens: %d\n", totalTokenCount)
+
+	return nil
+}
+
 // run parses args, collects the files, and runs the Bubble Tea program
 func run() error {
 	// Parse command-line arguments
@@ -112,6 +136,30 @@ func run() error {
 	items, childrenMap, err := gatherFiles(rootPath)
 	if err != nil {
 		return fmt.Errorf("failed to gather files: %v", err)
+	}
+
+	// If --all flag is set, select all files and output immediately
+	if args.All {
+		var selectedFiles []string
+		totalTokenCount := 0
+
+		// Select all non-directory items
+		for _, it := range items {
+			if !it.IsDir {
+				selectedFiles = append(selectedFiles, it.Path)
+
+				// Count tokens for the file
+				tokenCount, err := tokenEstimator(it.Path)
+				if err != nil {
+					log.Printf("Error estimating tokens for %s: %v", it.Path, err)
+				} else {
+					totalTokenCount += tokenCount
+				}
+			}
+		}
+
+		// Write output directly
+		return writeOutput(os.Stdout, selectedFiles, rootPath, totalTokenCount, items)
 	}
 
 	// Set up initial model
@@ -169,25 +217,8 @@ func run() error {
 		}
 	}
 
-	// Sort the selected files
-	sort.Strings(selectedFiles)
-
-	// Generate directory tree structure and write to stdout using the already gathered items
-	err = generateDirectoryTree(os.Stdout, rootPath, m.allItems)
-	if err != nil {
-		return fmt.Errorf("failed to generate directory tree: %v", err)
-	}
-
-	// Write the file map of selected files
-	err = fork2.WriteFileMap(os.Stdout, selectedFiles, rootPath)
-	if err != nil {
-		return fmt.Errorf("failed to write file map: %v", err)
-	}
-
-	// Print total token count to stderr
-	fmt.Fprintf(os.Stderr, "Total tokens: %d\n", finalM.totalTokenCount)
-
-	return nil
+	// Write output using the abstracted function
+	return writeOutput(os.Stdout, selectedFiles, rootPath, finalM.totalTokenCount, m.allItems)
 }
 
 // generateDirectoryTree creates a tree-like structure for the directory and writes it to the provided writer
