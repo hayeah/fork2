@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"io"
 	"log"
@@ -15,14 +16,19 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/hayeah/fork2"
 	"github.com/hayeah/fork2/ignore"
+	"github.com/pkoukk/tiktoken-go"
 )
 
 // item represents each file or directory in the listing.
 type item struct {
-	Path     string
-	IsDir    bool
-	Children []string // immediate children (for toggling entire sub-tree)
+	Path       string
+	IsDir      bool
+	Children   []string // immediate children (for toggling entire sub-tree)
+	TokenCount int      // Number of tokens in this file
 }
+
+// TokenEstimator is a function type that estimates token count for a file
+type TokenEstimator func(filePath string) (int, error)
 
 // model is our Bubble Tea model, holding everything needed for the TUI.
 type model struct {
@@ -46,16 +52,41 @@ type model struct {
 	// Viewport for scrolling
 	viewport viewport.Model
 	ready    bool
+
+	// Token counting
+	totalTokenCount int            // Total token count of selected files
+	tokenEstimator  TokenEstimator // Function to estimate tokens
+	tokenCache      map[string]int // Cache of token counts to avoid recalculating
 }
 
 // main is our entrypoint: parse args, collect the files, and run the Bubble Tea program.
 func main() {
-	if len(os.Args) < 2 {
-		fmt.Fprintf(os.Stderr, "Usage: %s [directory]\n", os.Args[0])
+	// Define flags
+	tokenEstimatorFlag := flag.String("token-estimator", "simple", "Token count estimator to use: 'simple' (size/4) or 'tiktoken'")
+
+	// Create a custom flag set to parse only flags
+	flagSet := flag.NewFlagSet("pick", flag.ExitOnError)
+	flagSet.String("token-estimator", "simple", "Token count estimator to use: 'simple' (size/4) or 'tiktoken'")
+
+	// Parse flags without consuming the directory argument
+	flagSet.Parse(os.Args[1:])
+
+	// Get the token estimator flag value
+	tokenEstimatorName := *tokenEstimatorFlag
+	if flagSet.Lookup("token-estimator") != nil {
+		tokenEstimatorName = flagSet.Lookup("token-estimator").Value.String()
+	}
+
+	// Get the directory argument (should be the first non-flag argument)
+	args := flagSet.Args()
+	if len(args) < 1 {
+		fmt.Fprintf(os.Stderr, "Usage: %s [flags] [directory]\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "Flags:\n")
+		flagSet.PrintDefaults()
 		os.Exit(1)
 	}
 
-	rootPath := os.Args[1]
+	rootPath := args[0]
 	info, err := os.Stat(rootPath)
 	if err != nil {
 		log.Fatalf("Error accessing %s: %v", rootPath, err)
@@ -63,6 +94,17 @@ func main() {
 
 	if !info.IsDir() {
 		log.Fatalf("Not a directory: %s", rootPath)
+	}
+
+	// Select the token estimator based on the flag
+	var tokenEstimator TokenEstimator
+	switch tokenEstimatorName {
+	case "tiktoken":
+		tokenEstimator = estimateTokenCountTiktoken
+	case "simple":
+		tokenEstimator = estimateTokenCountSimple
+	default:
+		log.Fatalf("Unknown token estimator: %s", tokenEstimatorName)
 	}
 
 	// Gather files/dirs
@@ -85,14 +127,17 @@ func main() {
 	}
 
 	m := model{
-		textInput:     ti,
-		allItems:      items,
-		filteredItems: items, // default to showing them all
-		selected:      selected,
-		lookup:        lookup,
-		childrenMap:   childrenMap,
-		viewport:      viewport.New(0, 0), // Will be properly sized in tea.WindowSizeMsg
-		ready:         false,
+		textInput:       ti,
+		allItems:        items,
+		filteredItems:   items, // default to showing them all
+		selected:        selected,
+		lookup:          lookup,
+		childrenMap:     childrenMap,
+		viewport:        viewport.New(0, 0), // Will be properly sized in tea.WindowSizeMsg
+		ready:           false,
+		totalTokenCount: 0, // Initialize token count
+		tokenEstimator:  tokenEstimator,
+		tokenCache:      make(map[string]int),
 	}
 
 	// Start Bubble Tea
@@ -116,7 +161,7 @@ func main() {
 	sort.Strings(selectedFiles)
 
 	// Generate directory tree structure and write to stdout using the already gathered items
-	err = generateDirectoryTree(os.Stdout, rootPath, items)
+	err = generateDirectoryTree(os.Stdout, rootPath, m.allItems)
 	if err != nil {
 		log.Fatalf("Failed to generate directory tree: %v", err)
 	}
@@ -262,8 +307,9 @@ func gatherFiles(rootPath string) ([]item, map[string][]string, error) {
 	// Use WalkDirGitIgnore to walk the directory tree while respecting gitignore patterns
 	err = ig.WalkDir(rootPath, func(path string, d os.DirEntry, isDir bool) error {
 		items = append(items, item{
-			Path:  path,
-			IsDir: isDir,
+			Path:       path,
+			IsDir:      isDir,
+			TokenCount: 0, // Initialize token count to 0
 		})
 		return nil
 	})
@@ -406,6 +452,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.toggleChildren(it.Path, true)
 				}
 			}
+			// Recalculate total token count
+			m.recalculateTotalTokenCount()
 			m.updateViewportContent()
 			return m, nil
 
@@ -418,6 +466,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.toggleChildren(it.Path, false)
 				}
 			}
+			// Recalculate total token count
+			m.recalculateTotalTokenCount()
 			m.updateViewportContent()
 			return m, nil
 		}
@@ -458,10 +508,11 @@ func (m model) View() string {
 
 	// Build the footer with status and usage hint
 	statusLine := fmt.Sprintf(
-		"%d/%d items, %d selected",
+		"%d/%d items, %d selected, %d tokens total",
 		len(m.filteredItems),
 		len(m.allItems),
 		len(m.selected),
+		m.totalTokenCount,
 	)
 	usageHint := "(↑/↓ to navigate, Space to toggle, Enter to confirm, Esc/Ctrl+C to abort, Ctrl+A to select all, Ctrl+Q to deselect all)"
 	footerView := fmt.Sprintf("\n%s\n%s", statusLine, usageHint)
@@ -500,8 +551,18 @@ func (m *model) updateViewportContent() {
 		// Display the full path instead of using indentation
 		path := it.Path
 
+		// Add token count info for selected files
+		displayPath := path
+		if selected && !it.IsDir {
+			percentage := 0.0
+			if m.totalTokenCount > 0 {
+				percentage = float64(it.TokenCount) / float64(m.totalTokenCount) * 100
+			}
+			displayPath = fmt.Sprintf("%s (%d tokens, %.1f%%)", path, it.TokenCount, percentage)
+		}
+
 		// Format the line with the full path
-		line := fmt.Sprintf("%s [%s] %s%s", cursor, check, path, dirIndicator)
+		line := fmt.Sprintf("%s [%s] %s%s", cursor, check, displayPath, dirIndicator)
 
 		// Highlight the current line
 		if i == m.cursor {
@@ -562,21 +623,21 @@ func (m *model) refilter() {
 
 // toggleItem toggles the given path. If it's a directory, recursively toggles everything under it.
 func (m *model) toggleItem(path string) {
-	// Get the index of this path in allItems
 	idx, ok := m.lookup[path]
 	if !ok {
 		return
 	}
 
-	it := m.allItems[idx]
-	// Toggle this item
-	selected := !m.selected[path]
-	m.selected[path] = selected
+	// Toggle the selected state
+	m.selected[path] = !m.selected[path]
 
-	// If it's a directory, recursively toggle all children
-	if it.IsDir {
-		m.toggleChildren(path, selected)
+	// If it's a directory, toggle all children
+	if m.allItems[idx].IsDir {
+		m.toggleChildren(path, m.selected[path])
 	}
+
+	// Recalculate total token count
+	m.recalculateTotalTokenCount()
 }
 
 // toggleChildren recursively sets the selected value for everything under dirPath.
@@ -604,10 +665,71 @@ func fuzzyMatch(text string, term string) bool {
 	return strings.Contains(strings.ToLower(text), strings.ToLower(term))
 }
 
+// recalculateTotalTokenCount updates the total token count based on selected files
+func (m *model) recalculateTotalTokenCount() {
+	total := 0
+	for path, selected := range m.selected {
+		if selected {
+			idx, ok := m.lookup[path]
+			if ok && !m.allItems[idx].IsDir {
+				// If we have a cached token count, use it
+				if cachedCount, ok := m.tokenCache[path]; ok {
+					total += cachedCount
+				} else {
+					// Otherwise calculate it
+					tokenCount, err := m.tokenEstimator(path)
+					if err != nil {
+						log.Printf("Error estimating tokens for %s: %v", path, err)
+					} else {
+						m.tokenCache[path] = tokenCount
+						m.allItems[idx].TokenCount = tokenCount
+						total += tokenCount
+					}
+				}
+			}
+		}
+	}
+	m.totalTokenCount = total
+}
+
 // min returns the smaller of a and b
 func min(a, b int) int {
 	if a < b {
 		return a
 	}
 	return b
+}
+
+// estimateTokenCount estimates the number of tokens in a file
+// This is kept for backward compatibility
+func estimateTokenCount(filePath string) (int, error) {
+	return estimateTokenCountSimple(filePath)
+}
+
+// estimateTokenCountSimple estimates tokens using the simple size/4 method
+func estimateTokenCountSimple(filePath string) (int, error) {
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return 0, err
+	}
+
+	// Simple estimation: 1 token per 4 characters
+	return len(data) / 4, nil
+}
+
+// estimateTokenCountTiktoken estimates tokens using the tiktoken-go library
+func estimateTokenCountTiktoken(filePath string) (int, error) {
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return 0, err
+	}
+
+	// Use tiktoken-go to count tokens
+	tke, err := tiktoken.GetEncoding("cl100k_base") // Using the same encoding as GPT-4
+	if err != nil {
+		return 0, fmt.Errorf("failed to get tiktoken encoding: %v", err)
+	}
+
+	tokens := tke.Encode(string(data), nil, nil)
+	return len(tokens), nil
 }
