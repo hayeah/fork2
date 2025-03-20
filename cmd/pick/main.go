@@ -94,7 +94,8 @@ func main() {
 	}
 
 	// Start Bubble Tea
-	p := tea.NewProgram(m, tea.WithAltScreen())
+	p := tea.NewProgram(m, tea.WithOutput(os.Stderr))
+	// p := tea.NewProgram(m, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		log.Fatal(err)
 	}
