@@ -36,6 +36,15 @@ type item struct {
 // TokenEstimator is a function type that estimates token count for a file
 type TokenEstimator func(filePath string) (int, error)
 
+// ExitState indicates how the program is exiting
+type ExitState int
+
+const (
+	ExitStateNone    ExitState = iota // Not exiting
+	ExitStateAbort                    // Exiting without saving (ESC, Ctrl+C)
+	ExitStateConfirm                  // Exiting with confirmation (Enter)
+)
+
 // model is our Bubble Tea model, holding everything needed for the TUI.
 type model struct {
 	// Input handling
@@ -52,8 +61,8 @@ type model struct {
 	childrenMap map[string][]string
 
 	// Navigation
-	cursor   int
-	quitting bool
+	cursor    int
+	exitState ExitState
 
 	// Viewport for scrolling
 	viewport viewport.Model
@@ -132,14 +141,25 @@ func run() error {
 		tokenCache:      make(map[string]int),
 	}
 
-	// Start Bubble Tea
+	// Start Bubble Tea. Output TUI stderr so we can pipe the output to stdout
 	p := tea.NewProgram(m, tea.WithOutput(os.Stderr))
-	// p := tea.NewProgram(m, tea.WithAltScreen())
-	if _, err := p.Run(); err != nil {
+	finalModel, err := p.Run()
+	if err != nil {
 		return err
 	}
 
-	// On Enter, print all selected items to stdout, then quit
+	// Get the final state of the model
+	finalM, ok := finalModel.(model)
+	if !ok {
+		return fmt.Errorf("could not get final model state")
+	}
+
+	// Only generate output if we're exiting with confirmation (Enter)
+	if finalM.exitState != ExitStateConfirm {
+		return nil
+	}
+
+	// On Enter, print all selected items to stdout
 	// Convert selected files to slice, sort them, and filter out directories
 	var selectedFiles []string
 	for path := range m.selected {
@@ -163,6 +183,9 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("failed to write file map: %v", err)
 	}
+
+	// Print total token count to stderr
+	fmt.Fprintf(os.Stderr, "Total tokens: %d\n", finalM.totalTokenCount)
 
 	return nil
 }
@@ -349,8 +372,8 @@ func (m model) Init() tea.Cmd {
 // Update is called when events occur (key presses, etc.). We handle them here,
 // then return the updated model and an optional command.
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	// If we're quitting, no further updates needed
-	if m.quitting {
+	// If we're exiting, no further updates needed
+	if m.exitState != ExitStateNone {
 		return m, tea.Quit
 	}
 
@@ -378,12 +401,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 
 		case "ctrl+c", "esc":
-			m.quitting = true
+			m.exitState = ExitStateAbort
 			// No selection is printed, we just bail:
 			return m, tea.Quit
 
 		case "enter":
-			m.quitting = true
+			m.exitState = ExitStateConfirm
 			return m, tea.Quit
 
 		case "up":
