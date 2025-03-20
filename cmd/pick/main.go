@@ -147,83 +147,24 @@ func run() error {
 	}
 
 	var selectedFiles []string
-	totalTokenCount := 0
+	var totalTokenCount int
 
-	// If --all flag is set, select all files and output immediately
+	// Select files either automatically or interactively
 	if args.All {
-
-		// Select all non-directory items
-		for _, it := range items {
-			if !it.IsDir {
-				selectedFiles = append(selectedFiles, it.Path)
-
-				// Count tokens for the file
-				tokenCount, err := tokenEstimator(it.Path)
-				if err != nil {
-					log.Printf("Error estimating tokens for %s: %v", it.Path, err)
-				} else {
-					totalTokenCount += tokenCount
-				}
-			}
+		selectedFiles, totalTokenCount, err = selectAllFiles(items, tokenEstimator)
+		if err != nil {
+			return err
 		}
 	} else {
-
-		// Set up initial model
-		ti := textinput.New()
-		ti.Placeholder = "Type to fuzzy-search..."
-		ti.Prompt = "> "
-		ti.CharLimit = 0
-		ti.Focus()
-
-		selected := make(map[string]bool)
-		lookup := make(map[string]int, len(items))
-		for i, it := range items {
-			lookup[it.Path] = i
-		}
-
-		m := model{
-			textInput:       ti,
-			allItems:        items,
-			filteredItems:   items, // default to showing them all
-			selected:        selected,
-			lookup:          lookup,
-			childrenMap:     childrenMap,
-			viewport:        viewport.New(0, 0), // Will be properly sized in tea.WindowSizeMsg
-			ready:           false,
-			totalTokenCount: 0, // Initialize token count
-			tokenEstimator:  tokenEstimator,
-			tokenCache:      make(map[string]int),
-		}
-
-		// Start Bubble Tea. Output TUI stderr so we can pipe the output to stdout
-		p := tea.NewProgram(m, tea.WithOutput(os.Stderr))
-		finalModel, err := p.Run()
+		selectedFiles, totalTokenCount, err = selectFilesInteractively(items, childrenMap, tokenEstimator)
 		if err != nil {
 			return err
 		}
 
-		// Get the final state of the model
-		finalM, ok := finalModel.(model)
-		if !ok {
-			return fmt.Errorf("could not get final model state")
-		}
-
-		// Only generate output if we're exiting with confirmation (Enter)
-		if finalM.exitState != ExitStateConfirm {
+		// If no files were selected (user aborted), return early
+		if selectedFiles == nil {
 			return nil
 		}
-
-		// On Enter, collect all selected items
-		// Convert selected files to slice, sort them, and filter out directories
-
-		for path := range finalM.selected {
-			// Get the index of this path in allItems to check if it's a directory
-			if idx, ok := finalM.lookup[path]; ok && !finalM.allItems[idx].IsDir {
-				selectedFiles = append(selectedFiles, path)
-			}
-		}
-
-		totalTokenCount = finalM.totalTokenCount
 	}
 
 	// Handle output based on --copy flag
@@ -247,6 +188,91 @@ func run() error {
 		// Write output to stdout
 		return writeOutput(os.Stdout, selectedFiles, rootPath, totalTokenCount, items)
 	}
+}
+
+// selectAllFiles automatically selects all non-directory files in the given items list
+// and returns the selected files and their total token count
+func selectAllFiles(items []item, tokenEstimator TokenEstimator) ([]string, int, error) {
+	var selectedFiles []string
+	totalTokenCount := 0
+
+	// Select all non-directory items
+	for _, it := range items {
+		if !it.IsDir {
+			selectedFiles = append(selectedFiles, it.Path)
+
+			// Count tokens for the file
+			tokenCount, err := tokenEstimator(it.Path)
+			if err != nil {
+				log.Printf("Error estimating tokens for %s: %v", it.Path, err)
+			} else {
+				totalTokenCount += tokenCount
+			}
+		}
+	}
+
+	return selectedFiles, totalTokenCount, nil
+}
+
+// selectFilesInteractively runs the TUI for interactive file selection
+// and returns the selected files and their total token count
+func selectFilesInteractively(items []item, childrenMap map[string][]string, tokenEstimator TokenEstimator) ([]string, int, error) {
+	// Set up initial model
+	ti := textinput.New()
+	ti.Placeholder = "Type to fuzzy-search..."
+	ti.Prompt = "> "
+	ti.CharLimit = 0
+	ti.Focus()
+
+	selected := make(map[string]bool)
+	lookup := make(map[string]int, len(items))
+	for i, it := range items {
+		lookup[it.Path] = i
+	}
+
+	m := model{
+		textInput:       ti,
+		allItems:        items,
+		filteredItems:   items, // default to showing them all
+		selected:        selected,
+		lookup:          lookup,
+		childrenMap:     childrenMap,
+		viewport:        viewport.New(0, 0), // Will be properly sized in tea.WindowSizeMsg
+		ready:           false,
+		totalTokenCount: 0, // Initialize token count
+		tokenEstimator:  tokenEstimator,
+		tokenCache:      make(map[string]int),
+	}
+
+	// Start Bubble Tea. Output TUI stderr so we can pipe the output to stdout
+	p := tea.NewProgram(m, tea.WithOutput(os.Stderr))
+	finalModel, err := p.Run()
+	if err != nil {
+		return nil, 0, err
+	}
+
+	// Get the final state of the model
+	finalM, ok := finalModel.(model)
+	if !ok {
+		return nil, 0, fmt.Errorf("could not get final model state")
+	}
+
+	// Only generate output if we're exiting with confirmation (Enter)
+	if finalM.exitState != ExitStateConfirm {
+		return nil, 0, nil
+	}
+
+	// On Enter, collect all selected items
+	// Convert selected files to slice, sort them, and filter out directories
+	var selectedFiles []string
+	for path := range finalM.selected {
+		// Get the index of this path in allItems to check if it's a directory
+		if idx, ok := finalM.lookup[path]; ok && !finalM.allItems[idx].IsDir {
+			selectedFiles = append(selectedFiles, path)
+		}
+	}
+
+	return selectedFiles, finalM.totalTokenCount, nil
 }
 
 // generateDirectoryTree creates a tree-like structure for the directory and writes it to the provided writer
@@ -774,12 +800,6 @@ func min(a, b int) int {
 		return a
 	}
 	return b
-}
-
-// estimateTokenCount estimates the number of tokens in a file
-// This is kept for backward compatibility
-func estimateTokenCount(filePath string) (int, error) {
-	return estimateTokenCountSimple(filePath)
 }
 
 // estimateTokenCountSimple estimates tokens using the simple size/4 method
