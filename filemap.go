@@ -45,6 +45,9 @@ func IsBinaryFile(content []byte) bool {
 
 // WriteFileMap writes a filemap to the provided writer
 func WriteFileMap(w io.Writer, paths []string, dir string) error {
+	// Write opening file_contents tag
+	fmt.Fprintln(w, "<file_contents>")
+
 	for _, path := range paths {
 		// Create absolute path by joining directory and path
 		absPath := filepath.Join(dir, path)
@@ -126,6 +129,9 @@ func WriteFileMap(w io.Writer, paths []string, dir string) error {
 		fmt.Fprintln(w, "```")
 		fmt.Fprintln(w)
 	}
+
+	// Write closing file_contents tag
+	fmt.Fprintln(w, "</file_contents>")
 
 	return nil
 }

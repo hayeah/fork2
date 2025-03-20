@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/hayeah/fork2"
 	"github.com/hayeah/fork2/ignore"
 )
 
@@ -113,10 +115,136 @@ func main() {
 	// Sort the selected files
 	sort.Strings(selectedFiles)
 
-	// Print the sorted, filtered files
-	for _, path := range selectedFiles {
-		fmt.Println(path)
+	// Generate directory tree structure and write to stdout using the already gathered items
+	err = generateDirectoryTree(os.Stdout, rootPath, items)
+	if err != nil {
+		log.Fatalf("Failed to generate directory tree: %v", err)
 	}
+
+	// Write the file map of selected files
+	err = fork2.WriteFileMap(os.Stdout, selectedFiles, rootPath)
+	if err != nil {
+		log.Fatalf("Failed to write file map: %v", err)
+	}
+}
+
+// generateDirectoryTree creates a tree-like structure for the directory and writes it to the provided writer
+// using the items already gathered by gatherFiles
+func generateDirectoryTree(w io.Writer, rootPath string, items []item) error {
+	type treeNode struct {
+		path     string
+		name     string
+		isDir    bool
+		children []*treeNode
+	}
+
+	// Create a map to store nodes by their path
+	nodeMap := make(map[string]*treeNode)
+
+	// Create the root node
+	rootName := filepath.Base(rootPath)
+	rootNode := &treeNode{
+		path:     rootPath,
+		name:     rootName,
+		isDir:    true,
+		children: []*treeNode{},
+	}
+	nodeMap[rootPath] = rootNode
+
+	// Process the items to build the tree structure
+	for _, item := range items {
+		// Skip the root itself
+		if item.Path == rootPath {
+			continue
+		}
+
+		name := filepath.Base(item.Path)
+		parent := filepath.Dir(item.Path)
+
+		// Create a new node if it doesn't exist yet
+		if _, exists := nodeMap[item.Path]; !exists {
+			node := &treeNode{
+				path:     item.Path,
+				name:     name,
+				isDir:    item.IsDir,
+				children: []*treeNode{},
+			}
+			nodeMap[item.Path] = node
+		}
+
+		// Add this node to its parent's children
+		if parentNode, ok := nodeMap[parent]; ok {
+			if childNode, ok := nodeMap[item.Path]; ok {
+				parentNode.children = append(parentNode.children, childNode)
+			}
+		}
+	}
+
+	// Write the opening file_map tag
+	fmt.Fprintln(w, "<file_map>")
+
+	// Function to recursively build the tree string
+	var writeTreeNode func(node *treeNode, prefix string, isLast bool) error
+	writeTreeNode = func(node *treeNode, prefix string, isLast bool) error {
+		// Sort children by name
+		sort.Slice(node.children, func(i, j int) bool {
+			// Directories first, then files
+			if node.children[i].isDir != node.children[j].isDir {
+				return node.children[i].isDir
+			}
+			return node.children[i].name < node.children[j].name
+		})
+
+		// Add this node to the result
+		if node.path == rootPath {
+			// Use the absolute path for the root node
+			absPath, err := filepath.Abs(rootPath)
+			if err != nil {
+				absPath = rootPath // Fallback to rootPath if Abs fails
+			}
+			_, err = fmt.Fprintln(w, absPath)
+			if err != nil {
+				return err
+			}
+		} else {
+			connector := "├── "
+			if isLast {
+				connector = "└── "
+			}
+			_, err := fmt.Fprintln(w, prefix+connector+node.name)
+			if err != nil {
+				return err
+			}
+		}
+
+		// Add children
+		for i, child := range node.children {
+			isLastChild := i == len(node.children)-1
+			newPrefix := prefix
+			if node.path != rootPath {
+				if isLast {
+					newPrefix += "    "
+				} else {
+					newPrefix += "│   "
+				}
+			}
+			if err := writeTreeNode(child, newPrefix, isLastChild); err != nil {
+				return err
+			}
+		}
+
+		return nil
+	}
+
+	// Write the tree structure
+	if err := writeTreeNode(rootNode, "", true); err != nil {
+		return err
+	}
+
+	// Write the closing file_map tag
+	fmt.Fprintln(w, "</file_map>")
+
+	return nil
 }
 
 // gatherFiles recursively walks the directory and returns a sorted list of item
