@@ -1,7 +1,6 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"io"
 	"log"
@@ -10,6 +9,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/alexflint/go-arg"
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
@@ -18,6 +18,12 @@ import (
 	"github.com/hayeah/fork2/ignore"
 	"github.com/pkoukk/tiktoken-go"
 )
+
+// Args defines the command-line arguments
+type Args struct {
+	TokenEstimator string `arg:"--token-estimator" help:"Token count estimator to use: 'simple' (size/4) or 'tiktoken'" default:"simple"`
+	Directory      string `arg:"positional,required" help:"Directory to pick files from"`
+}
 
 // item represents each file or directory in the listing.
 type item struct {
@@ -59,58 +65,44 @@ type model struct {
 	tokenCache      map[string]int // Cache of token counts to avoid recalculating
 }
 
-// main is our entrypoint: parse args, collect the files, and run the Bubble Tea program.
+// main is our entrypoint: parse args and run the application
 func main() {
-	// Define flags
-	tokenEstimatorFlag := flag.String("token-estimator", "simple", "Token count estimator to use: 'simple' (size/4) or 'tiktoken'")
-
-	// Create a custom flag set to parse only flags
-	flagSet := flag.NewFlagSet("pick", flag.ExitOnError)
-	flagSet.String("token-estimator", "simple", "Token count estimator to use: 'simple' (size/4) or 'tiktoken'")
-
-	// Parse flags without consuming the directory argument
-	flagSet.Parse(os.Args[1:])
-
-	// Get the token estimator flag value
-	tokenEstimatorName := *tokenEstimatorFlag
-	if flagSet.Lookup("token-estimator") != nil {
-		tokenEstimatorName = flagSet.Lookup("token-estimator").Value.String()
+	if err := run(); err != nil {
+		log.Fatal(err)
 	}
+}
 
-	// Get the directory argument (should be the first non-flag argument)
-	args := flagSet.Args()
-	if len(args) < 1 {
-		fmt.Fprintf(os.Stderr, "Usage: %s [flags] [directory]\n", os.Args[0])
-		fmt.Fprintf(os.Stderr, "Flags:\n")
-		flagSet.PrintDefaults()
-		os.Exit(1)
-	}
+// run parses args, collects the files, and runs the Bubble Tea program
+func run() error {
+	// Parse command-line arguments
+	var args Args
+	arg.MustParse(&args)
 
-	rootPath := args[0]
+	rootPath := args.Directory
 	info, err := os.Stat(rootPath)
 	if err != nil {
-		log.Fatalf("Error accessing %s: %v", rootPath, err)
+		return fmt.Errorf("error accessing %s: %v", rootPath, err)
 	}
 
 	if !info.IsDir() {
-		log.Fatalf("Not a directory: %s", rootPath)
+		return fmt.Errorf("not a directory: %s", rootPath)
 	}
 
 	// Select the token estimator based on the flag
 	var tokenEstimator TokenEstimator
-	switch tokenEstimatorName {
+	switch args.TokenEstimator {
 	case "tiktoken":
 		tokenEstimator = estimateTokenCountTiktoken
 	case "simple":
 		tokenEstimator = estimateTokenCountSimple
 	default:
-		log.Fatalf("Unknown token estimator: %s", tokenEstimatorName)
+		return fmt.Errorf("unknown token estimator: %s", args.TokenEstimator)
 	}
 
 	// Gather files/dirs
 	items, childrenMap, err := gatherFiles(rootPath)
 	if err != nil {
-		log.Fatalf("Failed to gather files: %v", err)
+		return fmt.Errorf("failed to gather files: %v", err)
 	}
 
 	// Set up initial model
@@ -144,7 +136,7 @@ func main() {
 	p := tea.NewProgram(m, tea.WithOutput(os.Stderr))
 	// p := tea.NewProgram(m, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
-		log.Fatal(err)
+		return err
 	}
 
 	// On Enter, print all selected items to stdout, then quit
@@ -163,14 +155,16 @@ func main() {
 	// Generate directory tree structure and write to stdout using the already gathered items
 	err = generateDirectoryTree(os.Stdout, rootPath, m.allItems)
 	if err != nil {
-		log.Fatalf("Failed to generate directory tree: %v", err)
+		return fmt.Errorf("failed to generate directory tree: %v", err)
 	}
 
 	// Write the file map of selected files
 	err = fork2.WriteFileMap(os.Stdout, selectedFiles, rootPath)
 	if err != nil {
-		log.Fatalf("Failed to write file map: %v", err)
+		return fmt.Errorf("failed to write file map: %v", err)
 	}
+
+	return nil
 }
 
 // generateDirectoryTree creates a tree-like structure for the directory and writes it to the provided writer
