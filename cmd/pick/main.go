@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"log"
@@ -10,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/alexflint/go-arg"
+	"github.com/atotto/clipboard"
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
@@ -23,7 +25,8 @@ import (
 type Args struct {
 	TokenEstimator string `arg:"--token-estimator" help:"Token count estimator to use: 'simple' (size/4) or 'tiktoken'" default:"simple"`
 	All            bool   `arg:"-a,--all" help:"Select all files and output immediately"`
-	Directory      string `arg:"positional,required" help:"Directory to pick files from"`
+	Copy           bool   `arg:"-c,--copy" help:"Copy output to clipboard instead of stdout"`
+	Directory      string `arg:"positional" help:"Directory to pick files from (default: current working directory)"`
 }
 
 // item represents each file or directory in the listing.
@@ -112,6 +115,11 @@ func run() error {
 	arg.MustParse(&args)
 
 	rootPath := args.Directory
+	if rootPath == "" {
+		// Use current working directory if no directory is provided
+		rootPath = "."
+	}
+
 	info, err := os.Stat(rootPath)
 	if err != nil {
 		return fmt.Errorf("error accessing %s: %v", rootPath, err)
@@ -138,10 +146,11 @@ func run() error {
 		return fmt.Errorf("failed to gather files: %v", err)
 	}
 
+	var selectedFiles []string
+	totalTokenCount := 0
+
 	// If --all flag is set, select all files and output immediately
 	if args.All {
-		var selectedFiles []string
-		totalTokenCount := 0
 
 		// Select all non-directory items
 		for _, it := range items {
@@ -157,68 +166,87 @@ func run() error {
 				}
 			}
 		}
+	} else {
 
-		// Write output directly
+		// Set up initial model
+		ti := textinput.New()
+		ti.Placeholder = "Type to fuzzy-search..."
+		ti.Prompt = "> "
+		ti.CharLimit = 0
+		ti.Focus()
+
+		selected := make(map[string]bool)
+		lookup := make(map[string]int, len(items))
+		for i, it := range items {
+			lookup[it.Path] = i
+		}
+
+		m := model{
+			textInput:       ti,
+			allItems:        items,
+			filteredItems:   items, // default to showing them all
+			selected:        selected,
+			lookup:          lookup,
+			childrenMap:     childrenMap,
+			viewport:        viewport.New(0, 0), // Will be properly sized in tea.WindowSizeMsg
+			ready:           false,
+			totalTokenCount: 0, // Initialize token count
+			tokenEstimator:  tokenEstimator,
+			tokenCache:      make(map[string]int),
+		}
+
+		// Start Bubble Tea. Output TUI stderr so we can pipe the output to stdout
+		p := tea.NewProgram(m, tea.WithOutput(os.Stderr))
+		finalModel, err := p.Run()
+		if err != nil {
+			return err
+		}
+
+		// Get the final state of the model
+		finalM, ok := finalModel.(model)
+		if !ok {
+			return fmt.Errorf("could not get final model state")
+		}
+
+		// Only generate output if we're exiting with confirmation (Enter)
+		if finalM.exitState != ExitStateConfirm {
+			return nil
+		}
+
+		// On Enter, collect all selected items
+		// Convert selected files to slice, sort them, and filter out directories
+
+		for path := range finalM.selected {
+			// Get the index of this path in allItems to check if it's a directory
+			if idx, ok := finalM.lookup[path]; ok && !finalM.allItems[idx].IsDir {
+				selectedFiles = append(selectedFiles, path)
+			}
+		}
+
+		totalTokenCount = finalM.totalTokenCount
+	}
+
+	// Handle output based on --copy flag
+	if args.Copy {
+		// Write to buffer and copy to clipboard
+		var buf bytes.Buffer
+		err = writeOutput(&buf, selectedFiles, rootPath, totalTokenCount, items)
+		if err != nil {
+			return err
+		}
+
+		// Copy buffer contents to clipboard
+		err = clipboard.WriteAll(buf.String())
+		if err != nil {
+			return fmt.Errorf("failed to copy to clipboard: %v", err)
+		}
+
+		fmt.Fprintln(os.Stderr, "Output copied to clipboard")
+		return nil
+	} else {
+		// Write output to stdout
 		return writeOutput(os.Stdout, selectedFiles, rootPath, totalTokenCount, items)
 	}
-
-	// Set up initial model
-	ti := textinput.New()
-	ti.Placeholder = "Type to fuzzy-search..."
-	ti.Prompt = "> "
-	ti.CharLimit = 0
-	ti.Focus()
-
-	selected := make(map[string]bool)
-	lookup := make(map[string]int, len(items))
-	for i, it := range items {
-		lookup[it.Path] = i
-	}
-
-	m := model{
-		textInput:       ti,
-		allItems:        items,
-		filteredItems:   items, // default to showing them all
-		selected:        selected,
-		lookup:          lookup,
-		childrenMap:     childrenMap,
-		viewport:        viewport.New(0, 0), // Will be properly sized in tea.WindowSizeMsg
-		ready:           false,
-		totalTokenCount: 0, // Initialize token count
-		tokenEstimator:  tokenEstimator,
-		tokenCache:      make(map[string]int),
-	}
-
-	// Start Bubble Tea. Output TUI stderr so we can pipe the output to stdout
-	p := tea.NewProgram(m, tea.WithOutput(os.Stderr))
-	finalModel, err := p.Run()
-	if err != nil {
-		return err
-	}
-
-	// Get the final state of the model
-	finalM, ok := finalModel.(model)
-	if !ok {
-		return fmt.Errorf("could not get final model state")
-	}
-
-	// Only generate output if we're exiting with confirmation (Enter)
-	if finalM.exitState != ExitStateConfirm {
-		return nil
-	}
-
-	// On Enter, print all selected items to stdout
-	// Convert selected files to slice, sort them, and filter out directories
-	var selectedFiles []string
-	for path := range m.selected {
-		// Get the index of this path in allItems to check if it's a directory
-		if idx, ok := m.lookup[path]; ok && !m.allItems[idx].IsDir {
-			selectedFiles = append(selectedFiles, path)
-		}
-	}
-
-	// Write output using the abstracted function
-	return writeOutput(os.Stdout, selectedFiles, rootPath, finalM.totalTokenCount, m.allItems)
 }
 
 // generateDirectoryTree creates a tree-like structure for the directory and writes it to the provided writer
