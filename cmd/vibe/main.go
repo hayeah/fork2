@@ -11,6 +11,8 @@ import (
 	"sort"
 	"strings"
 
+	"regexp"
+
 	"github.com/alexflint/go-arg"
 	"github.com/atotto/clipboard"
 	"github.com/charmbracelet/bubbles/textinput"
@@ -20,6 +22,7 @@ import (
 	"github.com/hayeah/fork2"
 	"github.com/hayeah/fork2/ignore"
 	"github.com/pkoukk/tiktoken-go"
+	"github.com/sahilm/fuzzy"
 )
 
 //go:embed repoprompt-diff.md
@@ -31,7 +34,8 @@ type Args struct {
 	All            bool   `arg:"-a,--all" help:"Select all files and output immediately"`
 	Copy           bool   `arg:"-c,--copy" help:"Copy output to clipboard instead of stdout"`
 	Diff           bool   `arg:"--diff" help:"Enable diff output format"`
-	Directory      string `arg:"positional" help:"Directory to pick files from (default: current working directory)"`
+	Select         string `arg:"--select" help:"Select files matching fuzzy pattern and output immediately"`
+	SelectRegex    string `arg:"--select-re" help:"Select files matching regex pattern and output immediately"`
 	Instruction    string `arg:"positional" help:"User instruction or path to instruction file"`
 }
 
@@ -95,11 +99,8 @@ type Runner struct {
 
 // NewRunner creates and initializes a new Runner
 func NewRunner(args Args) (*Runner, error) {
-	rootPath := args.Directory
-	if rootPath == "" {
-		// Use current working directory if no directory is provided
-		rootPath = "."
-	}
+	// Always use current working directory
+	rootPath := "."
 
 	info, err := os.Stat(rootPath)
 	if err != nil {
@@ -155,17 +156,23 @@ func (r *Runner) Run() error {
 // filterFiles handles the file selection phase, either automatically or interactively
 func (r *Runner) filterFiles() ([]string, int, error) {
 	var selectedFiles []string
-	var totalTokenCount int
 	var err error
 
-	// Select files either automatically or interactively
+	// Define selector functions for different selection modes
 	if r.Args.All {
-		selectedFiles, totalTokenCount, err = selectAllFiles(r.Items, r.TokenEstimator)
-		if err != nil {
-			return nil, 0, err
-		}
+		// Select all files
+		selectedFiles, err = selectAllFiles(r.Items)
+	} else if r.Args.Select != "" {
+		// Select files matching fuzzy pattern
+		pattern := r.Args.Select
+		selectedFiles, err = selectFuzzyFiles(r.Items, pattern)
+	} else if r.Args.SelectRegex != "" {
+		// Select files matching regex pattern
+		pattern := r.Args.SelectRegex
+		selectedFiles, err = selectRegexFiles(r.Items, pattern)
 	} else {
-		selectedFiles, totalTokenCount, err = selectFilesInteractively(r.Items, r.ChildrenMap, r.TokenEstimator)
+		// Interactive selection
+		selectedFiles, _, err = selectFilesInteractively(r.Items, r.ChildrenMap, r.TokenEstimator)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -173,6 +180,119 @@ func (r *Runner) filterFiles() ([]string, int, error) {
 		// If no files were selected (user aborted), return early
 		if selectedFiles == nil {
 			return nil, 0, nil
+		}
+	}
+
+	if err != nil {
+		return nil, 0, err
+	}
+
+	// Calculate token count for selected files
+	totalTokenCount, err := calculateTokenCount(selectedFiles, r.TokenEstimator)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	return selectedFiles, totalTokenCount, nil
+}
+
+// selectAllFiles selects all non-directory items
+func selectAllFiles(items []item) ([]string, error) {
+	var selectedFiles []string
+	for _, it := range items {
+		if !it.IsDir {
+			selectedFiles = append(selectedFiles, it.Path)
+		}
+	}
+	return selectedFiles, nil
+}
+
+// selectFuzzyFiles selects files matching a fuzzy pattern using the fuzzy library
+func selectFuzzyFiles(items []item, pattern string) ([]string, error) {
+	// Create a list of file paths (excluding directories)
+	var filePaths []string
+	var fileItems []item
+	for _, it := range items {
+		if !it.IsDir {
+			filePaths = append(filePaths, it.Path)
+			fileItems = append(fileItems, it)
+		}
+	}
+
+	// Use the fuzzy library to find matches
+	matches := fuzzy.Find(pattern, filePaths)
+
+	// Extract the matched files
+	var selectedFiles []string
+	for _, match := range matches {
+		selectedFiles = append(selectedFiles, fileItems[match.Index].Path)
+	}
+
+	return selectedFiles, nil
+}
+
+// selectRegexFiles selects files matching a regex pattern
+func selectRegexFiles(items []item, pattern string) ([]string, error) {
+	regex, err := regexp.Compile(pattern)
+	if err != nil {
+		return nil, fmt.Errorf("invalid regex pattern: %v", err)
+	}
+
+	var selectedFiles []string
+	for _, it := range items {
+		if !it.IsDir && regex.MatchString(it.Path) {
+			selectedFiles = append(selectedFiles, it.Path)
+		}
+	}
+
+	return selectedFiles, nil
+}
+
+// calculateTokenCount calculates the total token count for a list of file paths
+func calculateTokenCount(filePaths []string, tokenEstimator TokenEstimator) (int, error) {
+	totalTokenCount := 0
+
+	for _, path := range filePaths {
+		tokenCount, err := tokenEstimator(path)
+		if err != nil {
+			log.Printf("Error estimating tokens for %s: %v", path, err)
+		} else {
+			totalTokenCount += tokenCount
+		}
+	}
+
+	return totalTokenCount, nil
+}
+
+// selectImmediate selects files based on the provided selector function
+// and returns the selected files and their total token count
+func selectImmediate(items []item, tokenEstimator TokenEstimator, selector func(item item) (bool, error)) ([]string, int, error) {
+	var selectedFiles []string
+	totalTokenCount := 0
+
+	// Select files based on the selector function
+	for _, it := range items {
+		// Skip directories
+		if it.IsDir {
+			continue
+		}
+
+		selected, err := selector(it)
+		if err != nil {
+			return nil, 0, err
+		}
+		if selected {
+			selectedFiles = append(selectedFiles, it.Path)
+		}
+	}
+
+	// Count tokens for the selected files
+	for _, path := range selectedFiles {
+		tokenCount, err := tokenEstimator(path)
+		if err != nil {
+			log.Printf("Error estimating tokens for %s: %v", path, err)
+		} else {
+			totalTokenCount += tokenCount
 		}
 	}
 
@@ -290,30 +410,6 @@ func writeOutput(w io.Writer, selectedFiles []string, rootPath string, totalToke
 	}
 
 	return nil
-}
-
-// selectAllFiles automatically selects all non-directory files in the given items list
-// and returns the selected files and their total token count
-func selectAllFiles(items []item, tokenEstimator TokenEstimator) ([]string, int, error) {
-	var selectedFiles []string
-	totalTokenCount := 0
-
-	// Select all non-directory items
-	for _, it := range items {
-		if !it.IsDir {
-			selectedFiles = append(selectedFiles, it.Path)
-
-			// Count tokens for the file
-			tokenCount, err := tokenEstimator(it.Path)
-			if err != nil {
-				log.Printf("Error estimating tokens for %s: %v", it.Path, err)
-			} else {
-				totalTokenCount += tokenCount
-			}
-		}
-	}
-
-	return selectedFiles, totalTokenCount, nil
 }
 
 // selectFilesInteractively runs the TUI for interactive file selection
@@ -864,9 +960,22 @@ func (m *model) toggleChildren(dirPath string, selected bool) {
 	}
 }
 
-// fuzzyMatch is a trivial substring match ignoring case.
+// fuzzyMatch performs fuzzy matching using the sahilm/fuzzy library.
+// It returns true if the text matches the search term according to fuzzy matching rules.
 func fuzzyMatch(text string, term string) bool {
-	return strings.Contains(strings.ToLower(text), strings.ToLower(term))
+	// If the term is empty, everything matches
+	if term == "" {
+		return true
+	}
+
+	// Create a slice with just the text we want to match
+	haystack := []string{text}
+
+	// Perform the fuzzy match
+	matches := fuzzy.Find(term, haystack)
+
+	// Return true if we got any matches
+	return len(matches) > 0
 }
 
 // recalculateTotalTokenCount updates the total token count based on selected files
