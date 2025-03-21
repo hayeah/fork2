@@ -28,8 +28,14 @@ import (
 //go:embed repoprompt-diff.md
 var diffPrompt string
 
-// Args defines the command-line arguments
+// Args defines the command-line arguments with subcommands
 type Args struct {
+	Ask   *AskCmd   `arg:"subcommand:ask" help:"Select files and generate output"`
+	Merge *MergeCmd `arg:"subcommand:merge" help:"Merge changes"`
+}
+
+// AskCmd contains the arguments for the 'ask' subcommand
+type AskCmd struct {
 	TokenEstimator string `arg:"--token-estimator" help:"Token count estimator to use: 'simple' (size/4) or 'tiktoken'" default:"simple"`
 	All            bool   `arg:"-a,--all" help:"Select all files and output immediately"`
 	Copy           bool   `arg:"-c,--copy" help:"Copy output to clipboard instead of stdout"`
@@ -37,6 +43,11 @@ type Args struct {
 	Select         string `arg:"--select" help:"Select files matching fuzzy pattern and output immediately"`
 	SelectRegex    string `arg:"--select-re" help:"Select files matching regex pattern and output immediately"`
 	Instruction    string `arg:"positional" help:"User instruction or path to instruction file"`
+}
+
+// MergeCmd contains the arguments for the 'merge' subcommand
+type MergeCmd struct {
+	Paste bool `arg:"--paste" help:"Read input from clipboard"`
 }
 
 // item represents each file or directory in the listing.
@@ -88,20 +99,37 @@ type model struct {
 	tokenCache      map[string]int // Cache of token counts to avoid recalculating
 }
 
-// Runner encapsulates the state and behavior for the file picker
+// Runner encapsulates the state and behavior for the CLI
 type Runner struct {
-	Args           Args
+	Args     Args
+	RootPath string
+}
+
+// AskRunner encapsulates the state and behavior for the file picker
+type AskRunner struct {
+	Args           AskCmd
 	RootPath       string
 	Items          []item
 	ChildrenMap    map[string][]string
 	TokenEstimator TokenEstimator
 }
 
-// NewRunner creates and initializes a new Runner
-func NewRunner(args Args) (*Runner, error) {
-	// Always use current working directory
-	rootPath := "."
+// MergeRunner encapsulates the state and behavior for the merge command
+type MergeRunner struct {
+	Args     MergeCmd
+	RootPath string
+}
 
+// NewRunner creates and initializes a new Runner
+func NewRunner(args Args) *Runner {
+	return &Runner{
+		Args:     args,
+		RootPath: ".", // Always use current working directory
+	}
+}
+
+// NewAskRunner creates and initializes a new PickRunner
+func NewAskRunner(cmdArgs AskCmd, rootPath string) (*AskRunner, error) {
 	info, err := os.Stat(rootPath)
 	if err != nil {
 		return nil, fmt.Errorf("error accessing %s: %v", rootPath, err)
@@ -113,24 +141,52 @@ func NewRunner(args Args) (*Runner, error) {
 
 	// Select the token estimator based on the flag
 	var tokenEstimator TokenEstimator
-	switch args.TokenEstimator {
+	switch cmdArgs.TokenEstimator {
 	case "tiktoken":
 		tokenEstimator = estimateTokenCountTiktoken
 	case "simple":
 		tokenEstimator = estimateTokenCountSimple
 	default:
-		return nil, fmt.Errorf("unknown token estimator: %s", args.TokenEstimator)
+		return nil, fmt.Errorf("unknown token estimator: %s", cmdArgs.TokenEstimator)
 	}
 
-	return &Runner{
-		Args:           args,
+	return &AskRunner{
+		Args:           cmdArgs,
 		RootPath:       rootPath,
 		TokenEstimator: tokenEstimator,
 	}, nil
 }
 
-// Run executes the file picking process
+// NewMergeRunner creates and initializes a new MergeRunner
+func NewMergeRunner(cmdArgs MergeCmd, rootPath string) (*MergeRunner, error) {
+	return &MergeRunner{
+		Args:     cmdArgs,
+		RootPath: rootPath,
+	}, nil
+}
+
+// Run dispatches to the appropriate subcommand
 func (r *Runner) Run() error {
+	switch {
+	case r.Args.Ask != nil:
+		pickRunner, err := NewAskRunner(*r.Args.Ask, r.RootPath)
+		if err != nil {
+			return err
+		}
+		return pickRunner.Run()
+	case r.Args.Merge != nil:
+		mergeRunner, err := NewMergeRunner(*r.Args.Merge, r.RootPath)
+		if err != nil {
+			return err
+		}
+		return mergeRunner.Run()
+	default:
+		return fmt.Errorf("no subcommand specified, use 'pick' or 'merge'")
+	}
+}
+
+// Run executes the file picking process
+func (r *AskRunner) Run() error {
 	// Gather files/dirs
 	var err error
 	r.Items, r.ChildrenMap, err = gatherFiles(r.RootPath)
@@ -153,8 +209,19 @@ func (r *Runner) Run() error {
 	return r.handleOutput(selectedFiles, totalTokenCount)
 }
 
+// Run executes the merge process
+func (r *MergeRunner) Run() error {
+	// Stub implementation for the merge command
+	if r.Args.Paste {
+		fmt.Println("Merge command with --paste flag is not yet implemented")
+	} else {
+		fmt.Println("Merge command is not yet implemented")
+	}
+	return nil
+}
+
 // filterFiles handles the file selection phase, either automatically or interactively
-func (r *Runner) filterFiles() ([]string, int, error) {
+func (r *AskRunner) filterFiles() ([]string, int, error) {
 	var selectedFiles []string
 	var err error
 
@@ -264,43 +331,8 @@ func calculateTokenCount(filePaths []string, tokenEstimator TokenEstimator) (int
 	return totalTokenCount, nil
 }
 
-// selectImmediate selects files based on the provided selector function
-// and returns the selected files and their total token count
-func selectImmediate(items []item, tokenEstimator TokenEstimator, selector func(item item) (bool, error)) ([]string, int, error) {
-	var selectedFiles []string
-	totalTokenCount := 0
-
-	// Select files based on the selector function
-	for _, it := range items {
-		// Skip directories
-		if it.IsDir {
-			continue
-		}
-
-		selected, err := selector(it)
-		if err != nil {
-			return nil, 0, err
-		}
-		if selected {
-			selectedFiles = append(selectedFiles, it.Path)
-		}
-	}
-
-	// Count tokens for the selected files
-	for _, path := range selectedFiles {
-		tokenCount, err := tokenEstimator(path)
-		if err != nil {
-			log.Printf("Error estimating tokens for %s: %v", path, err)
-		} else {
-			totalTokenCount += tokenCount
-		}
-	}
-
-	return selectedFiles, totalTokenCount, nil
-}
-
 // handleOutput processes the user instruction and outputs the result
-func (r *Runner) handleOutput(selectedFiles []string, totalTokenCount int) error {
+func (r *AskRunner) handleOutput(selectedFiles []string, totalTokenCount int) error {
 	// Generate user instruction
 	userInstruction, err := generateUserInstruction(r.Args.Instruction)
 	if err != nil {
@@ -333,13 +365,15 @@ func (r *Runner) handleOutput(selectedFiles []string, totalTokenCount int) error
 // main is our entrypoint: parse args and run the application
 func main() {
 	var args Args
-	arg.MustParse(&args)
+	parser := arg.MustParse(&args)
 
-	runner, err := NewRunner(args)
-	if err != nil {
-		log.Fatal(err)
+	// If no subcommand is specified, show help
+	if args.Ask == nil && args.Merge == nil {
+		parser.WriteHelp(os.Stderr)
+		os.Exit(1)
 	}
 
+	runner := NewRunner(args)
 	if err := runner.Run(); err != nil {
 		log.Fatal(err)
 	}
