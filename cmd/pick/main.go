@@ -84,9 +84,143 @@ type model struct {
 	tokenCache      map[string]int // Cache of token counts to avoid recalculating
 }
 
+// Runner encapsulates the state and behavior for the file picker
+type Runner struct {
+	Args           Args
+	RootPath       string
+	Items          []item
+	ChildrenMap    map[string][]string
+	TokenEstimator TokenEstimator
+}
+
+// NewRunner creates and initializes a new Runner
+func NewRunner(args Args) (*Runner, error) {
+	rootPath := args.Directory
+	if rootPath == "" {
+		// Use current working directory if no directory is provided
+		rootPath = "."
+	}
+
+	info, err := os.Stat(rootPath)
+	if err != nil {
+		return nil, fmt.Errorf("error accessing %s: %v", rootPath, err)
+	}
+
+	if !info.IsDir() {
+		return nil, fmt.Errorf("not a directory: %s", rootPath)
+	}
+
+	// Select the token estimator based on the flag
+	var tokenEstimator TokenEstimator
+	switch args.TokenEstimator {
+	case "tiktoken":
+		tokenEstimator = estimateTokenCountTiktoken
+	case "simple":
+		tokenEstimator = estimateTokenCountSimple
+	default:
+		return nil, fmt.Errorf("unknown token estimator: %s", args.TokenEstimator)
+	}
+
+	return &Runner{
+		Args:           args,
+		RootPath:       rootPath,
+		TokenEstimator: tokenEstimator,
+	}, nil
+}
+
+// Run executes the file picking process
+func (r *Runner) Run() error {
+	// Gather files/dirs
+	var err error
+	r.Items, r.ChildrenMap, err = gatherFiles(r.RootPath)
+	if err != nil {
+		return fmt.Errorf("failed to gather files: %v", err)
+	}
+
+	// Filter phase: select files either automatically or interactively
+	selectedFiles, totalTokenCount, err := r.filterFiles()
+	if err != nil {
+		return err
+	}
+
+	// If no files were selected (user aborted), return early
+	if selectedFiles == nil {
+		return nil
+	}
+
+	// Output phase: generate user instruction and handle output
+	return r.handleOutput(selectedFiles, totalTokenCount)
+}
+
+// filterFiles handles the file selection phase, either automatically or interactively
+func (r *Runner) filterFiles() ([]string, int, error) {
+	var selectedFiles []string
+	var totalTokenCount int
+	var err error
+
+	// Select files either automatically or interactively
+	if r.Args.All {
+		selectedFiles, totalTokenCount, err = selectAllFiles(r.Items, r.TokenEstimator)
+		if err != nil {
+			return nil, 0, err
+		}
+	} else {
+		selectedFiles, totalTokenCount, err = selectFilesInteractively(r.Items, r.ChildrenMap, r.TokenEstimator)
+		if err != nil {
+			return nil, 0, err
+		}
+
+		// If no files were selected (user aborted), return early
+		if selectedFiles == nil {
+			return nil, 0, nil
+		}
+	}
+
+	return selectedFiles, totalTokenCount, nil
+}
+
+// handleOutput processes the user instruction and outputs the result
+func (r *Runner) handleOutput(selectedFiles []string, totalTokenCount int) error {
+	// Generate user instruction
+	userInstruction, err := generateUserInstruction(r.Args.Instruction)
+	if err != nil {
+		return err
+	}
+
+	// Handle output based on --copy flag
+	if r.Args.Copy {
+		// Write to buffer and copy to clipboard
+		var buf bytes.Buffer
+		err = writeOutput(&buf, selectedFiles, r.RootPath, totalTokenCount, r.Items, r.Args.Diff, userInstruction)
+		if err != nil {
+			return err
+		}
+
+		// Copy buffer contents to clipboard
+		err = clipboard.WriteAll(buf.String())
+		if err != nil {
+			return fmt.Errorf("failed to copy to clipboard: %v", err)
+		}
+
+		fmt.Fprintln(os.Stderr, "Output copied to clipboard")
+		return nil
+	} else {
+		// Write output to stdout
+		return writeOutput(os.Stdout, selectedFiles, r.RootPath, totalTokenCount, r.Items, r.Args.Diff, userInstruction)
+	}
+}
+
 // main is our entrypoint: parse args and run the application
 func main() {
-	if err := run(); err != nil {
+	var args Args
+	arg.MustParse(&args)
+
+	runner, err := NewRunner(args)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	if err := runner.Run(); err != nil {
 		log.Fatal(err)
 	}
 }
@@ -156,94 +290,6 @@ func writeOutput(w io.Writer, selectedFiles []string, rootPath string, totalToke
 	}
 
 	return nil
-}
-
-// run parses args, collects the files, and runs the Bubble Tea program
-func run() error {
-	// Parse command-line arguments
-	var args Args
-	arg.MustParse(&args)
-
-	rootPath := args.Directory
-	if rootPath == "" {
-		// Use current working directory if no directory is provided
-		rootPath = "."
-	}
-
-	info, err := os.Stat(rootPath)
-	if err != nil {
-		return fmt.Errorf("error accessing %s: %v", rootPath, err)
-	}
-
-	if !info.IsDir() {
-		return fmt.Errorf("not a directory: %s", rootPath)
-	}
-
-	// Select the token estimator based on the flag
-	var tokenEstimator TokenEstimator
-	switch args.TokenEstimator {
-	case "tiktoken":
-		tokenEstimator = estimateTokenCountTiktoken
-	case "simple":
-		tokenEstimator = estimateTokenCountSimple
-	default:
-		return fmt.Errorf("unknown token estimator: %s", args.TokenEstimator)
-	}
-
-	// Gather files/dirs
-	items, childrenMap, err := gatherFiles(rootPath)
-	if err != nil {
-		return fmt.Errorf("failed to gather files: %v", err)
-	}
-
-	var selectedFiles []string
-	var totalTokenCount int
-
-	// Select files either automatically or interactively
-	if args.All {
-		selectedFiles, totalTokenCount, err = selectAllFiles(items, tokenEstimator)
-		if err != nil {
-			return err
-		}
-	} else {
-		selectedFiles, totalTokenCount, err = selectFilesInteractively(items, childrenMap, tokenEstimator)
-		if err != nil {
-			return err
-		}
-
-		// If no files were selected (user aborted), return early
-		if selectedFiles == nil {
-			return nil
-		}
-	}
-
-	// Generate user instruction
-	userInstruction, err := generateUserInstruction(args.Instruction)
-	if err != nil {
-		return err
-	}
-
-	// Handle output based on --copy flag
-	if args.Copy {
-		// Write to buffer and copy to clipboard
-		var buf bytes.Buffer
-		err = writeOutput(&buf, selectedFiles, rootPath, totalTokenCount, items, args.Diff, userInstruction)
-		if err != nil {
-			return err
-		}
-
-		// Copy buffer contents to clipboard
-		err = clipboard.WriteAll(buf.String())
-		if err != nil {
-			return fmt.Errorf("failed to copy to clipboard: %v", err)
-		}
-
-		fmt.Fprintln(os.Stderr, "Output copied to clipboard")
-		return nil
-	} else {
-		// Write output to stdout
-		return writeOutput(os.Stdout, selectedFiles, rootPath, totalTokenCount, items, args.Diff, userInstruction)
-	}
 }
 
 // selectAllFiles automatically selects all non-directory files in the given items list
