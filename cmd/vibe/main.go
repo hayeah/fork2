@@ -427,9 +427,6 @@ func writeOutput(w io.Writer, selectedFiles []string, rootPath string, totalToke
 		return fmt.Errorf("failed to write file map: %v", err)
 	}
 
-	// Print total token count to stderr
-	fmt.Fprintf(os.Stderr, "Total tokens: %d\n", totalTokenCount)
-
 	// Include user instruction if provided
 	if userInstruction != "" {
 		_, err := fmt.Fprintln(w, userInstruction)
@@ -442,6 +439,9 @@ func writeOutput(w io.Writer, selectedFiles []string, rootPath string, totalToke
 			return fmt.Errorf("failed to write newline: %v", err)
 		}
 	}
+
+	// Print total token count to stderr
+	fmt.Fprintf(os.Stderr, "Total tokens: %d\n", totalTokenCount)
 
 	return nil
 }
