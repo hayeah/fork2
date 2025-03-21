@@ -195,7 +195,7 @@ func (r *AskRunner) Run() error {
 	}
 
 	// Filter phase: select files either automatically or interactively
-	selectedFiles, totalTokenCount, err := r.filterFiles()
+	selectedFiles, err := r.filterFiles()
 	if err != nil {
 		return err
 	}
@@ -206,7 +206,20 @@ func (r *AskRunner) Run() error {
 	}
 
 	// Output phase: generate user instruction and handle output
-	return r.handleOutput(selectedFiles, totalTokenCount)
+	if err := r.handleOutput(selectedFiles); err != nil {
+		return err
+	}
+
+	// Calculate and report token count after output is handled
+	totalTokenCount, err := calculateTokenCount(selectedFiles, r.TokenEstimator)
+	if err != nil {
+		return fmt.Errorf("error calculating token count: %v", err)
+	}
+
+	// Print total token count to stderr
+	fmt.Fprintf(os.Stderr, "Total tokens: %d\n", totalTokenCount)
+
+	return nil
 }
 
 // Run executes the merge process
@@ -221,7 +234,7 @@ func (r *MergeRunner) Run() error {
 }
 
 // filterFiles handles the file selection phase, either automatically or interactively
-func (r *AskRunner) filterFiles() ([]string, int, error) {
+func (r *AskRunner) filterFiles() ([]string, error) {
 	var selectedFiles []string
 	var err error
 
@@ -241,26 +254,20 @@ func (r *AskRunner) filterFiles() ([]string, int, error) {
 		// Interactive selection
 		selectedFiles, _, err = selectFilesInteractively(r.Items, r.ChildrenMap, r.TokenEstimator)
 		if err != nil {
-			return nil, 0, err
+			return nil, err
 		}
 
 		// If no files were selected (user aborted), return early
 		if selectedFiles == nil {
-			return nil, 0, nil
+			return nil, nil
 		}
 	}
 
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 
-	// Calculate token count for selected files
-	totalTokenCount, err := calculateTokenCount(selectedFiles, r.TokenEstimator)
-	if err != nil {
-		return nil, 0, err
-	}
-
-	return selectedFiles, totalTokenCount, nil
+	return selectedFiles, nil
 }
 
 // selectAllFiles selects all non-directory items
@@ -332,12 +339,12 @@ func calculateTokenCount(filePaths []string, tokenEstimator TokenEstimator) (int
 }
 
 // handleOutput processes the user instruction and outputs the result
-func (r *AskRunner) handleOutput(selectedFiles []string, totalTokenCount int) error {
+func (r *AskRunner) handleOutput(selectedFiles []string) error {
 	// Handle output based on --copy flag
 	if r.Args.Copy {
 		// Write to buffer and copy to clipboard
 		var buf bytes.Buffer
-		err := r.writeOutput(&buf, selectedFiles, totalTokenCount)
+		err := r.writeOutput(&buf, selectedFiles)
 		if err != nil {
 			return err
 		}
@@ -352,7 +359,7 @@ func (r *AskRunner) handleOutput(selectedFiles []string, totalTokenCount int) er
 		return nil
 	} else {
 		// Write output to stdout
-		return r.writeOutput(os.Stdout, selectedFiles, totalTokenCount)
+		return r.writeOutput(os.Stdout, selectedFiles)
 	}
 }
 
@@ -398,7 +405,7 @@ func (r *AskRunner) generateUserInstruction() (string, error) {
 }
 
 // writeOutput outputs the directory tree, file map, and token count
-func (r *AskRunner) writeOutput(w io.Writer, selectedFiles []string, totalTokenCount int) error {
+func (r *AskRunner) writeOutput(w io.Writer, selectedFiles []string) error {
 	// Sort the selected files
 	sort.Strings(selectedFiles)
 
@@ -440,9 +447,6 @@ func (r *AskRunner) writeOutput(w io.Writer, selectedFiles []string, totalTokenC
 			return fmt.Errorf("failed to write newline: %v", err)
 		}
 	}
-
-	// Print total token count to stderr
-	fmt.Fprintf(os.Stderr, "Total tokens: %d\n", totalTokenCount)
 
 	// Add the reminder
 	_, err = fmt.Fprintln(w, "IMPORTANT: Do not just write me the code. output response in format according to instructions.")
