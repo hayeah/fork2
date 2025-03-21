@@ -333,17 +333,11 @@ func calculateTokenCount(filePaths []string, tokenEstimator TokenEstimator) (int
 
 // handleOutput processes the user instruction and outputs the result
 func (r *AskRunner) handleOutput(selectedFiles []string, totalTokenCount int) error {
-	// Generate user instruction
-	userInstruction, err := generateUserInstruction(r.Args.Instruction)
-	if err != nil {
-		return err
-	}
-
 	// Handle output based on --copy flag
 	if r.Args.Copy {
 		// Write to buffer and copy to clipboard
 		var buf bytes.Buffer
-		err = writeOutput(&buf, selectedFiles, r.RootPath, totalTokenCount, r.Items, r.Args.Diff, userInstruction)
+		err := r.writeOutput(&buf, selectedFiles, totalTokenCount)
 		if err != nil {
 			return err
 		}
@@ -358,7 +352,7 @@ func (r *AskRunner) handleOutput(selectedFiles []string, totalTokenCount int) er
 		return nil
 	} else {
 		// Write output to stdout
-		return writeOutput(os.Stdout, selectedFiles, r.RootPath, totalTokenCount, r.Items, r.Args.Diff, userInstruction)
+		return r.writeOutput(os.Stdout, selectedFiles, totalTokenCount)
 	}
 }
 
@@ -382,7 +376,8 @@ func main() {
 // generateUserInstruction creates the user instruction string
 // If instructionArg is a readable file, it reads the content
 // Otherwise, it uses the instructionArg as the instruction
-func generateUserInstruction(instructionArg string) (string, error) {
+func (r *AskRunner) generateUserInstruction() (string, error) {
+	instructionArg := r.Args.Instruction
 	if instructionArg == "" {
 		return "", nil
 	}
@@ -403,12 +398,12 @@ func generateUserInstruction(instructionArg string) (string, error) {
 }
 
 // writeOutput outputs the directory tree, file map, and token count
-func writeOutput(w io.Writer, selectedFiles []string, rootPath string, totalTokenCount int, items []item, enableDiff bool, userInstruction string) error {
+func (r *AskRunner) writeOutput(w io.Writer, selectedFiles []string, totalTokenCount int) error {
 	// Sort the selected files
 	sort.Strings(selectedFiles)
 
 	// If diff output is enabled, include the diff prompt at the beginning
-	if enableDiff {
+	if r.Args.Diff {
 		_, err := fmt.Fprint(w, diffPrompt)
 		if err != nil {
 			return fmt.Errorf("failed to write diff prompt: %v", err)
@@ -416,20 +411,26 @@ func writeOutput(w io.Writer, selectedFiles []string, rootPath string, totalToke
 	}
 
 	// Generate directory tree structure
-	err := generateDirectoryTree(w, rootPath, items)
+	err := generateDirectoryTree(w, r.RootPath, r.Items)
 	if err != nil {
 		return fmt.Errorf("failed to generate directory tree: %v", err)
 	}
 
 	// Write the file map of selected files
-	err = fork2.WriteFileMap(w, selectedFiles, rootPath)
+	err = fork2.WriteFileMap(w, selectedFiles, r.RootPath)
 	if err != nil {
 		return fmt.Errorf("failed to write file map: %v", err)
 	}
 
-	// Include user instruction if provided
-	if userInstruction != "" {
-		_, err := fmt.Fprintln(w, userInstruction)
+	// Generate and include user instruction if provided
+	if r.Args.Instruction != "" {
+		userInstruction, err := r.generateUserInstruction()
+		if err != nil {
+			return err
+		}
+
+		// Write the user instruction
+		_, err = fmt.Fprintln(w, userInstruction)
 		if err != nil {
 			return fmt.Errorf("failed to write user instruction: %v", err)
 		}
@@ -442,6 +443,12 @@ func writeOutput(w io.Writer, selectedFiles []string, rootPath string, totalToke
 
 	// Print total token count to stderr
 	fmt.Fprintf(os.Stderr, "Total tokens: %d\n", totalTokenCount)
+
+	// Add the reminder
+	_, err = fmt.Fprintln(w, "IMPORTANT: Do not just write me the code. output response in format according to instructions.")
+	if err != nil {
+		return fmt.Errorf("failed to write reminder: %v", err)
+	}
 
 	return nil
 }
