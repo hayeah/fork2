@@ -18,6 +18,9 @@ import (
 //go:embed repoprompt-diff.md
 var diffPrompt string
 
+//go:embed diff-heredoc.md
+var diffHeredocPrompt string
+
 // AskRunner encapsulates the state and behavior for the file picker
 type AskRunner struct {
 	Args           AskCmd
@@ -188,11 +191,11 @@ func (r *AskRunner) generateUserInstruction() (string, error) {
 		if err != nil {
 			return "", fmt.Errorf("failed to read instruction file: %v", err)
 		}
-		return "\n<user_instructions>\n" + string(content) + "\n</user_instructions>", nil
+		return "\n# User Instructions\n" + string(content) + "\n\n", nil
 	}
 
 	// It's not a file, use as-is
-	return "\n<user_instructions>\n" + instructionArg + "\n</user_instructions>", nil
+	return "\n# User Instructions\n" + instructionArg + "\n\n", nil
 }
 
 // writeOutput outputs the directory tree, file map, and token count
@@ -202,7 +205,8 @@ func (r *AskRunner) writeOutput(w io.Writer, selectedFiles []string) error {
 
 	// If diff output is enabled, include the diff prompt at the beginning
 	if r.Args.Diff {
-		_, err := fmt.Fprint(w, diffPrompt)
+		_, err := fmt.Fprint(w, diffHeredocPrompt)
+		// _, err := fmt.Fprint(w, diffPrompt)
 		if err != nil {
 			return fmt.Errorf("failed to write diff prompt: %v", err)
 		}
