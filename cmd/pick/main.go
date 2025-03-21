@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	_ "embed"
 	"fmt"
 	"io"
 	"log"
@@ -9,7 +10,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	_ "embed"
 
 	"github.com/alexflint/go-arg"
 	"github.com/atotto/clipboard"
@@ -32,6 +32,7 @@ type Args struct {
 	Copy           bool   `arg:"-c,--copy" help:"Copy output to clipboard instead of stdout"`
 	Diff           bool   `arg:"--diff" help:"Enable diff output format"`
 	Directory      string `arg:"positional" help:"Directory to pick files from (default: current working directory)"`
+	Instruction    string `arg:"positional" help:"User instruction or path to instruction file"`
 }
 
 // item represents each file or directory in the listing.
@@ -90,8 +91,31 @@ func main() {
 	}
 }
 
+// generateUserInstruction creates the user instruction string
+// If instructionArg is a readable file, it reads the content
+// Otherwise, it uses the instructionArg as the instruction
+func generateUserInstruction(instructionArg string) (string, error) {
+	if instructionArg == "" {
+		return "", nil
+	}
+
+	// Check if the instruction is a file path
+	fileInfo, err := os.Stat(instructionArg)
+	if err == nil && !fileInfo.IsDir() {
+		// It's a file, read its content
+		content, err := os.ReadFile(instructionArg)
+		if err != nil {
+			return "", fmt.Errorf("failed to read instruction file: %v", err)
+		}
+		return "\n<user_instructions>\n" + string(content) + "\n</user_instructions>", nil
+	}
+
+	// It's not a file, use as-is
+	return "\n<user_instructions>\n" + instructionArg + "\n</user_instructions>", nil
+}
+
 // writeOutput outputs the directory tree, file map, and token count
-func writeOutput(w io.Writer, selectedFiles []string, rootPath string, totalTokenCount int, items []item, enableDiff bool) error {
+func writeOutput(w io.Writer, selectedFiles []string, rootPath string, totalTokenCount int, items []item, enableDiff bool, userInstruction string) error {
 	// Sort the selected files
 	sort.Strings(selectedFiles)
 
@@ -117,6 +141,19 @@ func writeOutput(w io.Writer, selectedFiles []string, rootPath string, totalToke
 
 	// Print total token count to stderr
 	fmt.Fprintf(os.Stderr, "Total tokens: %d\n", totalTokenCount)
+
+	// Include user instruction if provided
+	if userInstruction != "" {
+		_, err := fmt.Fprintln(w, userInstruction)
+		if err != nil {
+			return fmt.Errorf("failed to write user instruction: %v", err)
+		}
+		// Add a blank line after the instruction
+		_, err = fmt.Fprintln(w)
+		if err != nil {
+			return fmt.Errorf("failed to write newline: %v", err)
+		}
+	}
 
 	return nil
 }
@@ -180,11 +217,17 @@ func run() error {
 		}
 	}
 
+	// Generate user instruction
+	userInstruction, err := generateUserInstruction(args.Instruction)
+	if err != nil {
+		return err
+	}
+
 	// Handle output based on --copy flag
 	if args.Copy {
 		// Write to buffer and copy to clipboard
 		var buf bytes.Buffer
-		err = writeOutput(&buf, selectedFiles, rootPath, totalTokenCount, items, args.Diff)
+		err = writeOutput(&buf, selectedFiles, rootPath, totalTokenCount, items, args.Diff, userInstruction)
 		if err != nil {
 			return err
 		}
@@ -199,7 +242,7 @@ func run() error {
 		return nil
 	} else {
 		// Write output to stdout
-		return writeOutput(os.Stdout, selectedFiles, rootPath, totalTokenCount, items, args.Diff)
+		return writeOutput(os.Stdout, selectedFiles, rootPath, totalTokenCount, items, args.Diff, userInstruction)
 	}
 }
 
