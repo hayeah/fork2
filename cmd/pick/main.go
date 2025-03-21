@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	_ "embed"
 
 	"github.com/alexflint/go-arg"
 	"github.com/atotto/clipboard"
@@ -21,11 +22,15 @@ import (
 	"github.com/pkoukk/tiktoken-go"
 )
 
+//go:embed repoprompt-diff.md
+var diffPrompt string
+
 // Args defines the command-line arguments
 type Args struct {
 	TokenEstimator string `arg:"--token-estimator" help:"Token count estimator to use: 'simple' (size/4) or 'tiktoken'" default:"simple"`
 	All            bool   `arg:"-a,--all" help:"Select all files and output immediately"`
 	Copy           bool   `arg:"-c,--copy" help:"Copy output to clipboard instead of stdout"`
+	Diff           bool   `arg:"--diff" help:"Enable diff output format"`
 	Directory      string `arg:"positional" help:"Directory to pick files from (default: current working directory)"`
 }
 
@@ -86,9 +91,17 @@ func main() {
 }
 
 // writeOutput outputs the directory tree, file map, and token count
-func writeOutput(w io.Writer, selectedFiles []string, rootPath string, totalTokenCount int, items []item) error {
+func writeOutput(w io.Writer, selectedFiles []string, rootPath string, totalTokenCount int, items []item, enableDiff bool) error {
 	// Sort the selected files
 	sort.Strings(selectedFiles)
+
+	// If diff output is enabled, include the diff prompt at the beginning
+	if enableDiff {
+		_, err := fmt.Fprint(w, diffPrompt)
+		if err != nil {
+			return fmt.Errorf("failed to write diff prompt: %v", err)
+		}
+	}
 
 	// Generate directory tree structure
 	err := generateDirectoryTree(w, rootPath, items)
@@ -171,7 +184,7 @@ func run() error {
 	if args.Copy {
 		// Write to buffer and copy to clipboard
 		var buf bytes.Buffer
-		err = writeOutput(&buf, selectedFiles, rootPath, totalTokenCount, items)
+		err = writeOutput(&buf, selectedFiles, rootPath, totalTokenCount, items, args.Diff)
 		if err != nil {
 			return err
 		}
@@ -186,7 +199,7 @@ func run() error {
 		return nil
 	} else {
 		// Write output to stdout
-		return writeOutput(os.Stdout, selectedFiles, rootPath, totalTokenCount, items)
+		return writeOutput(os.Stdout, selectedFiles, rootPath, totalTokenCount, items, args.Diff)
 	}
 }
 
