@@ -14,17 +14,6 @@ type Args struct {
 	Merge *MergeCmd `arg:"subcommand:merge" help:"Merge changes"`
 }
 
-// AskCmd contains the arguments for the 'ask' subcommand
-type AskCmd struct {
-	TokenEstimator string `arg:"--token-estimator" help:"Token count estimator to use: 'simple' (size/4) or 'tiktoken'" default:"simple"`
-	All            bool   `arg:"-a,--all" help:"Select all files and output immediately"`
-	Copy           bool   `arg:"-c,--copy" help:"Copy output to clipboard instead of stdout"`
-	Diff           bool   `arg:"--diff" help:"Enable diff output format"`
-	Select         string `arg:"--select" help:"Select files matching fuzzy pattern and output immediately"`
-	SelectRegex    string `arg:"--select-re" help:"Select files matching regex pattern and output immediately"`
-	Instruction    string `arg:"positional" help:"User instruction or path to instruction file"`
-}
-
 // item represents each file or directory in the listing.
 type item struct {
 	Path       string
