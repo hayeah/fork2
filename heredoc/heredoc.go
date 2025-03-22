@@ -18,6 +18,15 @@ type Command struct {
 	Params  []Param
 }
 
+// Description returns the "description" param payload if present, else "".
+func (cmd *Command) Description() string {
+	descParam := cmd.GetParam("description")
+	if descParam == nil {
+		return ""
+	}
+	return descParam.Payload
+}
+
 // Param represents a parameter in a command
 type Param struct {
 	LineNo  int    // Line number where the parameter starts

@@ -6,93 +6,82 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/hayeah/fork2/heredoc"
 )
 
-// Action is an interface for operations that can be verified and applied
+// Action is an interface for operations that can be verified and applied.
 type Action interface {
-	// Verify checks if the action can be performed
+	Description() string
 	Verify() error
-	// Apply performs the action
 	Apply() error
 }
 
-// Modify represents a search and replace action on a file
-// It handles potentially malformed XML files by using string operations
-// rather than XML parsing, which makes it more robust for code editing tasks.
+// Modify represents a search-and-replace action on a file.
 type Modify struct {
-	file    string // path to the file to modify
-	search  string // text to search for
-	replace string // text to replace with
-	// We don't parse XML directly since the input might be malformed,
-	// and we want to preserve exact formatting
+	*heredoc.Command
 }
 
-// NewModify creates a new Modify action
-// file: path to the file to modify
-// search: text pattern to search for
-// replace: text to replace the search pattern with
-func NewModify(file, search, replace string) *Modify {
-	return &Modify{
-		file:    file,
-		search:  search,
-		replace: replace,
-	}
+func (m *Modify) Description() string {
+	return m.Command.Description()
 }
 
-// Verify checks if the file exists and contains the search string
 func (m *Modify) Verify() error {
-	// Check if file exists
-	_, err := os.Stat(m.file)
+	file := m.Payload
+	if file == "" {
+		return fmt.Errorf("file does not exist: empty file path in modify command")
+	}
+
+	searchParam := m.GetParam("search")
+	if searchParam == nil || searchParam.Payload == "" {
+		return errors.New("search string cannot be empty")
+	}
+
+	_, err := os.Stat(file)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return fmt.Errorf("file does not exist: %s", m.file)
+			return fmt.Errorf("file does not exist: %s", file)
 		}
 		return fmt.Errorf("failed to access file: %w", err)
 	}
 
-	// Check if search and replace strings are provided
-	if m.search == "" {
-		return errors.New("search string cannot be empty")
-	}
-
-	// Read file content
-	content, err := os.ReadFile(m.file)
+	content, err := os.ReadFile(file)
 	if err != nil {
 		return fmt.Errorf("failed to read file: %w", err)
 	}
 
-	// Check if search string exists in file
-	if !strings.Contains(string(content), m.search) {
+	if !strings.Contains(string(content), searchParam.Payload) {
 		return errors.New("search string not found in file")
 	}
 
 	return nil
 }
 
-// Apply performs the search and replace operation on the file
 func (m *Modify) Apply() error {
-	// First verify that the operation can be performed
 	if err := m.Verify(); err != nil {
 		return fmt.Errorf("verification failed: %w", err)
 	}
 
-	// Read file content
-	content, err := os.ReadFile(m.file)
+	file := m.Payload
+	search := m.GetParam("search").Payload
+
+	replaceParam := m.GetParam("replace")
+	if replaceParam == nil {
+		return fmt.Errorf("replace parameter is required for modify command")
+	}
+	replace := replaceParam.Payload
+
+	content, err := os.ReadFile(file)
 	if err != nil {
 		return fmt.Errorf("failed to read file: %w", err)
 	}
 
-	// Perform search and replace
-	originalContent := string(content)
-	newContent := strings.Replace(originalContent, m.search, m.replace, -1)
-	
-	// Check if any replacements were made
-	if originalContent == newContent {
+	newContent := strings.Replace(string(content), search, replace, -1)
+	if newContent == string(content) {
 		return errors.New("no replacements were made")
 	}
 
-	// Write back to file
-	err = os.WriteFile(m.file, []byte(newContent), 0644)
+	err = os.WriteFile(file, []byte(newContent), 0644)
 	if err != nil {
 		return fmt.Errorf("failed to write file: %w", err)
 	}
@@ -100,50 +89,46 @@ func (m *Modify) Apply() error {
 	return nil
 }
 
-// Rewrite represents a complete file rewrite action
+// Rewrite represents a complete file rewrite action.
 type Rewrite struct {
-	file    string // path to the file to rewrite
-	content string // new content for the file
+	*heredoc.Command
 }
 
-// NewRewrite creates a new Rewrite action
-// file: path to the file to rewrite
-// content: new content for the file
-func NewRewrite(file, content string) *Rewrite {
-	return &Rewrite{
-		file:    file,
-		content: content,
-	}
+func (r *Rewrite) Description() string {
+	return r.Command.Description()
 }
 
-// Verify checks if the file exists and can be rewritten
 func (r *Rewrite) Verify() error {
-	// Check if file exists
-	_, err := os.Stat(r.file)
+	file := r.Payload
+	if file == "" {
+		return fmt.Errorf("file path is required for rewrite command")
+	}
+
+	_, err := os.Stat(file)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return fmt.Errorf("file does not exist: %s", r.file)
+			return fmt.Errorf("file does not exist: %s", file)
 		}
 		return fmt.Errorf("failed to access file: %w", err)
 	}
 
-	// Check if content is provided
-	if r.content == "" {
+	contentParam := r.GetParam("content")
+	if contentParam == nil || contentParam.Payload == "" {
 		return errors.New("content cannot be empty")
 	}
 
 	return nil
 }
 
-// Apply performs the complete file rewrite
 func (r *Rewrite) Apply() error {
-	// First verify that the operation can be performed
 	if err := r.Verify(); err != nil {
 		return fmt.Errorf("verification failed: %w", err)
 	}
 
-	// Write new content to file
-	err := os.WriteFile(r.file, []byte(r.content), 0644)
+	file := r.Payload
+	newContent := r.GetParam("content").Payload
+
+	err := os.WriteFile(file, []byte(newContent), 0644)
 	if err != nil {
 		return fmt.Errorf("failed to write file: %w", err)
 	}
@@ -151,39 +136,33 @@ func (r *Rewrite) Apply() error {
 	return nil
 }
 
-// Create represents a file creation action
+// Create represents a file creation action.
 type Create struct {
-	file    string // path to the file to create
-	content string // content for the new file
+	*heredoc.Command
 }
 
-// NewCreate creates a new Create action
-// file: path to the file to create
-// content: content for the new file
-func NewCreate(file, content string) *Create {
-	return &Create{
-		file:    file,
-		content: content,
-	}
+func (c *Create) Description() string {
+	return c.Command.Description()
 }
 
-// Verify checks if the file can be created
 func (c *Create) Verify() error {
-	// Check if file already exists
-	_, err := os.Stat(c.file)
+	file := c.Payload
+	if file == "" {
+		return fmt.Errorf("file path is required for create command")
+	}
+
+	_, err := os.Stat(file)
 	if err == nil {
-		return fmt.Errorf("file already exists: %s", c.file)
+		return fmt.Errorf("file already exists: %s", file)
 	}
 	if !os.IsNotExist(err) {
 		return fmt.Errorf("failed to check file existence: %w", err)
 	}
 
-	// Check if the directory exists
-	dir := filepath.Dir(c.file)
+	dir := filepath.Dir(file)
 	_, err = os.Stat(dir)
 	if err != nil {
 		if os.IsNotExist(err) {
-			// Try to create the directory
 			if err := os.MkdirAll(dir, 0755); err != nil {
 				return fmt.Errorf("failed to create directory %s: %w", dir, err)
 			}
@@ -195,15 +174,18 @@ func (c *Create) Verify() error {
 	return nil
 }
 
-// Apply performs the file creation
 func (c *Create) Apply() error {
-	// First verify that the operation can be performed
 	if err := c.Verify(); err != nil {
 		return fmt.Errorf("verification failed: %w", err)
 	}
 
-	// Write content to new file
-	err := os.WriteFile(c.file, []byte(c.content), 0644)
+	contentParam := c.GetParam("content")
+	if contentParam == nil {
+		return fmt.Errorf("content parameter is required for create command")
+	}
+
+	file := c.Payload
+	err := os.WriteFile(file, []byte(contentParam.Payload), 0644)
 	if err != nil {
 		return fmt.Errorf("failed to create file: %w", err)
 	}
@@ -211,26 +193,25 @@ func (c *Create) Apply() error {
 	return nil
 }
 
-// Delete represents a file deletion action
+// Delete represents a file deletion action.
 type Delete struct {
-	file string // path to the file to delete
+	*heredoc.Command
 }
 
-// NewDelete creates a new Delete action
-// file: path to the file to delete
-func NewDelete(file string) *Delete {
-	return &Delete{
-		file: file,
-	}
+func (d *Delete) Description() string {
+	return d.Command.Description()
 }
 
-// Verify checks if the file exists and can be deleted
 func (d *Delete) Verify() error {
-	// Check if file exists
-	_, err := os.Stat(d.file)
+	file := d.Payload
+	if file == "" {
+		return fmt.Errorf("file path is required for delete command")
+	}
+
+	_, err := os.Stat(file)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return fmt.Errorf("file does not exist: %s", d.file)
+			return fmt.Errorf("file does not exist: %s", file)
 		}
 		return fmt.Errorf("failed to access file: %w", err)
 	}
@@ -238,15 +219,13 @@ func (d *Delete) Verify() error {
 	return nil
 }
 
-// Apply performs the file deletion
 func (d *Delete) Apply() error {
-	// First verify that the operation can be performed
 	if err := d.Verify(); err != nil {
 		return fmt.Errorf("verification failed: %w", err)
 	}
 
-	// Delete the file
-	err := os.Remove(d.file)
+	file := d.Payload
+	err := os.Remove(file)
 	if err != nil {
 		return fmt.Errorf("failed to delete file: %w", err)
 	}

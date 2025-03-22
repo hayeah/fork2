@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/hayeah/fork2/heredoc"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -13,6 +14,7 @@ func TestModify(t *testing.T) {
 
 	// Create a temporary test file
 	tempDir := t.TempDir()
+
 	testFile := filepath.Join(tempDir, "test.txt")
 
 	// Sample content that mimics the Swift struct in the example
@@ -26,7 +28,7 @@ func TestModify(t *testing.T) {
 	err := os.WriteFile(testFile, []byte(content), 0644)
 	assert.NoError(err, "Failed to create test file")
 
-	// Create a Modify action
+	// Prepare a command
 	search := `struct User {
   let id: UUID
   var name: String
@@ -39,14 +41,27 @@ func TestModify(t *testing.T) {
 }
 `
 
-	modify := NewModify(testFile, search, replace)
+	modifyCmd := &heredoc.Command{
+		Name:    "modify",
+		Payload: testFile,
+		Params: []heredoc.Param{
+			{Name: "search", Payload: search},
+			{Name: "replace", Payload: replace},
+		},
+	}
+
+	action, err := CommandToAction(modifyCmd)
+	assert.NoError(err, "Should build a Modify action from the command")
+
+	modifyAction, ok := action.(*Modify)
+	assert.True(ok, "Should be a Modify action")
 
 	// Test Verify
-	err = modify.Verify()
+	err = modifyAction.Verify()
 	assert.NoError(err, "Verify should succeed with valid inputs")
 
 	// Test Apply
-	err = modify.Apply()
+	err = modifyAction.Apply()
 	assert.NoError(err, "Apply should succeed with valid inputs")
 
 	// Read the modified file
@@ -57,30 +72,65 @@ func TestModify(t *testing.T) {
 	assert.Equal(replace, string(modifiedContent), "File content should match the replacement text")
 
 	// Test Verify with non-existent file
-	nonExistentModify := NewModify("non-existent-file.txt", search, replace)
-	err = nonExistentModify.Verify()
+	nonExistentCmd := &heredoc.Command{
+		Name:    "modify",
+		Payload: "non-existent-file.txt",
+		Params: []heredoc.Param{
+			{Name: "search", Payload: search},
+			{Name: "replace", Payload: replace},
+		},
+	}
+	nonExistentAction, err := CommandToAction(nonExistentCmd)
+	assert.NoError(err, "CommandToAction should succeed building the Modify action")
+	err = nonExistentAction.Verify()
 	assert.Error(err, "Verify should fail with non-existent file")
 	assert.Contains(err.Error(), "file does not exist", "Error should mention file does not exist")
 
 	// Test Verify with content not found
-	wrongSearchModify := NewModify(testFile, "wrong search content", replace)
-	err = wrongSearchModify.Verify()
+	wrongSearchCmd := &heredoc.Command{
+		Name:    "modify",
+		Payload: testFile,
+		Params: []heredoc.Param{
+			{Name: "search", Payload: "wrong search content"},
+			{Name: "replace", Payload: replace},
+		},
+	}
+	wrongSearchAction, err := CommandToAction(wrongSearchCmd)
+	assert.NoError(err, "CommandToAction should build the Modify action")
+	err = wrongSearchAction.Verify()
 	assert.Error(err, "Verify should fail when search string not found")
 	assert.Contains(err.Error(), "search string not found", "Error should mention search string not found")
 
 	// Test Verify with empty search string
-	emptySearchModify := NewModify(testFile, "", replace)
-	err = emptySearchModify.Verify()
+	emptySearchCmd := &heredoc.Command{
+		Name:    "modify",
+		Payload: testFile,
+		Params: []heredoc.Param{
+			{Name: "search", Payload: ""},
+			{Name: "replace", Payload: replace},
+		},
+	}
+	emptySearchAction, err := CommandToAction(emptySearchCmd)
+	assert.NoError(err)
+	err = emptySearchAction.Verify()
 	assert.Error(err, "Verify should fail with empty search string")
 	assert.Contains(err.Error(), "search string cannot be empty", "Error should mention search string cannot be empty")
 
 	// Test Apply with no replacements (should fail)
-	// First, create a file with content that doesn't match the search pattern
 	noMatchFile := filepath.Join(tempDir, "nomatch.txt")
 	err = os.WriteFile(noMatchFile, []byte("This content doesn't match the search pattern"), 0644)
 	assert.NoError(err, "Should be able to create no match test file")
 
-	noMatchModify := NewModify(noMatchFile, search, replace)
-	err = noMatchModify.Apply()
+	noMatchCmd := &heredoc.Command{
+		Name:    "modify",
+		Payload: noMatchFile,
+		Params: []heredoc.Param{
+			{Name: "search", Payload: search},
+			{Name: "replace", Payload: replace},
+		},
+	}
+	noMatchAction, err := CommandToAction(noMatchCmd)
+	assert.NoError(err)
+	err = noMatchAction.Apply()
 	assert.Error(err, "Apply should fail when no replacements can be made")
 }

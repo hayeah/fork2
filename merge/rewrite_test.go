@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/hayeah/fork2/heredoc"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -42,15 +43,26 @@ struct User {
 }
 `
 
-	// Create a Rewrite action
-	rewrite := NewRewrite(testFile, newContent)
+	// Build the command
+	rewriteCmd := &heredoc.Command{
+		Name:    "rewrite",
+		Payload: testFile,
+		Params: []heredoc.Param{
+			{Name: "content", Payload: newContent},
+		},
+	}
+
+	action, err := CommandToAction(rewriteCmd)
+	assert.NoError(err, "Should build a Rewrite action from the command")
+	rewriteAction, ok := action.(*Rewrite)
+	assert.True(ok, "Should be a Rewrite action")
 
 	// Test Verify
-	err = rewrite.Verify()
+	err = rewriteAction.Verify()
 	assert.NoError(err, "Verify should succeed with valid inputs")
 
 	// Test Apply
-	err = rewrite.Apply()
+	err = rewriteAction.Apply()
 	assert.NoError(err, "Apply should succeed with valid inputs")
 
 	// Read the modified file
@@ -61,14 +73,32 @@ struct User {
 	assert.Equal(newContent, string(modifiedContent), "File content should match the new content")
 
 	// Test Verify with non-existent file
-	nonExistentRewrite := NewRewrite("non-existent-file.txt", newContent)
-	err = nonExistentRewrite.Verify()
+	nonExistentCmd := &heredoc.Command{
+		Name:    "rewrite",
+		Payload: "non-existent-file.txt",
+		Params: []heredoc.Param{
+			{Name: "content", Payload: newContent},
+		},
+	}
+	nonExistentAction, err := CommandToAction(nonExistentCmd)
+	assert.NoError(err)
+
+	err = nonExistentAction.Verify()
 	assert.Error(err, "Verify should fail with non-existent file")
 	assert.Contains(err.Error(), "file does not exist", "Error should mention file does not exist")
 
 	// Test Verify with empty content
-	emptyContentRewrite := NewRewrite(testFile, "")
-	err = emptyContentRewrite.Verify()
+	emptyContentCmd := &heredoc.Command{
+		Name:    "rewrite",
+		Payload: testFile,
+		Params: []heredoc.Param{
+			{Name: "content", Payload: ""},
+		},
+	}
+	emptyContentAction, err := CommandToAction(emptyContentCmd)
+	assert.NoError(err)
+
+	err = emptyContentAction.Verify()
 	assert.Error(err, "Verify should fail with empty content")
 	assert.Contains(err.Error(), "content cannot be empty", "Error should mention content cannot be empty")
 }
