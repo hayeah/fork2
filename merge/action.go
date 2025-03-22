@@ -72,7 +72,7 @@ func (m *Modify) Apply() error {
 		return fmt.Errorf("failed to read file: %w", err)
 	}
 
-	newContent := strings.Replace(string(content), search, replace, -1)
+	newContent := strings.Replace(string(content), search, replace, 1)
 	if newContent == string(content) {
 		return errors.New("no replacements were made")
 	}
