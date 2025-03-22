@@ -54,6 +54,7 @@ func TestParseCommandWithParameters(t *testing.T) {
 
 	input := `:command
 $param1 inline payload
+
 $param2<HEREDOC
 Heredoc payload for param2
 HEREDOC`
@@ -86,7 +87,7 @@ HEREDOC
 
 $param2<HEREDOC
 Value for param2
-HEREDOC\n`
+HEREDOC`
 
 	commands, err := ParseReader(strings.NewReader(input))
 	assert.NoError(err)
@@ -239,25 +240,25 @@ func TestInvalidInput(t *testing.T) {
 
 	// Invalid line
 	input := `invalid line`
-	_, err := ParseReader(strings.NewReader(input))
+	_, err := Parse(input)
 	assert.Error(err)
 
 	// Empty command name
 	input = `:`
-	_, err = ParseReader(strings.NewReader(input))
+	_, err = Parse(input)
 	assert.Error(err)
 
 	// Empty parameter name
 	input = `:command
 $`
-	_, err = ParseReader(strings.NewReader(input))
+	_, err = Parse(input)
 	assert.Error(err)
 
 	// Unclosed heredoc
 	input = `:command<HEREDOC
 payload
 `
-	_, err = ParseReader(strings.NewReader(input))
+	_, err = Parse(input)
 	assert.Error(err)
 }
 

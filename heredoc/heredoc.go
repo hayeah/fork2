@@ -1,17 +1,16 @@
-// Package heredoc provides a parser for the heredoc protocol.
 package heredoc
 
 import (
 	"bufio"
-	"fmt"
+	"errors"
 	"io"
 	"strings"
 )
 
-// Commands represents a slice of Command structures.
+// Commands is a slice of Command
 type Commands []Command
 
-// Command represents a single command in the heredoc protocol.
+// Command represents a single command with its parameters
 type Command struct {
 	LineNo  int    // Line number where the command starts
 	Name    string // Command name (cannot be empty)
@@ -19,7 +18,14 @@ type Command struct {
 	Params  []Param
 }
 
-// GetParam retrieves a parameter by name, returning nil if not found.
+// Param represents a parameter in a command
+type Param struct {
+	LineNo  int    // Line number where the parameter starts
+	Name    string // Parameter name (cannot be empty)
+	Payload string // Parameter payload (can be empty)
+}
+
+// GetParam retrieves a parameter by name, returns nil if not found
 func (c *Command) GetParam(name string) *Param {
 	for i := range c.Params {
 		if c.Params[i].Name == name {
@@ -29,221 +35,304 @@ func (c *Command) GetParam(name string) *Param {
 	return nil
 }
 
-// Param represents a parameter associated with a command.
-type Param struct {
-	LineNo  int    // Line number where the parameter starts
-	Name    string // Parameter name (cannot be empty)
-	Payload string // Parameter payload (can be empty)
+// Parser handles the parsing of heredoc formatted content
+type Parser struct {
+	scanner *bufio.Scanner
+	lineNo  int     // The line number of the most recently peeked/consumed line
+	peeked  *string // If not nil, it holds the last peeked line that hasn't been consumed yet
+	eof     bool    // True if we've reached the end of the reader
 }
 
-// ParseError represents an error that occurred during parsing.
-type ParseError struct {
-	LineNo  int
-	Message string
+// NewParser creates a new Parser instance
+func NewParser(r io.Reader) *Parser {
+	return &Parser{
+		scanner: bufio.NewScanner(r),
+	}
 }
 
-func (e ParseError) Error() string {
-	return fmt.Sprintf("parse error at line %d: %s", e.LineNo, e.Message)
+// Parse parses the input and returns all commands
+func Parse(input string) (Commands, error) {
+	return ParseReader(strings.NewReader(input))
 }
 
-// ParseReader parses the heredoc protocol from an io.Reader and returns the commands.
+// ParseReader parses from an io.Reader and returns all commands
 func ParseReader(r io.Reader) (Commands, error) {
-	scanner := bufio.NewScanner(r)
-	var commands Commands
-	var currentLine string
-	lineNo := 0
-
-	for scanner.Scan() || currentLine != "" {
-		var line string
-		if currentLine != "" {
-			line = currentLine
-			currentLine = ""
-		} else {
-			lineNo++
-			line = scanner.Text()
-		}
-
-		// Skip empty lines
-		if len(strings.TrimSpace(line)) == 0 {
-			continue
-		}
-
-		// Skip comments
-		if strings.HasPrefix(line, "#") {
-			continue
-		}
-
-		// Parse command
-		if strings.HasPrefix(line, ":") {
-			cmd, nextLine, newLineNo, err := parseCommand(scanner, line, lineNo)
-			if err != nil {
-				return nil, err
-			}
-			commands = append(commands, cmd)
-			lineNo = newLineNo
-
-			if nextLine != "" {
-				currentLine = nextLine
-			}
-			continue
-		}
-
-		// If we reach here, we have an invalid line
-		return nil, &ParseError{LineNo: lineNo, Message: "unexpected line: " + line}
-	}
-
-	if err := scanner.Err(); err != nil {
-		return nil, err
-	}
-
-	return commands, nil
+	return NewParser(r).Parse()
 }
 
-// parseCommand parses a command block, including its payload and parameters.
-func parseCommand(scanner *bufio.Scanner, line string, startLineNo int) (Command, string, int, error) {
-	// Extract command name and payload
-	line = strings.TrimPrefix(line, ":")
-	cmdName, payload, hasHeredoc, err := parseNameAndPayload(line)
+// Parse parses all commands from the input
+func (p *Parser) Parse() (cmds Commands, err error) {
+
+	for {
+		// Attempt to skip until a command/param or EOF
+		err = p.skipEmptyAndComments()
+		if err == io.EOF {
+			return cmds, nil
+		}
+
+		if err != nil {
+			return
+		}
+
+		line, err := p.peekLine()
+		if err != nil {
+			return cmds, err
+		}
+
+		if strings.HasPrefix(line, ":") {
+			// We found a command
+			cmd, err := p.parseCommand()
+			if err != nil {
+				return cmds, err
+			}
+			cmds = append(cmds, cmd)
+		} else {
+			// The only valid lines that remain after skipUntil... are commands/params
+			// If this line isn't a command, it must be an error unless it's "$" param.
+			// But a lone "$" param here would also be an error because
+			// top-level data should come in as commands.
+			return cmds, errors.New("invalid line outside command: " + line)
+		}
+	}
+}
+
+// --- Core "peek" / "consume" mechanism --- //
+
+// peekLine returns the next line without consuming it.
+// If EOF has been reached, it returns an io.EOF error.
+func (p *Parser) peekLine() (string, error) {
+	if p.eof {
+		return "", io.EOF
+	}
+	// If we've already peeked a line, return that
+	if p.peeked != nil {
+		return *p.peeked, nil
+	}
+	// Otherwise, pull from scanner
+	if p.scanner.Scan() {
+		p.lineNo++
+		line := p.scanner.Text()
+		p.peeked = &line
+		return line, nil
+	}
+	// Scanner is done
+	p.eof = true
+	if err := p.scanner.Err(); err != nil {
+		return "", err
+	}
+	return "", io.EOF
+}
+
+// consumeLine returns the next line and advances the scanner for real.
+// If EOF has been reached, it returns an io.EOF error.
+func (p *Parser) consumeLine() (string, error) {
+	line, err := p.peekLine()
 	if err != nil {
-		return Command{}, "", startLineNo, &ParseError{LineNo: startLineNo, Message: err.Error()}
+		return "", err
+	}
+	// Clear the peek buffer — we've now consumed that line
+	p.peeked = nil
+	return line, nil
+}
+
+// skipEmptyAndComments keeps discarding empty lines / comments. If it finds a line
+// starting with ':' or '$', it stops (i.e., the line is still "peeked" but not consumed).
+// Returns false if we reach EOF with no valid lines left.
+func (p *Parser) skipEmptyAndComments() error {
+	for {
+		line, err := p.peekLine()
+		if err != nil {
+			// No more lines
+			return err
+		}
+
+		if strings.HasPrefix(line, "#") || strings.TrimSpace(line) == "" {
+			// This is an empty line or a comment; consume and keep going
+			_, err := p.consumeLine()
+			if err != nil {
+				return err
+			}
+			continue
+		}
+
+		return nil
+	}
+}
+
+// parseCommand parses a command line (":name payload...") plus its subsequent param lines.
+func (p *Parser) parseCommand() (Command, error) {
+	// We expect a line starting with ':'
+	line, err := p.peekLine()
+	if err != nil {
+		return Command{}, errors.New("expected command line but found EOF")
+	}
+	if !strings.HasPrefix(line, ":") {
+		return Command{}, errors.New("expected command, got: " + line)
 	}
 
+	// Now truly consume this line
+	line, err = p.consumeLine()
+	if err != nil {
+		return Command{}, err
+	}
+	cmdLineNo := p.lineNo // lineNo is set after scanning
+
+	cmdBody := line[1:] // strip leading ':'
+
+	cmdName, cmdPayload, err := p.parseNameAndPayload(cmdBody)
+	if err != nil {
+		return Command{}, err
+	}
 	if cmdName == "" {
-		return Command{}, "", startLineNo, &ParseError{LineNo: startLineNo, Message: "command name cannot be empty"}
+		return Command{}, errors.New("command name cannot be empty")
 	}
 
 	cmd := Command{
-		LineNo:  startLineNo,
+		LineNo:  cmdLineNo,
 		Name:    cmdName,
-		Payload: payload,
-		Params:  []Param{},
+		Payload: cmdPayload,
 	}
 
-	// Parse heredoc payload if present
-	currentLineNo := startLineNo
-	if hasHeredoc {
-		heredocContent, newLineNo, err := parseHeredoc(scanner, startLineNo+1)
+	// parse parameters until we see a new command (':'), EOF, or invalid line
+	for {
+		peek, err := p.peekLine()
 		if err != nil {
-			return Command{}, "", currentLineNo, err
+			// no more lines => done
+			break
 		}
-		cmd.Payload = heredocContent
-		currentLineNo = newLineNo
-	}
-
-	// Parse parameters
-	for scanner.Scan() {
-		currentLineNo++
-		paramLine := scanner.Text()
-
-		// Skip empty lines
-		if len(strings.TrimSpace(paramLine)) == 0 {
-			continue
-		}
-
-		// Skip comments
-		if strings.HasPrefix(paramLine, "#") {
-			continue
-		}
-
-		// If line starts with "$", it's a parameter
-		if strings.HasPrefix(paramLine, "$") {
-			param, newLineNo, err := parseParam(scanner, paramLine, currentLineNo)
+		// skip empty lines & comments
+		if strings.TrimSpace(peek) == "" || strings.HasPrefix(peek, "#") {
+			_, err := p.consumeLine()
 			if err != nil {
-				return Command{}, "", currentLineNo, err
+				return Command{}, err
+			}
+			continue
+		}
+
+		if strings.HasPrefix(peek, ":") {
+			// we reached a new command => stop param parsing
+			break
+		}
+
+		if strings.HasPrefix(peek, "$") {
+			param, err := p.parseParam()
+			if err != nil {
+				return Command{}, err
 			}
 			cmd.Params = append(cmd.Params, param)
-			currentLineNo = newLineNo
-			continue
+		} else {
+			return Command{}, errors.New("invalid line in command parameters: " + peek)
 		}
-
-		// If line starts with ":", it's a new command, so we're done with this one
-		if strings.HasPrefix(paramLine, ":") {
-			// Return the current command and the new command line
-			return cmd, paramLine, currentLineNo, nil
-		}
-
-		// If we get here, we have an invalid line
-		return Command{}, "", currentLineNo, &ParseError{LineNo: currentLineNo, Message: "unexpected line in command block: " + paramLine}
 	}
 
-	return cmd, "", currentLineNo, nil
+	return cmd, nil
 }
 
-// parseParam parses a parameter block, including its payload.
-func parseParam(scanner *bufio.Scanner, line string, startLineNo int) (Param, int, error) {
-	// Extract parameter name and payload
-	line = strings.TrimPrefix(line, "$")
-	paramName, payload, hasHeredoc, err := parseNameAndPayload(line)
+// parseParam parses a param line ("$name payload...").
+func (p *Parser) parseParam() (Param, error) {
+	line, err := p.peekLine()
 	if err != nil {
-		return Param{}, startLineNo, &ParseError{LineNo: startLineNo, Message: err.Error()}
+		return Param{}, errors.New("expected parameter but got EOF")
+	}
+	if !strings.HasPrefix(line, "$") {
+		return Param{}, errors.New("expected parameter, got: " + line)
 	}
 
+	// consume it now
+	line, err = p.consumeLine()
+	if err != nil {
+		return Param{}, err
+	}
+	paramLineNo := p.lineNo
+	paramBody := line[1:] // remove the '$'
+
+	paramName, paramPayload, err := p.parseNameAndPayload(paramBody)
+	if err != nil {
+		return Param{}, err
+	}
 	if paramName == "" {
-		return Param{}, startLineNo, &ParseError{LineNo: startLineNo, Message: "parameter name cannot be empty"}
+		return Param{}, errors.New("parameter name cannot be empty")
 	}
 
-	param := Param{
-		LineNo:  startLineNo,
+	return Param{
+		LineNo:  paramLineNo,
 		Name:    paramName,
-		Payload: payload,
+		Payload: paramPayload,
+	}, nil
+}
+
+// parseNameAndPayload parses a name from a line, reading up to a space or "<" for heredoc
+func (p *Parser) parseNameAndPayload(line string) (name string, payload string, err error) {
+	// Find the first space or '<'
+	spaceIdx := strings.IndexByte(line, ' ')
+	heredocIdx := strings.IndexByte(line, '<')
+
+	// If neither found, the whole line is the name
+	if spaceIdx == -1 && heredocIdx == -1 {
+		return strings.TrimSpace(line), "", nil
 	}
 
-	currentLineNo := startLineNo
+	// Find the first delimiter (space or '<')
+	idx := spaceIdx
+	if heredocIdx != -1 && (spaceIdx == -1 || heredocIdx < spaceIdx) {
+		idx = heredocIdx
+	}
 
-	// Parse heredoc payload if present
-	if hasHeredoc {
-		heredocContent, newLineNo, err := parseHeredoc(scanner, startLineNo+1)
+	// Extract the name
+	name = strings.TrimSpace(line[:idx])
+
+	// Check what follows the name
+	if idx == spaceIdx {
+		// Space follows => line payload
+		payload = strings.TrimRight(line[idx+1:], " ")
+	} else if idx == heredocIdx {
+		// '<' => heredoc
+		payload, err = p.parseHeredocPayload(line[idx:])
+	}
+	return
+}
+
+// parseHeredocPayload parses a heredoc payload starting at "<MARKER"
+// The line you get here starts with '<', so typically you'll have something like "<EOF"
+func (p *Parser) parseHeredocPayload(line string) (string, error) {
+	if !strings.HasPrefix(line, "<") {
+		return "", errors.New("expected heredoc marker, got: " + line)
+	}
+	// marker is everything after '<' until we see a newline or end of line
+	// but in a typical heredoc usage, there's no extra content after the marker on the same line
+	// so let's just consider the entire remainder as the marker token
+	marker := strings.TrimSpace(line[1:])
+	if marker == "" {
+		return "", errors.New("empty heredoc marker")
+	}
+
+	var sb strings.Builder
+	firstLine := true
+
+	// Read lines until we see the marker on its own
+	for {
+		next, err := p.peekLine()
 		if err != nil {
-			return Param{}, currentLineNo, err
+			return "", errors.New("unclosed heredoc: " + marker)
 		}
-		param.Payload = heredocContent
-		currentLineNo = newLineNo
-	}
-
-	return param, currentLineNo, nil
-}
-
-// parseNameAndPayload extracts the name and payload from a command or parameter line.
-// Returns name, payload, whether it has a heredoc, and any error.
-func parseNameAndPayload(line string) (string, string, bool, error) {
-	line = strings.TrimSpace(line)
-
-	// Empty line
-	if line == "" {
-		return "", "", false, nil
-	}
-
-	// Check for heredoc marker
-	if idx := strings.Index(line, "<HEREDOC"); idx != -1 {
-		name := strings.TrimSpace(line[:idx])
-		return name, "", true, nil
-	}
-
-	// Split name and inline payload
-	parts := strings.SplitN(line, " ", 2)
-	if len(parts) == 1 {
-		return parts[0], "", false, nil
-	}
-	return parts[0], parts[1], false, nil
-}
-
-// parseHeredoc parses a heredoc payload until the HEREDOC line is encountered.
-// Returns the content, the new line number, and any error.
-func parseHeredoc(scanner *bufio.Scanner, startLineNo int) (string, int, error) {
-	var contentLines []string
-	currentLineNo := startLineNo
-
-	for scanner.Scan() {
-		currentLineNo++
-		line := scanner.Text()
-
-		if strings.TrimSpace(line) == "HEREDOC" {
-			return strings.Join(contentLines, "\n"), currentLineNo, nil
+		if next == marker {
+			// consume the marker line and stop
+			_, err := p.consumeLine()
+			if err != nil {
+				return "", err
+			}
+			break
 		}
-
-		contentLines = append(contentLines, line)
+		_, err = p.consumeLine() // we are using this line
+		if err != nil {
+			return "", err
+		}
+		if !firstLine {
+			sb.WriteString("\n")
+		}
+		sb.WriteString(next)
+		firstLine = false
 	}
 
-	// If we get here, we reached EOF without finding the HEREDOC marker
-	return "", currentLineNo, &ParseError{LineNo: startLineNo, Message: "unclosed heredoc"}
+	return sb.String(), nil
 }
