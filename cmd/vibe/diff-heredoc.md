@@ -69,7 +69,7 @@ HEREDOC
 
 -----
 
-### Example: Search and Replace (Add email property)
+### Example: Modify (Add email property)
 
 ```
 :plan<HEREDOC
@@ -102,13 +102,13 @@ HEREDOC
 
 ```
 :plan<HEREDOC
-Demonstrate a one-line search block, which is too short to be reliable.
+Avoid one-line search if the text is too short to be non-ambigious.
 HEREDOC
 
 :modify path/service.swift
 
 $description<HEREDOC
-One-line search block is ambiguous
+Negative demo: Ambiguous one-line search block. Don't do this
 HEREDOC
 
 $search<HEREDOC
@@ -119,10 +119,6 @@ $replace<HEREDOC
 var emailNew: String
 HEREDOC
 ```
-
-This example fails because the search block is only one line and ambiguous.
-
-
 
 ### Example: Example - Insert New Code
 
@@ -150,8 +146,6 @@ func Parse(input string) (Commands, error) {
 // ParseStrict parses the input in strict mode and returns all commands.
 HEREDOC
 ```
-
-This example fails because the search block is ambiguous due to multiple matching closing braces.
 
 ### Example: Full File Rewrite
 
@@ -220,6 +214,8 @@ HEREDOC
 ```
 
 ## Final Notes
+
+1. **modify** Avoid search blocks that are too short or too ambiguous. Single characters like `}` is too short.
 2. **modify** The `$search` block must match the source code exactly—down to indentation, braces, spacing, and any comments. Even a minor mismatch causes failed merges.
 3. **modify** Only replace exactly what you need. Avoid including entire functions or files if only a small snippet changes, and ensure the `$search` content is unique and easy to identify.
 4. **rewrite** Use `rewrite` for major overhauls, and `modify` for smaller, localized edits. Rewrite requires the entire code to be replaced, so use it sparingly.
