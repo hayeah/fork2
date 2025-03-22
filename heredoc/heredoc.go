@@ -62,37 +62,55 @@ func ParseReader(r io.Reader) (Commands, error) {
 
 // Parse parses all commands from the input
 func (p *Parser) Parse() (cmds Commands, err error) {
-
 	for {
-		// Attempt to skip until a command/param or EOF
-		err = p.skipEmptyAndComments()
+		cmd, err := p.ParseCommand()
 		if err == io.EOF {
 			return cmds, nil
 		}
-
-		if err != nil {
-			return
-		}
-
-		line, err := p.peekLine()
 		if err != nil {
 			return cmds, err
 		}
-
-		if strings.HasPrefix(line, ":") {
-			// We found a command
-			cmd, err := p.parseCommand()
-			if err != nil {
-				return cmds, err
-			}
-			cmds = append(cmds, cmd)
-		} else {
-			// The only valid lines that remain after skipUntil... are commands/params
-			// If this line isn't a command, it must be an error unless it's "$" param.
-			// But a lone "$" param here would also be an error because
-			// top-level data should come in as commands.
-			return cmds, errors.New("invalid line outside command: " + line)
+		if cmd == nil {
+			break
 		}
+		cmds = append(cmds, *cmd)
+	}
+	return cmds, nil
+}
+
+// ParseCommand parses and returns the next command from the input.
+// Returns nil when there are no more commands to parse.
+// This method is useful for streaming applications where commands
+// need to be processed incrementally.
+func (p *Parser) ParseCommand() (*Command, error) {
+	// Attempt to skip until a command/param or EOF
+	err := p.skipEmptyAndComments()
+	if err == io.EOF {
+		return nil, nil
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	line, err := p.peekLine()
+	if err != nil {
+		return nil, err
+	}
+
+	if strings.HasPrefix(line, ":") {
+		// We found a command
+		cmd, err := p.parseCommand()
+		if err != nil {
+			return nil, err
+		}
+		return &cmd, nil
+	} else {
+		// The only valid lines that remain after skipUntil... are commands/params
+		// If this line isn't a command, it must be an error unless it's "$" param.
+		// But a lone "$" param here would also be an error because
+		// top-level data should come in as commands.
+		return nil, errors.New("invalid line outside command: " + line)
 	}
 }
 

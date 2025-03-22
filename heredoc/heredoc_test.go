@@ -282,3 +282,58 @@ $param2 value2`
 	assert.Len(commands[1].Params, 1)
 	assert.Equal("param2", commands[1].Params[0].Name)
 }
+
+func TestParseCommandIncremental(t *testing.T) {
+	assert := assert.New(t)
+
+	input := `:command1 payload1
+$param1 value1
+
+:command2<HEREDOC
+Payload for command2
+HEREDOC
+
+$param2<HEREDOC
+Value for param2
+HEREDOC
+
+:command3
+$param3 value3`
+
+	parser := NewParser(strings.NewReader(input))
+
+	// First command
+	cmd1, err := parser.ParseCommand()
+	assert.NoError(err)
+	assert.NotNil(cmd1)
+	assert.Equal("command1", cmd1.Name)
+	assert.Equal("payload1", cmd1.Payload)
+	assert.Len(cmd1.Params, 1)
+	assert.Equal("param1", cmd1.Params[0].Name)
+	assert.Equal("value1", cmd1.Params[0].Payload)
+
+	// Second command
+	cmd2, err := parser.ParseCommand()
+	assert.NoError(err)
+	assert.NotNil(cmd2)
+	assert.Equal("command2", cmd2.Name)
+	assert.Equal("Payload for command2", cmd2.Payload)
+	assert.Len(cmd2.Params, 1)
+	assert.Equal("param2", cmd2.Params[0].Name)
+	assert.Equal("Value for param2", cmd2.Params[0].Payload)
+
+	// Third command
+	cmd3, err := parser.ParseCommand()
+	assert.NoError(err)
+	assert.NotNil(cmd3)
+	assert.Equal("command3", cmd3.Name)
+	assert.Equal("", cmd3.Payload)
+	assert.Len(cmd3.Params, 1)
+	assert.Equal("param3", cmd3.Params[0].Name)
+	assert.Equal("value3", cmd3.Params[0].Payload)
+
+	// Should be EOF now
+	cmd4, err := parser.ParseCommand()
+	assert.Equal(nil, err)
+	assert.Nil(cmd4)
+}
