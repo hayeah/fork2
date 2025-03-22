@@ -240,25 +240,25 @@ func TestInvalidInput(t *testing.T) {
 
 	// Invalid line
 	input := `invalid line`
-	_, err := Parse(input)
+	_, err := ParseStrict(input)
 	assert.Error(err)
 
 	// Empty command name
 	input = `:`
-	_, err = Parse(input)
+	_, err = ParseStrict(input)
 	assert.Error(err)
 
 	// Empty parameter name
 	input = `:command
 $`
-	_, err = Parse(input)
+	_, err = ParseStrict(input)
 	assert.Error(err)
 
 	// Unclosed heredoc
 	input = `:command<HEREDOC
 payload
 `
-	_, err = Parse(input)
+	_, err = ParseStrict(input)
 	assert.Error(err)
 }
 
@@ -336,4 +336,55 @@ $param3 value3`
 	cmd4, err := parser.ParseCommand()
 	assert.Equal(nil, err)
 	assert.Nil(cmd4)
+}
+
+func TestParserNonStrictMode(t *testing.T) {
+	assert := assert.New(t)
+
+	input := `invalid line
+:command
+$param1 value
+another invalid line
+:command2
+$param2 value2`
+
+	parser := NewParser(strings.NewReader(input))
+	// Non-strict is default (strict=false). Invalid lines are discarded.
+
+	// Parse first command
+	cmd1, err := parser.ParseCommand()
+	assert.NoError(err)
+	assert.Equal("command", cmd1.Name)
+	assert.Len(cmd1.Params, 1)
+	assert.Equal("param1", cmd1.Params[0].Name)
+	assert.Equal("value", cmd1.Params[0].Payload)
+
+	// Parse second command
+	cmd2, err := parser.ParseCommand()
+	assert.NoError(err)
+	assert.Equal("command2", cmd2.Name)
+	assert.Len(cmd2.Params, 1)
+	assert.Equal("param2", cmd2.Params[0].Name)
+	assert.Equal("value2", cmd2.Params[0].Payload)
+
+	// Should be EOF now
+	cmd3, err := parser.ParseCommand()
+	assert.NoError(err)
+	assert.Nil(cmd3)
+}
+
+func TestParserStrictMode(t *testing.T) {
+	assert := assert.New(t)
+
+	input := `invalid line
+:command
+$param1 value`
+
+	parser := NewParser(strings.NewReader(input))
+	parser.UseStrict()
+
+	// Parse first command
+	cmd1, err := parser.ParseCommand()
+	assert.Error(err, "Expected error in strict mode due to 'invalid line'")
+	assert.Nil(cmd1)
 }

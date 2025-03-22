@@ -127,7 +127,7 @@ func (r *MergeRunner) verify(commands heredoc.Commands) ([]merge.Action, error) 
 		}
 
 		actions = append(actions, action)
-		fmt.Printf("[OK] %d %s %s\\n", cmd.LineNo, cmd.Name, action.Description())
+		fmt.Printf("[OK] %d %s %s\n", cmd.LineNo, cmd.Name, action.Description())
 	}
 
 	// Print unknown commands

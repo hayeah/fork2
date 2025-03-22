@@ -50,6 +50,7 @@ type Parser struct {
 	lineNo  int     // The line number of the most recently peeked/consumed line
 	peeked  *string // If not nil, it holds the last peeked line that hasn't been consumed yet
 	eof     bool    // True if we've reached the end of the reader
+	strict  bool    // if true, parser is in strict mode
 }
 
 // NewParser creates a new Parser instance
@@ -62,6 +63,14 @@ func NewParser(r io.Reader) *Parser {
 // Parse parses the input and returns all commands
 func Parse(input string) (Commands, error) {
 	return ParseReader(strings.NewReader(input))
+}
+
+// ParseStrict parses the input in strict mode and returns all commands.
+func ParseStrict(input string) (Commands, error) {
+	r := strings.NewReader(input)
+	p := NewParser(r)
+	p.UseStrict()
+	return p.Parse()
 }
 
 // ParseReader parses from an io.Reader and returns all commands
@@ -85,6 +94,10 @@ func (p *Parser) Parse() (cmds Commands, err error) {
 		cmds = append(cmds, *cmd)
 	}
 	return cmds, nil
+}
+
+func (p *Parser) UseStrict() {
+	p.strict = true
 }
 
 // ParseCommand parses and returns the next command from the input.
@@ -119,7 +132,16 @@ func (p *Parser) ParseCommand() (*Command, error) {
 		// If this line isn't a command, it must be an error unless it's "$" param.
 		// But a lone "$" param here would also be an error because
 		// top-level data should come in as commands.
-		return nil, errors.New("invalid line outside command: " + line)
+
+		if p.strict {
+			return nil, errors.New("invalid line outside command: " + line)
+		} else {
+			_, err = p.consumeLine()
+			if err != nil {
+				return nil, err
+			}
+			return p.ParseCommand()
+		}
 	}
 }
 
@@ -248,7 +270,15 @@ func (p *Parser) parseCommand() (Command, error) {
 			}
 			cmd.Params = append(cmd.Params, param)
 		} else {
-			return Command{}, errors.New("invalid line in command parameters: " + peek)
+			if p.strict {
+				return Command{}, errors.New("invalid line in command parameters: " + peek)
+			} else {
+				_, err := p.consumeLine()
+				if err != nil {
+					return Command{}, err
+				}
+				continue
+			}
 		}
 	}
 
@@ -261,6 +291,7 @@ func (p *Parser) parseParam() (Param, error) {
 	if err != nil {
 		return Param{}, errors.New("expected parameter but got EOF")
 	}
+
 	if !strings.HasPrefix(line, "$") {
 		return Param{}, errors.New("expected parameter, got: " + line)
 	}
