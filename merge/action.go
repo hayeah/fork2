@@ -22,10 +22,6 @@ type Modify struct {
 	*heredoc.Command
 }
 
-func (m *Modify) Description() string {
-	return m.Command.Description()
-}
-
 func (m *Modify) Verify() error {
 	file := m.Payload
 	if file == "" {
@@ -94,10 +90,6 @@ type Rewrite struct {
 	*heredoc.Command
 }
 
-func (r *Rewrite) Description() string {
-	return r.Command.Description()
-}
-
 func (r *Rewrite) Verify() error {
 	file := r.Payload
 	if file == "" {
@@ -139,10 +131,6 @@ func (r *Rewrite) Apply() error {
 // Create represents a file creation action.
 type Create struct {
 	*heredoc.Command
-}
-
-func (c *Create) Description() string {
-	return c.Command.Description()
 }
 
 func (c *Create) Verify() error {
@@ -196,10 +184,6 @@ func (c *Create) Apply() error {
 // Delete represents a file deletion action.
 type Delete struct {
 	*heredoc.Command
-}
-
-func (d *Delete) Description() string {
-	return d.Command.Description()
 }
 
 func (d *Delete) Verify() error {
