@@ -244,7 +244,7 @@ func (r *AskRunner) writeOutput(w io.Writer, selectedFiles []string) error {
 	}
 
 	// Add the reminder
-	_, err = fmt.Fprintln(w, "IMPORTANT: Do not just write me the code. output response in format according to instructions.")
+	_, err = fmt.Fprintln(w, "IMPORTANT: Do not just write me the code. Output your response in the format described in the instructions. Quote the response as code for display.")
 	if err != nil {
 		return fmt.Errorf("failed to write reminder: %v", err)
 	}
