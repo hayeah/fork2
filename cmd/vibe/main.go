@@ -25,11 +25,6 @@ type AskCmd struct {
 	Instruction    string `arg:"positional" help:"User instruction or path to instruction file"`
 }
 
-// MergeCmd contains the arguments for the 'merge' subcommand
-type MergeCmd struct {
-	Paste bool `arg:"--paste" help:"Read input from clipboard"`
-}
-
 // item represents each file or directory in the listing.
 type item struct {
 	Path       string
