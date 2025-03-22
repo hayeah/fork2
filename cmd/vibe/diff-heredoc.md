@@ -124,11 +124,11 @@ This example fails because the search block is only one line and ambiguous.
 
 
 
-### Example: Negative Example - Ambiguous Search Block
+### Example: Example - Insert New Code
 
 ```
 :plan<HEREDOC
-Demonstrate an ambiguous search block that can match multiple blocks (e.g., multiple closing braces).
+Insert ABOVE an existing definition
 HEREDOC
 
 :modify path/service.swift
@@ -138,15 +138,16 @@ Ambiguous search block with multiple closing braces
 HEREDOC
 
 $search<HEREDOC
-    }
-}
+// ParseStrict parses the input in strict mode and returns all commands.
 HEREDOC
 
 $replace<HEREDOC
-        foo() {
-        }
-    }
+// Parse parses the input and returns all commands
+func Parse(input string) (Commands, error) {
+	return ParseReader(strings.NewReader(input))
 }
+
+// ParseStrict parses the input in strict mode and returns all commands.
 HEREDOC
 ```
 
