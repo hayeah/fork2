@@ -101,7 +101,7 @@ func TestResolvePartialPath(t *testing.T) {
 		})
 	}
 }
-func TestPartial(t *testing.T) {
+func TestPartialRendering(t *testing.T) {
 	// Create test filesystems with nested partials
 	systemFS := createTestFS(map[string]string{
 		"vibe/coder":  "System {{ partial \"<vibe/footer>\" }}",
@@ -133,18 +133,18 @@ func TestPartial(t *testing.T) {
 	t.Run("simple partial", func(t *testing.T) {
 		assert := assert.New(t)
 
-		// Test a simple partial
-		result, err := renderer.Partial("@common/header", testData)
-		assert.NoError(err, "Partial should not return an error")
+		// Test a simple partial using Render with empty layoutPath
+		result, err := renderer.RenderPartial("@common/header", testData)
+		assert.NoError(err, "Partial rendering should not return an error")
 		assert.Equal("Repo Header with test value", result, "Partial should render with variable interpolation")
 	})
 
 	t.Run("nested partial", func(t *testing.T) {
 		assert := assert.New(t)
 
-		// Test a nested partial
-		result, err := renderer.Partial("<vibe/coder>", testData)
-		assert.NoError(err, "Nested partial should not return an error")
+		// Test a nested partial using Render with empty layoutPath
+		result, err := renderer.RenderPartial("<vibe/coder>", testData)
+		assert.NoError(err, "Nested partial rendering should not return an error")
 		assert.Equal("System Footer", result, "Nested partial should be correctly rendered")
 	})
 
@@ -152,8 +152,8 @@ func TestPartial(t *testing.T) {
 		assert := assert.New(t)
 
 		// Test a local partial that references a repo partial
-		result, err := renderer.Partial("./local/helper", testData)
-		assert.NoError(err, "Local partial should not return an error")
+		result, err := renderer.RenderPartial("./local/helper", testData)
+		assert.NoError(err, "Local partial rendering should not return an error")
 		assert.Equal("Local Helper that uses Repo Header with test value",
 			result, "Local partial should correctly include repo partial with variable interpolation")
 	})
@@ -219,4 +219,5 @@ Tool1, Tool2, Tool3
 
 # User Instructions
 Hello from the user`, result)
+
 }

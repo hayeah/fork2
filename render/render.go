@@ -52,46 +52,61 @@ func (r *Renderer) loadTemplateContent(templatePath string) (string, error) {
 	return templateContent, nil
 }
 
-// Render renders a layout template by wrapping the user's content in a "main" block.
-// layoutPath indicates which layout template to use.
-// userContentPath indicates the path to the user's content template.
+func (r *Renderer) RenderPartial(partialPath string, data any) (string, error) {
+	return r.Render(partialPath, "", data)
+}
+
+// Render renders a template, with optional layout wrapping.
+// If layoutPath is empty, renders contentPath as a standalone template.
+// If layoutPath is provided, renders contentPath within the layout's "main" block.
 // data is the data to pass to the template.
-func (r *Renderer) Render(userContentPath string, layoutPath string, data any) (string, error) {
-	// Get the layout content
-	layoutContent, err := r.loadTemplateContent(layoutPath)
+func (r *Renderer) Render(contentPath string, layoutPath string, data any) (string, error) {
+	// Get the content template
+	contentContent, err := r.loadTemplateContent(contentPath)
 	if err != nil {
-		return "", fmt.Errorf("error loading layout template: %w", err)
+		return "", fmt.Errorf("error loading content template: %w", err)
 	}
 
-	// Get the user content
-	userContent, err := r.loadTemplateContent(userContentPath)
-	if err != nil {
-		return "", fmt.Errorf("error loading user content template: %w", err)
-	}
+	// Store original current template path
+	originalPath := r.ctx.CurrentTemplatePath
+	// Update current template path for local partial resolution
+	defer func() { r.ctx.CurrentTemplatePath = originalPath }()
+	r.ctx.CurrentTemplatePath = contentPath
 
 	// Create a template set
-	tmpl := template.New("layout")
+	tmpl := template.New("")
 	tmpl = tmpl.Funcs(template.FuncMap{
 		"partial": func(partialPath string) (string, error) {
-			return r.Partial(partialPath, data)
+			// Use Render recursively with empty layoutPath for partials
+			return r.RenderPartial(partialPath, data)
 		},
 	})
 
-	// Parse the layout template
-	tmpl, err = tmpl.Parse(layoutContent)
-	if err != nil {
-		return "", fmt.Errorf("error parsing layout template: %w", err)
+	templateTarget := "main"
+
+	if layoutPath != "" {
+		// Parse the layout template
+		templateTarget = "layout"
+		layoutContent, err := r.loadTemplateContent(layoutPath)
+		if err != nil {
+			return "", fmt.Errorf("error loading layout template: %w", err)
+		}
+
+		tmpl, err = tmpl.New("layout").Parse(layoutContent)
+		if err != nil {
+			return "", fmt.Errorf("error parsing layout template: %w", err)
+		}
 	}
 
-	// Define the main template block with user content
-	tmpl, err = tmpl.Parse(fmt.Sprintf(`{{ define "main" }}%s{{ end }}`, userContent))
+	// Define the main template block with content
+	tmpl, err = tmpl.New("main").Parse(contentContent)
 	if err != nil {
-		return "", fmt.Errorf("error parsing user content template: %w", err)
+		return "", fmt.Errorf("error parsing content template: %w", err)
 	}
 
 	// Execute the template
 	var buf bytes.Buffer
-	err = tmpl.ExecuteTemplate(&buf, "layout", data)
+	err = tmpl.ExecuteTemplate(&buf, templateTarget, data)
 	if err != nil {
 		return "", fmt.Errorf("error executing template: %w", err)
 	}
@@ -106,57 +121,6 @@ func readTemplate(fsys fs.FS, filename string) (string, error) {
 		return "", err
 	}
 	return string(content), nil
-}
-
-// Partial locates and executes the partial specified by partialPath, returning rendered content.
-func (r *Renderer) Partial(partialPath string, data any) (string, error) {
-	// Resolve the partial path to get the fs and file
-	fs, file, err := r.ctx.ResolvePartialPath(partialPath)
-	if err != nil {
-		return "", fmt.Errorf("error resolving partial path: %w", err)
-	}
-
-	// Read the partial template
-	partialContent, err := readTemplate(fs, file)
-	if err != nil {
-		return "", fmt.Errorf("error reading partial template: %w", err)
-	}
-
-	// Store original current template path
-	originalPath := r.ctx.CurrentTemplatePath
-
-	// Update current template path for local partial resolution within this partial
-	r.ctx.CurrentTemplatePath = file
-
-	// Create a template with a custom partial function
-	tmpl := template.New(file)
-	tmpl = tmpl.Funcs(template.FuncMap{
-		"partial": func(nestedPartialPath string) (string, error) {
-			return r.Partial(nestedPartialPath, data)
-		},
-	})
-
-	// Parse the partial content
-	tmpl, err = tmpl.Parse(partialContent)
-	if err != nil {
-		// Restore original path before returning error
-		r.ctx.CurrentTemplatePath = originalPath
-		return "", fmt.Errorf("error parsing partial template: %w", err)
-	}
-
-	// Execute the template
-	var buf bytes.Buffer
-	err = tmpl.Execute(&buf, data)
-	if err != nil {
-		// Restore original path before returning error
-		r.ctx.CurrentTemplatePath = originalPath
-		return "", fmt.Errorf("error executing partial template: %w", err)
-	}
-
-	// Restore original path
-	r.ctx.CurrentTemplatePath = originalPath
-
-	return buf.String(), nil
 }
 
 // ResolvePartialPath determines which FS and file should be used for a given partial path.
