@@ -55,6 +55,14 @@ func TestResolvePartialPath(t *testing.T) {
 		},
 		{
 			name:           "Repo root template",
+			currentPath:    "templates/main.md",
+			partialPath:    "@common/header",
+			expectedFSType: "repo",
+			expectedFile:   "common/header",
+		},
+		{
+			name:           "Repo root template from deeper",
+			currentPath:    "templates/foo/bar/main.md",
 			partialPath:    "@common/header",
 			expectedFSType: "repo",
 			expectedFile:   "common/header",
