@@ -28,6 +28,36 @@ type AskCmd struct {
 	Instruction    string `arg:"positional" help:"User instruction or path to instruction file"`
 }
 
+// Merge merges src fields into the current AskCmd instance, with the current instance
+// having precedence for any non-empty value or true boolean. So if this.All is already true,
+// it stays true. If this.All is false, we take src's value. Same pattern
+// for the rest.
+func (cmd *AskCmd) Merge(src *AskCmd) {
+	if src == nil {
+		return
+	}
+
+	// If TokenEstimator is empty, overwrite it
+	if cmd.TokenEstimator == "" {
+		cmd.TokenEstimator = src.TokenEstimator
+	}
+	// Booleans: once set to true, keep them
+	cmd.All = cmd.All || src.All
+	cmd.Copy = cmd.Copy || src.Copy
+	cmd.Diff = cmd.Diff || src.Diff
+
+	// Strings: if empty, overwrite
+	if cmd.Select == "" {
+		cmd.Select = src.Select
+	}
+	if cmd.SelectRegex == "" {
+		cmd.SelectRegex = src.SelectRegex
+	}
+	if cmd.Instruction == "" {
+		cmd.Instruction = src.Instruction
+	}
+}
+
 //go:embed repoprompt-diff.md
 var diffPrompt string
 
@@ -450,17 +480,13 @@ func parseFrontMatter(data []byte) (*AskCmd, []byte, error) {
 	return parsedCmd, remainder, nil
 }
 
-// parseFlags interprets lines of text as flags for AskCmd, e.g.:
-// "--diff" -> sets Diff to true
-// "--all" -> sets All to true
-// "--copy" -> sets Copy to true
-// "--select=some/pattern" -> sets Select to "some/pattern"
-// etc.
+// parseFlags interprets lines of text as flags for AskCmd using go-arg library
+// by temporarily overriding os.Args.
 func parseFlags(frontMatter []byte) (*AskCmd, error) {
 	cmd := &AskCmd{}
 
-	arg.Parse()
-
+	// Convert front matter to a single line of args
+	var args []string
 	allLines := bytes.Split(frontMatter, []byte("\n"))
 	for _, line := range allLines {
 		line = bytes.TrimSpace(line)
@@ -470,11 +496,32 @@ func parseFlags(frontMatter []byte) (*AskCmd, error) {
 
 		// A line might have multiple flags: e.g. "--copy --diff"
 		parts := strings.Fields(string(line))
-		for _, part := range parts {
-			if err := applyFlag(part, cmd); err != nil {
-				return nil, err
-			}
-		}
+		args = append(args, parts...)
+	}
+
+	// Skip parsing if no args
+	if len(args) == 0 {
+		return cmd, nil
+	}
+
+	// Temporarily save original args
+	originalArgs := os.Args
+	defer func() {
+		// Restore original args
+		os.Args = originalArgs
+	}()
+
+	// Override with our custom args (preserving program name as first arg)
+	os.Args = append([]string{originalArgs[0]}, args...)
+
+	// Use go-arg to parse the flags into our struct
+	parser, err := arg.NewParser(arg.Config{}, cmd)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create parser: %v", err)
+	}
+
+	if err := parser.Parse(os.Args); err != nil {
+		return nil, fmt.Errorf("failed to parse front matter flags: %v", err)
 	}
 
 	return cmd, nil
@@ -503,7 +550,7 @@ func parseInstructionWithFrontMatter(cmdArgs *AskCmd) (string, error) {
 
 	// Apply any front matter flags to command args
 	if frontCmd != nil {
-		mergeAskCmd(cmdArgs, frontCmd)
+		cmdArgs.Merge(frontCmd)
 	}
 
 	return string(remainder), nil
@@ -525,73 +572,4 @@ func readInstructionContent(instruction string) ([]byte, error) {
 
 	// It's not a file, return the instruction string itself
 	return []byte(instruction), nil
-}
-
-// applyFlag sets fields in cmd based on a single argument like "--all" or "--select=xyz"
-func applyFlag(arg string, cmd *AskCmd) error {
-	if strings.HasPrefix(arg, "--all") {
-		cmd.All = true
-		return nil
-	}
-	if strings.HasPrefix(arg, "--diff") {
-		cmd.Diff = true
-		return nil
-	}
-	if strings.HasPrefix(arg, "--copy") {
-		cmd.Copy = true
-		return nil
-	}
-	if strings.HasPrefix(arg, "--select=") {
-		parts := strings.SplitN(arg, "=", 2)
-		if len(parts) == 2 {
-			cmd.Select = parts[1]
-		}
-		return nil
-	}
-	if strings.HasPrefix(arg, "--select-re=") {
-		parts := strings.SplitN(arg, "=", 2)
-		if len(parts) == 2 {
-			cmd.SelectRegex = parts[1]
-		}
-		return nil
-	}
-	if strings.HasPrefix(arg, "--token-estimator=") {
-		parts := strings.SplitN(arg, "=", 2)
-		if len(parts) == 2 {
-			cmd.TokenEstimator = parts[1]
-		}
-		return nil
-	}
-	// if it's something else, we can treat it as an error or ignore
-	// for test coverage, let's ignore unknown arguments
-	return nil
-}
-
-// mergeAskCmd merges src fields into dst, with dst having precedence
-// for any non-empty value or true boolean. So if dst.All is already true,
-// it stays true. If dst.All is false, we take src's value. Same pattern
-// for the rest.
-func mergeAskCmd(dst *AskCmd, src *AskCmd) {
-	if src == nil {
-		return
-	}
-	// If dst.TokenEstimator is empty, overwrite it
-	if dst.TokenEstimator == "" {
-		dst.TokenEstimator = src.TokenEstimator
-	}
-	// Booleans: once set to true, keep them
-	dst.All = dst.All || src.All
-	dst.Copy = dst.Copy || src.Copy
-	dst.Diff = dst.Diff || src.Diff
-
-	// Strings: if dst is empty, overwrite
-	if dst.Select == "" {
-		dst.Select = src.Select
-	}
-	if dst.SelectRegex == "" {
-		dst.SelectRegex = src.SelectRegex
-	}
-	if dst.Instruction == "" {
-		dst.Instruction = src.Instruction
-	}
 }

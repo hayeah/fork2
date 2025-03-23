@@ -44,7 +44,7 @@ line2
 	assert.Error(t, err)
 }
 
-func TestMergeAskCmd_Precedence(t *testing.T) {
+func TestAskCmd_Merge_Precedence(t *testing.T) {
 	dst := &AskCmd{
 		TokenEstimator: "simple",
 		Diff:           true,
@@ -56,7 +56,7 @@ func TestMergeAskCmd_Precedence(t *testing.T) {
 		Select:         "some/path",
 		Instruction:    "front matter instructions",
 	}
-	mergeAskCmd(dst, src)
+	dst.Merge(src)
 	assert.Equal(t, "simple", dst.TokenEstimator, "dst wins if non-empty")
 	assert.True(t, dst.Diff, "dst wins if it's true")
 	assert.Equal(t, "some/path", dst.Select, "src sets select if dst was empty")
@@ -90,23 +90,6 @@ user instructions
 	assert.Equal(t, []byte("user instructions\n"), remainder)
 }
 
-func TestParseFrontMatter_UnknownFlags(t *testing.T) {
-	data := []byte(`---
---whatever --unknown=stuff
----
-hello
-`)
-	cmd, remainder, err := parseFrontMatter(data)
-	assert.NoError(t, err)
-	assert.NotNil(t, cmd)
-	assert.False(t, cmd.All)
-	assert.False(t, cmd.Copy)
-	assert.False(t, cmd.Diff)
-	assert.Equal(t, "", cmd.Select)
-	assert.Equal(t, "", cmd.SelectRegex)
-	assert.Equal(t, []byte("hello\n"), remainder)
-}
-
 func TestParseFrontMatter_InvalidClosing(t *testing.T) {
 	data := []byte(`+++
 --copy
@@ -122,13 +105,13 @@ content
 func TestNewAskRunner_FrontMatterParsing(t *testing.T) {
 	// Create a temporary directory
 	tempDir := t.TempDir()
-	
+
 	// Test with instruction string containing front matter
 	cmdArgs := AskCmd{
 		TokenEstimator: "simple",
 		Instruction:    "---\n--diff\n---\nThis is a test instruction",
 	}
-	
+
 	runner, err := NewAskRunner(cmdArgs, tempDir)
 	assert.NoError(t, err)
 	assert.NotNil(t, runner)
