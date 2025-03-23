@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/hayeah/fork2/heredoc"
@@ -273,21 +274,13 @@ func (e *Exec) Apply() error {
 		return fmt.Errorf("verification failed: %w", err)
 	}
 
-	cmdParts := strings.Fields(e.Payload)
-	executable := cmdParts[0]
-	args := cmdParts[1:]
+	// Get the full command to execute
+	fullCmd := e.Payload
 
 	// Append any arguments from the args parameter
 	argsParam := e.GetParam("args")
 	if argsParam != nil && argsParam.Payload != "" {
-		additionalArgs := strings.Fields(argsParam.Payload)
-		args = append(args, additionalArgs...)
-	}
-
-	// Prepare full command string for display
-	fullCmd := executable
-	if len(args) > 0 {
-		fullCmd += " " + strings.Join(args, " ")
+		fullCmd += " " + argsParam.Payload
 	}
 
 	// Prompt for confirmation
@@ -296,7 +289,14 @@ func (e *Exec) Apply() error {
 		return nil
 	}
 
-	cmd := exec.Command(executable, args...)
+	// Use the shell to execute the command to preserve quotes and special characters
+	var cmd *exec.Cmd
+	if runtime.GOOS == "windows" {
+		cmd = exec.Command("cmd", "/c", fullCmd)
+	} else {
+		cmd = exec.Command("sh", "-c", fullCmd)
+	}
+
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 

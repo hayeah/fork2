@@ -29,7 +29,7 @@ func TestExec(t *testing.T) {
 	// Test with a simple echo command
 	var execCommand string
 	if runtime.GOOS == "windows" {
-		execCommand = "cmd /c echo"
+		execCommand = "echo"
 	} else {
 		execCommand = "echo"
 	}
@@ -38,7 +38,7 @@ func TestExec(t *testing.T) {
 		Name:    "exec",
 		Payload: execCommand,
 		Params: []heredoc.Param{
-			{Name: "args", Payload: "Hello World"},
+			{Name: "args", Payload: "\"Hello World\""},
 		},
 	}
 
