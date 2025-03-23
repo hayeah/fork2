@@ -52,6 +52,19 @@ func (r *Renderer) loadTemplateContent(templatePath string) (string, error) {
 	return templateContent, nil
 }
 
+// RenderPartial renders a template without a layout.
+// It's a convenience method that calls Render with an empty layoutPath.
+//
+// Parameters:
+//   - partialPath: The path to the template to render. Can be in one of three formats:
+//     - System template: <vibe/coder>
+//     - Repo root template: @common/header
+//     - Local template: ./helpers/buttons (relative to CurrentTemplatePath)
+//   - data: The data to pass to the template during rendering
+//
+// Returns:
+//   - A string containing the rendered template
+//   - An error if the template could not be loaded or rendered
 func (r *Renderer) RenderPartial(partialPath string, data any) (string, error) {
 	return r.Render(partialPath, "", data)
 }
