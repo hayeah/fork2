@@ -1,6 +1,7 @@
 package merge
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
 	"os"
@@ -247,6 +248,22 @@ func (e *Exec) Verify() error {
 	return nil
 }
 
+// promptForConfirmation asks the user for confirmation before proceeding.
+// It returns true if the user confirms, false otherwise.
+func promptForConfirmation(message string) bool {
+	reader := bufio.NewReader(os.Stdin)
+
+	fmt.Printf("%s [y/N]: ", message)
+	response, err := reader.ReadString('\n')
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error reading input: %v\n", err)
+		return false
+	}
+
+	response = strings.ToLower(strings.TrimSpace(response))
+	return response == "y" || response == "yes"
+}
+
 func (e *Exec) Apply() error {
 	if err := e.Verify(); err != nil {
 		return fmt.Errorf("verification failed: %w", err)
@@ -261,6 +278,18 @@ func (e *Exec) Apply() error {
 	if argsParam != nil && argsParam.Payload != "" {
 		additionalArgs := strings.Fields(argsParam.Payload)
 		args = append(args, additionalArgs...)
+	}
+
+	// Prepare full command string for display
+	fullCmd := executable
+	if len(args) > 0 {
+		fullCmd += " " + strings.Join(args, " ")
+	}
+
+	// Prompt for confirmation
+	if !promptForConfirmation(fmt.Sprintf("Execute command: %s", fullCmd)) {
+		fmt.Println("Command execution cancelled by user.")
+		return nil
 	}
 
 	cmd := exec.Command(executable, args...)
