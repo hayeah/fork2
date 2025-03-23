@@ -9,7 +9,9 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
+	"github.com/alexflint/go-arg"
 	"github.com/atotto/clipboard"
 	"github.com/hayeah/fork2"
 	"github.com/pkoukk/tiktoken-go"
@@ -34,11 +36,12 @@ var diffHeredocPrompt string
 
 // AskRunner encapsulates the state and behavior for the file picker
 type AskRunner struct {
-	Args           AskCmd
-	RootPath       string
-	Items          []item
-	ChildrenMap    map[string][]string
-	TokenEstimator TokenEstimator
+	Args            AskCmd
+	RootPath        string
+	Items           []item
+	ChildrenMap     map[string][]string
+	TokenEstimator  TokenEstimator
+	UserInstruction string
 }
 
 // NewAskRunner creates and initializes a new PickRunner
@@ -50,6 +53,12 @@ func NewAskRunner(cmdArgs AskCmd, rootPath string) (*AskRunner, error) {
 
 	if !info.IsDir() {
 		return nil, fmt.Errorf("not a directory: %s", rootPath)
+	}
+
+	// Parse front matter from instruction
+	userInstruction, err := parseInstructionWithFrontMatter(&cmdArgs)
+	if err != nil {
+		return nil, err
 	}
 
 	// Select the token estimator based on the flag
@@ -64,9 +73,10 @@ func NewAskRunner(cmdArgs AskCmd, rootPath string) (*AskRunner, error) {
 	}
 
 	return &AskRunner{
-		Args:           cmdArgs,
-		RootPath:       rootPath,
-		TokenEstimator: tokenEstimator,
+		Args:            cmdArgs,
+		RootPath:        rootPath,
+		TokenEstimator:  tokenEstimator,
+		UserInstruction: userInstruction,
 	}, nil
 }
 
@@ -112,7 +122,6 @@ func (r *AskRunner) filterFiles() ([]string, error) {
 	var selectedFiles []string
 	var err error
 
-	// Define selector functions for different selection modes
 	if r.Args.All {
 		// Select all files
 		selectedFiles, err = selectAllFiles(r.Items)
@@ -185,31 +194,13 @@ func (r *AskRunner) handleOutput(selectedFiles []string) error {
 	}
 }
 
-// generateUserInstruction creates the user instruction string
-// If instructionArg is a readable file, it reads the content
-// Otherwise, it uses the instructionArg as the instruction
+// generateUserInstruction returns the user instruction string that was already parsed
+// during initialization.
 func (r *AskRunner) generateUserInstruction() (string, error) {
-	instructionArg := r.Args.Instruction
-	if instructionArg == "" {
-		return "", nil
-	}
-
-	// Check if the instruction is a file path
-	fileInfo, err := os.Stat(instructionArg)
-	if err == nil && !fileInfo.IsDir() {
-		// It's a file, read its content
-		content, err := os.ReadFile(instructionArg)
-		if err != nil {
-			return "", fmt.Errorf("failed to read instruction file: %v", err)
-		}
-		return "\n# User Instructions\n" + string(content) + "\n\n", nil
-	}
-
-	// It's not a file, use as-is
-	return "\n# User Instructions\n" + instructionArg + "\n\n", nil
+	return r.UserInstruction, nil
 }
 
-// writeOutput outputs the directory tree, file map, and token count
+// writeOutput outputs the directory tree, file map, and the user's instructions
 func (r *AskRunner) writeOutput(w io.Writer, selectedFiles []string) error {
 	// Sort the selected files
 	sort.Strings(selectedFiles)
@@ -217,7 +208,6 @@ func (r *AskRunner) writeOutput(w io.Writer, selectedFiles []string) error {
 	// If diff output is enabled, include the diff prompt at the beginning
 	if r.Args.Diff {
 		_, err := fmt.Fprint(w, diffHeredocPrompt)
-		// _, err := fmt.Fprint(w, diffPrompt)
 		if err != nil {
 			return fmt.Errorf("failed to write diff prompt: %v", err)
 		}
@@ -235,18 +225,19 @@ func (r *AskRunner) writeOutput(w io.Writer, selectedFiles []string) error {
 		return fmt.Errorf("failed to write file map: %v", err)
 	}
 
-	// Generate and include user instruction if provided
-	if r.Args.Instruction != "" {
-		userInstruction, err := r.generateUserInstruction()
+	// Include user instruction if provided
+	if r.UserInstruction != "" {
+		// Write the header and user instruction
+		_, err = fmt.Fprintln(w, "\n# User Instructions")
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to write instruction header: %v", err)
 		}
 
-		// Write the user instruction
-		_, err = fmt.Fprintln(w, userInstruction)
+		_, err = fmt.Fprintln(w, r.UserInstruction)
 		if err != nil {
 			return fmt.Errorf("failed to write user instruction: %v", err)
 		}
+
 		// Add a blank line after the instruction
 		_, err = fmt.Fprintln(w)
 		if err != nil {
@@ -330,12 +321,11 @@ func generateDirectoryTree(w io.Writer, rootPath string, items []item) error {
 			return node.children[i].name < node.children[j].name
 		})
 
-		// Add this node to the result
 		if node.path == rootPath {
 			// Use the absolute path for the root node
 			absPath, err := filepath.Abs(rootPath)
 			if err != nil {
-				absPath = rootPath // Fallback to rootPath if Abs fails
+				absPath = rootPath // Fallback
 			}
 			_, err = fmt.Fprintln(w, absPath)
 			if err != nil {
@@ -352,7 +342,6 @@ func generateDirectoryTree(w io.Writer, rootPath string, items []item) error {
 			}
 		}
 
-		// Add children
 		for i, child := range node.children {
 			isLastChild := i == len(node.children)-1
 			newPrefix := prefix
@@ -371,7 +360,6 @@ func generateDirectoryTree(w io.Writer, rootPath string, items []item) error {
 		return nil
 	}
 
-	// Write the tree structure
 	if err := writeTreeNode(rootNode, "", true); err != nil {
 		return err
 	}
@@ -388,7 +376,6 @@ func estimateTokenCountSimple(filePath string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-
 	// Simple estimation: 1 token per 4 characters
 	return len(data) / 4, nil
 }
@@ -408,4 +395,196 @@ func estimateTokenCountTiktoken(filePath string) (int, error) {
 
 	tokens := tke.Encode(string(data), nil, nil)
 	return len(tokens), nil
+}
+
+// parseFrontMatter attempts to parse front matter from data. It returns a *AskCmd
+// and the remainder of the data after the front matter. If there's no front matter,
+// returns nil, original data, no error. If front matter is found but not properly
+// closed, returns an error.
+func parseFrontMatter(data []byte) (*AskCmd, []byte, error) {
+	lines := bytes.Split(data, []byte("\n"))
+	if len(lines) == 0 {
+		return nil, data, nil
+	}
+
+	// Check if the first line is '---' or '+++'
+	delimiter := ""
+	if bytes.Equal(lines[0], []byte("---")) || bytes.Equal(lines[0], []byte("+++")) {
+		delimiter = string(lines[0])
+	} else {
+		// no front matter
+		return nil, data, nil
+	}
+
+	// Find the closing delimiter
+	var frontMatterLines []byte
+	foundEnd := false
+	i := 1
+	for ; i < len(lines); i++ {
+		if bytes.Equal(lines[i], []byte(delimiter)) {
+			foundEnd = true
+			break
+		}
+		frontMatterLines = append(frontMatterLines, lines[i]...)
+		frontMatterLines = append(frontMatterLines, '\n')
+	}
+
+	if !foundEnd {
+		return nil, nil, fmt.Errorf("front matter not closed with %s", delimiter)
+	}
+
+	parsedCmd, err := parseFlags(frontMatterLines)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// remainder is everything after the closing delimiter line
+	remainder := bytes.Join(lines[i+1:], []byte("\n"))
+	return parsedCmd, remainder, nil
+}
+
+// parseFlags interprets lines of text as flags for AskCmd, e.g.:
+// "--diff" -> sets Diff to true
+// "--all" -> sets All to true
+// "--copy" -> sets Copy to true
+// "--select=some/pattern" -> sets Select to "some/pattern"
+// etc.
+func parseFlags(frontMatter []byte) (*AskCmd, error) {
+	cmd := &AskCmd{}
+
+	arg.Parse()
+
+	allLines := bytes.Split(frontMatter, []byte("\n"))
+	for _, line := range allLines {
+		line = bytes.TrimSpace(line)
+		if len(line) == 0 {
+			continue
+		}
+
+		// A line might have multiple flags: e.g. "--copy --diff"
+		parts := strings.Fields(string(line))
+		for _, part := range parts {
+			if err := applyFlag(part, cmd); err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	return cmd, nil
+}
+
+// parseInstructionWithFrontMatter parses the instruction from a file or string,
+// extracts any front matter, and returns the remaining instruction content.
+// It modifies the provided AskCmd with any flags found in the front matter.
+func parseInstructionWithFrontMatter(cmdArgs *AskCmd) (string, error) {
+	if cmdArgs.Instruction == "" {
+		return "", nil
+	}
+
+	// First step: Read the instruction content (from file or use as-is)
+	instructionContent, err := readInstructionContent(cmdArgs.Instruction)
+	if err != nil {
+		return "", err
+	}
+
+	// Second step: Parse front matter from the content
+	frontCmd, remainder, err := parseFrontMatter(instructionContent)
+	if err != nil && frontCmd == nil {
+		// invalid front matter => error
+		return "", err
+	}
+
+	// Apply any front matter flags to command args
+	if frontCmd != nil {
+		mergeAskCmd(cmdArgs, frontCmd)
+	}
+
+	return string(remainder), nil
+}
+
+// readInstructionContent reads the instruction content from a file if the path exists,
+// otherwise returns the instruction string as-is
+func readInstructionContent(instruction string) ([]byte, error) {
+	// Check if the instruction is a file path
+	fileInfo, err := os.Stat(instruction)
+	if err == nil && !fileInfo.IsDir() {
+		// It's a file, read its content
+		content, err := os.ReadFile(instruction)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read instruction file: %v", err)
+		}
+		return content, nil
+	}
+
+	// It's not a file, return the instruction string itself
+	return []byte(instruction), nil
+}
+
+// applyFlag sets fields in cmd based on a single argument like "--all" or "--select=xyz"
+func applyFlag(arg string, cmd *AskCmd) error {
+	if strings.HasPrefix(arg, "--all") {
+		cmd.All = true
+		return nil
+	}
+	if strings.HasPrefix(arg, "--diff") {
+		cmd.Diff = true
+		return nil
+	}
+	if strings.HasPrefix(arg, "--copy") {
+		cmd.Copy = true
+		return nil
+	}
+	if strings.HasPrefix(arg, "--select=") {
+		parts := strings.SplitN(arg, "=", 2)
+		if len(parts) == 2 {
+			cmd.Select = parts[1]
+		}
+		return nil
+	}
+	if strings.HasPrefix(arg, "--select-re=") {
+		parts := strings.SplitN(arg, "=", 2)
+		if len(parts) == 2 {
+			cmd.SelectRegex = parts[1]
+		}
+		return nil
+	}
+	if strings.HasPrefix(arg, "--token-estimator=") {
+		parts := strings.SplitN(arg, "=", 2)
+		if len(parts) == 2 {
+			cmd.TokenEstimator = parts[1]
+		}
+		return nil
+	}
+	// if it's something else, we can treat it as an error or ignore
+	// for test coverage, let's ignore unknown arguments
+	return nil
+}
+
+// mergeAskCmd merges src fields into dst, with dst having precedence
+// for any non-empty value or true boolean. So if dst.All is already true,
+// it stays true. If dst.All is false, we take src's value. Same pattern
+// for the rest.
+func mergeAskCmd(dst *AskCmd, src *AskCmd) {
+	if src == nil {
+		return
+	}
+	// If dst.TokenEstimator is empty, overwrite it
+	if dst.TokenEstimator == "" {
+		dst.TokenEstimator = src.TokenEstimator
+	}
+	// Booleans: once set to true, keep them
+	dst.All = dst.All || src.All
+	dst.Copy = dst.Copy || src.Copy
+	dst.Diff = dst.Diff || src.Diff
+
+	// Strings: if dst is empty, overwrite
+	if dst.Select == "" {
+		dst.Select = src.Select
+	}
+	if dst.SelectRegex == "" {
+		dst.SelectRegex = src.SelectRegex
+	}
+	if dst.Instruction == "" {
+		dst.Instruction = src.Instruction
+	}
 }
