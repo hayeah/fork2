@@ -41,7 +41,7 @@ func (ctx *RenderContext) ResolvePartialPath(partialPath string) (fs.FS, string,
 		path := strings.TrimPrefix(partialPath, "@")
 		return ctx.RepoPartials, path, nil
 
-	case strings.HasPrefix(partialPath, "./"):
+	default:
 		// Local template (relative to current template)
 		if ctx.CurrentTemplatePath == "" {
 			return nil, "", fmt.Errorf("cannot resolve local path without CurrentTemplatePath")
@@ -50,16 +50,11 @@ func (ctx *RenderContext) ResolvePartialPath(partialPath string) (fs.FS, string,
 		// Get the directory of the current template
 		currentDir := filepath.Dir(ctx.CurrentTemplatePath)
 
-		// Calculate the path relative to the current template directory
-		localPath := strings.TrimPrefix(partialPath, "./")
-
 		// Join the paths to get the full path relative to the repo root
-		fullPath := filepath.Join(currentDir, localPath)
+		fullPath := filepath.Join(currentDir, partialPath)
+		fullPath = filepath.Clean(fullPath)
 
 		return ctx.RepoPartials, fullPath, nil
-
-	default:
-		return nil, "", fmt.Errorf("invalid partial path format: %s", partialPath)
 	}
 }
 
