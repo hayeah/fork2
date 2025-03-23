@@ -68,7 +68,32 @@ HEREDOC
 7. **create**: For new files, put the full file in `$content` block.
 8. **delete**: The file path to be removed provided as a payload to the command.
 
------
+
+### Example: Nested HEREDOCs
+
+If your output heredoc payload contains heredoc, choose a different UNIQUE heredoc string (e.g. PINEAPPLE, MAXIMUS, HEREDOC2, HEREDOCMETA, etc.) to delimit this output.
+
+```
+:modify path/heredoc.txt
+
+$description<HEREDOC
+make change to a HEREDOC payload
+HEREDOC
+
+
+$search<HEREDOC_2
+$search<HEREDOC
+heredoc payload
+HEREDOC
+HEREDOC_2
+
+$replace<HEREDOC_2
+$search<HEREDOC
+new heredoc payload
+HEREDOC
+HEREDOC_2
+```
+
 
 ### Example: Make Multiple Edits
 

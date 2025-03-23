@@ -467,3 +467,52 @@ $param1 value`
 	assert.Error(err, "Expected error in strict mode due to 'invalid line'")
 	assert.Nil(cmd1)
 }
+
+func TestNestedHeredoc(t *testing.T) {
+	assert := assert.New(t)
+
+	input := `:modify path/heredoc.txt
+
+$description<HEREDOC
+make change to a HEREDOC payload
+HEREDOC
+
+$search<HEREDOC_2
+$search<HEREDOC
+heredoc payload
+HEREDOC
+HEREDOC_2
+
+$replace<HEREDOC_2
+$search<HEREDOC
+new heredoc payload
+HEREDOC
+HEREDOC_2`
+
+	commands, err := Parse(input)
+	assert.NoError(err)
+	assert.Len(commands, 1)
+
+	cmd := commands[0]
+	assert.Equal("modify", cmd.Name)
+	assert.Equal("path/heredoc.txt", cmd.Payload)
+	assert.Len(cmd.Params, 3)
+
+	// Check description param
+	descParam := cmd.GetParam("description")
+	assert.NotNil(descParam)
+	assert.Equal("make change to a HEREDOC payload", descParam.Payload)
+
+	searchParam := cmd.GetParam("search")
+	assert.NotNil(searchParam)
+	assert.Equal(`$search<HEREDOC
+heredoc payload
+HEREDOC`, searchParam.Payload)
+
+	// Check replace param with nested HEREDOC
+	replaceParam := cmd.GetParam("replace")
+	assert.NotNil(replaceParam)
+	assert.Equal(`$search<HEREDOC
+new heredoc payload
+HEREDOC`, replaceParam.Payload)
+}
