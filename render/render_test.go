@@ -105,26 +105,25 @@ func TestResolvePartialPath(t *testing.T) {
 func TestPartial(t *testing.T) {
 	// Create test filesystems with nested partials
 	systemFS := createTestFS(map[string]string{
-		"vibe/coder":  "System {{ partial \"<vibe/footer>\" . }}",
+		"vibe/coder":  "System {{ partial \"<vibe/footer>\" }}",
 		"vibe/footer": "Footer",
 	})
 
 	repoFS := createTestFS(map[string]string{
 		"common/header":          "Repo Header with {{ .Value }}",
-		"templates/local/helper": "Local Helper that uses {{ partial \"@common/header\" . }}",
+		"templates/local/helper": "Local Helper that uses {{ partial \"@common/header\" }}",
 	})
 
-	// Create render context
-	ctx := &RenderContext{
-		CurrentTemplatePath: "templates/main.md",
-		SystemPartials:      systemFS,
-		RepoPartials:        repoFS,
-	}
-
-	// Test data
-	data := struct {
+	// Create render context with the test data embedded
+	ctx := &struct {
+		RenderContext
 		Value string
 	}{
+		RenderContext: RenderContext{
+			CurrentTemplatePath: "templates/main.md",
+			SystemPartials:      systemFS,
+			RepoPartials:        repoFS,
+		},
 		Value: "test value",
 	}
 
@@ -132,7 +131,7 @@ func TestPartial(t *testing.T) {
 		assert := assert.New(t)
 
 		// Test a simple partial
-		result, err := ctx.Partial("@common/header", data)
+		result, err := ctx.Partial("@common/header", ctx)
 		assert.NoError(err, "Partial should not return an error")
 		assert.Equal("Repo Header with test value", result, "Partial should render with variable interpolation")
 	})
@@ -141,7 +140,7 @@ func TestPartial(t *testing.T) {
 		assert := assert.New(t)
 
 		// Test a nested partial
-		result, err := ctx.Partial("<vibe/coder>", data)
+		result, err := ctx.Partial("<vibe/coder>", ctx)
 		assert.NoError(err, "Nested partial should not return an error")
 		assert.Equal("System Footer", result, "Nested partial should be correctly rendered")
 	})
@@ -150,7 +149,7 @@ func TestPartial(t *testing.T) {
 		assert := assert.New(t)
 
 		// Test a local partial that references a repo partial
-		result, err := ctx.Partial("./local/helper", data)
+		result, err := ctx.Partial("./local/helper", ctx)
 		assert.NoError(err, "Local partial should not return an error")
 		assert.Equal("Local Helper that uses Repo Header with test value",
 			result, "Local partial should correctly include repo partial with variable interpolation")
@@ -205,7 +204,17 @@ func TestRender(t *testing.T) {
 
 	// Add user content template to the repo filesystem
 	updatedRepoFS := createTestFS(map[string]string{
-		"layouts/main.md":   "{{ partial \"<vibe/coder>\" . }}\n\n# Tools\n{{ .ToolList }}\n\n# Directory Listing\n{{ .ListDirectory }}\n\n# User Instructions\n{{ block \"main\" . }}{{ end }}\n",
+		"layouts/main.md": `{{ partial "<vibe/coder>" }}
+
+# Tools
+{{ .ToolList }}
+
+# Directory Listing
+{{ .ListDirectory }}
+
+# User Instructions
+{{ block "main" . }}{{ end }}
+`,
 		"templates/user.md": "Hello from the user",
 	})
 	ctx.RenderContext.RepoPartials = updatedRepoFS

@@ -75,8 +75,8 @@ func Render(ctx PartialContext, userContentPath string, layoutPath string) (stri
 	// Create a template with a custom partial function
 	tmpl := template.New("layout")
 	tmpl = tmpl.Funcs(template.FuncMap{
-		"partial": func(partialPath string, data any) (string, error) {
-			return ctx.Partial(partialPath, data)
+		"partial": func(partialPath string) (string, error) {
+			return ctx.Partial(partialPath, ctx)
 		},
 	})
 
@@ -95,8 +95,6 @@ func Render(ctx PartialContext, userContentPath string, layoutPath string) (stri
 
 	return buf.String(), nil
 }
-
-
 
 // readTemplate reads a template file from the specified filesystem.
 func readTemplate(fsys fs.FS, filename string) (string, error) {
@@ -130,8 +128,8 @@ func (ctx *RenderContext) Partial(partialPath string, data any) (string, error) 
 	// Create a template with a custom partial function
 	tmpl := template.New(file)
 	tmpl = tmpl.Funcs(template.FuncMap{
-		"partial": func(nestedPartialPath string, nestedData any) (string, error) {
-			return ctx.Partial(nestedPartialPath, nestedData)
+		"partial": func(nestedPartialPath string) (string, error) {
+			return ctx.Partial(nestedPartialPath, data)
 		},
 	})
 
