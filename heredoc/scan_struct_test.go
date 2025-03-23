@@ -133,7 +133,7 @@ func TestScan(t *testing.T) {
 
 		type User struct {
 			Name  string `json:"name"`
-			Email string `json:"email,required"`
+			Email string `json:"email"`
 		}
 
 		var user User

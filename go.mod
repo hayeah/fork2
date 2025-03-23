@@ -4,6 +4,7 @@ go 1.24.1
 
 require (
 	github.com/alexflint/go-arg v1.4.3
+	github.com/atotto/clipboard v0.1.4
 	github.com/charmbracelet/bubbles v0.20.0
 	github.com/charmbracelet/bubbletea v1.3.4
 	github.com/charmbracelet/lipgloss v1.1.0
@@ -14,11 +15,13 @@ require (
 	github.com/hayeah/goo v0.0.0-20250316124305-79c6ad3ca7c7
 	github.com/jmoiron/sqlx v1.4.0
 	github.com/mattn/go-sqlite3 v1.14.24
+	github.com/pkoukk/tiktoken-go v0.1.7
+	github.com/sahilm/fuzzy v0.1.1
+	github.com/stretchr/testify v1.10.0
 )
 
 require (
 	github.com/alexflint/go-scalar v1.1.0 // indirect
-	github.com/atotto/clipboard v0.1.4 // indirect
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
 	github.com/charmbracelet/colorprofile v0.2.3-0.20250311203215-f60798e515dc // indirect
 	github.com/charmbracelet/x/ansi v0.8.0 // indirect
@@ -48,13 +51,10 @@ require (
 	github.com/muesli/cancelreader v0.2.2 // indirect
 	github.com/muesli/termenv v0.16.0 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.0 // indirect
-	github.com/pkoukk/tiktoken-go v0.1.7 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
-	github.com/sahilm/fuzzy v0.1.1 // indirect
 	github.com/samber/lo v1.38.1 // indirect
 	github.com/samber/slog-echo v1.14.1 // indirect
-	github.com/stretchr/testify v1.10.0 // indirect
 	github.com/tailscale/hujson v0.0.0-20241010212012-29efb4a0184b // indirect
 	github.com/tidwall/gjson v1.18.0 // indirect
 	github.com/tidwall/match v1.1.1 // indirect

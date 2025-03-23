@@ -224,12 +224,6 @@ func (r *AskRunner) handleOutput(selectedFiles []string) error {
 	}
 }
 
-// generateUserInstruction returns the user instruction string that was already parsed
-// during initialization.
-func (r *AskRunner) generateUserInstruction() (string, error) {
-	return r.UserInstruction, nil
-}
-
 // writeOutput outputs the directory tree, file map, and the user's instructions
 func (r *AskRunner) writeOutput(w io.Writer, selectedFiles []string) error {
 	// Sort the selected files
