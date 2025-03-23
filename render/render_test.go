@@ -101,7 +101,6 @@ func TestResolvePartialPath(t *testing.T) {
 		})
 	}
 }
-
 func TestPartial(t *testing.T) {
 	// Create test filesystems with nested partials
 	systemFS := createTestFS(map[string]string{
@@ -114,16 +113,17 @@ func TestPartial(t *testing.T) {
 		"templates/local/helper": "Local Helper that uses {{ partial \"@common/header\" }}",
 	})
 
-	// Create render context with the test data embedded
-	ctx := &struct {
-		RenderContext
+	// Create render context
+	ctx := &RenderContext{
+		CurrentTemplatePath: "templates/main.md",
+		SystemPartials:      systemFS,
+		RepoPartials:        repoFS,
+	}
+
+	// Test data
+	testData := struct {
 		Value string
 	}{
-		RenderContext: RenderContext{
-			CurrentTemplatePath: "templates/main.md",
-			SystemPartials:      systemFS,
-			RepoPartials:        repoFS,
-		},
 		Value: "test value",
 	}
 
@@ -131,7 +131,7 @@ func TestPartial(t *testing.T) {
 		assert := assert.New(t)
 
 		// Test a simple partial
-		result, err := ctx.Partial("@common/header", ctx)
+		result, err := ctx.Partial("@common/header", testData)
 		assert.NoError(err, "Partial should not return an error")
 		assert.Equal("Repo Header with test value", result, "Partial should render with variable interpolation")
 	})
@@ -140,7 +140,7 @@ func TestPartial(t *testing.T) {
 		assert := assert.New(t)
 
 		// Test a nested partial
-		result, err := ctx.Partial("<vibe/coder>", ctx)
+		result, err := ctx.Partial("<vibe/coder>", testData)
 		assert.NoError(err, "Nested partial should not return an error")
 		assert.Equal("System Footer", result, "Nested partial should be correctly rendered")
 	})
@@ -149,14 +149,14 @@ func TestPartial(t *testing.T) {
 		assert := assert.New(t)
 
 		// Test a local partial that references a repo partial
-		result, err := ctx.Partial("./local/helper", ctx)
+		result, err := ctx.Partial("./local/helper", testData)
 		assert.NoError(err, "Local partial should not return an error")
 		assert.Equal("Local Helper that uses Repo Header with test value",
 			result, "Local partial should correctly include repo partial with variable interpolation")
 	})
 }
 
-func TestRender(t *testing.T) {
+func TestRenderer(t *testing.T) {
 	assert := require.New(t)
 
 	// Create test filesystems
@@ -165,45 +165,6 @@ func TestRender(t *testing.T) {
 	})
 
 	repoFS := createTestFS(map[string]string{
-		"layouts/main.md": `{{ partial "<vibe/coder>" . }}
-
-# Tools
-{{ .ToolList }}
-
-# Directory Listing
-{{ .ListDirectory }}
-
-# User Instructions
-{{ block "main" . }}{{ end }}
-`,
-	})
-
-	// Create render context
-	vibeCtx := &VibeRenderContext{
-		RenderContext: RenderContext{
-			CurrentTemplatePath: "",
-			SystemPartials:      systemFS,
-			RepoPartials:        repoFS,
-		},
-		ListDirectory:    []string{"file1.go", "file2.md"},
-		SelectedFiles:    []string{"selected1.go"},
-		RepoInstructions: map[string]string{"key": "value"},
-		System:           "Linux",
-		Now:              "2023-01-01",
-	}
-
-	// Add a custom field for testing
-	type extendedContext struct {
-		VibeRenderContext
-		ToolList string
-	}
-	ctx := &extendedContext{
-		VibeRenderContext: *vibeCtx,
-		ToolList:          "Tool1, Tool2, Tool3",
-	}
-
-	// Add user content template to the repo filesystem
-	updatedRepoFS := createTestFS(map[string]string{
 		"layouts/main.md": `{{ partial "<vibe/coder>" }}
 
 # Tools
@@ -213,28 +174,46 @@ func TestRender(t *testing.T) {
 {{ .ListDirectory }}
 
 # User Instructions
-{{ block "main" . }}{{ end }}
-`,
+{{ block "main" . }}{{ end }}`,
+
 		"templates/user.md": "Hello from the user",
 	})
-	ctx.RenderContext.RepoPartials = updatedRepoFS
+
+	// Create render context
+	ctx := &RenderContext{
+		CurrentTemplatePath: "",
+		SystemPartials:      systemFS,
+		RepoPartials:        repoFS,
+	}
+
+	// Create test data
+	testData := struct {
+		System        string
+		ListDirectory []string
+		SelectedFiles []string
+		ToolList      string
+	}{
+		System:        "Linux",
+		ListDirectory: []string{"file1.go", "file2.md"},
+		SelectedFiles: []string{"selected1.go"},
+		ToolList:      "Tool1, Tool2, Tool3",
+	}
+
+	// Create a renderer with the context
+	renderer := NewRenderer(ctx)
 
 	// Render with the layout using path to user content
-	result, err := Render(ctx, "@templates/user.md", "@layouts/main.md")
+	result, err := renderer.Render("@templates/user.md", "@layouts/main.md", testData)
 	assert.NoError(err, "Render should not return an error")
 
-	// Check for expected content in the result
-	expectedParts := []string{
-		"Coder: Linux",
-		"# Tools",
-		"Tool1, Tool2, Tool3",
-		"# Directory Listing",
-		"file1.go", "file2.md",
-		"# User Instructions",
-		"Hello from the user",
-	}
+	assert.Equal(`Coder: Linux
 
-	for _, part := range expectedParts {
-		assert.Contains(result, part, "Rendered result should contain expected content")
-	}
+# Tools
+Tool1, Tool2, Tool3
+
+# Directory Listing
+[file1.go file2.md]
+
+# User Instructions
+Hello from the user`, result)
 }

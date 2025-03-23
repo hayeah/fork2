@@ -23,29 +23,31 @@ type RenderContext struct {
 	RepoPartials fs.FS
 }
 
-// VibeRenderContext extends the base RenderContext to hold more data.
-type VibeRenderContext struct {
-	RenderContext
-
-	ListDirectory    []string
-	SelectedFiles    []string
-	RepoInstructions map[string]string
-	System           string
-	Now              string
-}
-
 // PartialContext is the interface for any context that can render partials.
 type PartialContext interface {
 	Partial(partialPath string, data any) (string, error)
 	ResolvePartialPath(partialPath string) (fs.FS, string, error)
 }
 
+// Renderer provides template rendering capabilities.
+type Renderer struct {
+	ctx *RenderContext
+}
+
+// NewRenderer creates a new Renderer with the given RenderContext.
+func NewRenderer(ctx *RenderContext) *Renderer {
+	return &Renderer{
+		ctx: ctx,
+	}
+}
+
 // Render renders a layout template by wrapping the user's content in a "main" block.
 // layoutPath indicates which layout template to use.
 // userContentPath indicates the path to the user's content template.
-func Render(ctx PartialContext, userContentPath string, layoutPath string) (string, error) {
+// data is the data to pass to the template.
+func (r *Renderer) Render(userContentPath string, layoutPath string, data any) (string, error) {
 	// Get the layout content
-	layoutFS, layoutFile, err := ctx.ResolvePartialPath(layoutPath)
+	layoutFS, layoutFile, err := r.ctx.ResolvePartialPath(layoutPath)
 	if err != nil {
 		return "", fmt.Errorf("error resolving layout path: %w", err)
 	}
@@ -56,7 +58,7 @@ func Render(ctx PartialContext, userContentPath string, layoutPath string) (stri
 	}
 
 	// Get the user content
-	userFS, userFile, err := ctx.ResolvePartialPath(userContentPath)
+	userFS, userFile, err := r.ctx.ResolvePartialPath(userContentPath)
 	if err != nil {
 		return "", fmt.Errorf("error resolving user content path: %w", err)
 	}
@@ -66,29 +68,29 @@ func Render(ctx PartialContext, userContentPath string, layoutPath string) (stri
 		return "", fmt.Errorf("error reading user content template: %w", err)
 	}
 
-	// Wrap user content in "main" block
-	wrappedContent := fmt.Sprintf(`{{ define "main" }}%s{{ end }}`, userContent)
-
-	// Combine layout with wrapped content
-	combinedContent := layoutContent + "\n" + wrappedContent
-
-	// Create a template with a custom partial function
+	// Create a template set
 	tmpl := template.New("layout")
 	tmpl = tmpl.Funcs(template.FuncMap{
 		"partial": func(partialPath string) (string, error) {
-			return ctx.Partial(partialPath, ctx)
+			return r.ctx.Partial(partialPath, data)
 		},
 	})
 
-	// Parse the combined content
-	tmpl, err = tmpl.Parse(combinedContent)
+	// Parse the layout template
+	tmpl, err = tmpl.Parse(layoutContent)
 	if err != nil {
-		return "", fmt.Errorf("error parsing template: %w", err)
+		return "", fmt.Errorf("error parsing layout template: %w", err)
+	}
+
+	// Define the main template block with user content
+	tmpl, err = tmpl.Parse(fmt.Sprintf(`{{ define "main" }}%s{{ end }}`, userContent))
+	if err != nil {
+		return "", fmt.Errorf("error parsing user content template: %w", err)
 	}
 
 	// Execute the template
 	var buf bytes.Buffer
-	err = tmpl.Execute(&buf, ctx)
+	err = tmpl.ExecuteTemplate(&buf, "layout", data)
 	if err != nil {
 		return "", fmt.Errorf("error executing template: %w", err)
 	}
