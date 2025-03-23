@@ -248,9 +248,9 @@ func (e *Exec) Verify() error {
 	return nil
 }
 
-// promptForConfirmation asks the user for confirmation before proceeding.
+// defaultPromptForConfirmation asks the user for confirmation before proceeding.
 // It returns true if the user confirms, false otherwise.
-func promptForConfirmation(message string) bool {
+func defaultPromptForConfirmation(message string) bool {
 	reader := bufio.NewReader(os.Stdin)
 
 	fmt.Printf("%s [y/N]: ", message)
@@ -263,6 +263,10 @@ func promptForConfirmation(message string) bool {
 	response = strings.ToLower(strings.TrimSpace(response))
 	return response == "y" || response == "yes"
 }
+
+// promptFn is a variable that holds the current promptForConfirmation function.
+// This allows tests to replace it with a mock.
+var promptFn = defaultPromptForConfirmation
 
 func (e *Exec) Apply() error {
 	if err := e.Verify(); err != nil {
@@ -287,7 +291,7 @@ func (e *Exec) Apply() error {
 	}
 
 	// Prompt for confirmation
-	if !promptForConfirmation(fmt.Sprintf("Execute command: %s", fullCmd)) {
+	if !promptFn(fmt.Sprintf("Execute command: %s", fullCmd)) {
 		fmt.Println("Command execution cancelled by user.")
 		return nil
 	}

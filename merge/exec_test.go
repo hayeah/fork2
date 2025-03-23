@@ -8,21 +8,21 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// mockPromptResponse controls the response for the promptForConfirmation function in tests
+// mockPromptResponse controls the response for the promptFn function in tests
 var mockPromptResponse bool
 
-// Mock promptForConfirmation for testing
+// Mock prompt function for testing
 func mockPromptForConfirmation(_ string) bool {
 	return mockPromptResponse
 }
 
 func TestExec(t *testing.T) {
-	// Store original promptForConfirmation and restore after test
-	originalPromptFn := promptForConfirmation
-	defer func() { promptForConfirmation = originalPromptFn }()
+	// Store original promptFn and restore after test
+	originalPromptFn := promptFn
+	defer func() { promptFn = originalPromptFn }()
 
 	// Mock the prompt function for testing
-	promptForConfirmation = mockPromptForConfirmation
+	promptFn = mockPromptForConfirmation
 	
 	assert := assert.New(t)
 
