@@ -23,6 +23,46 @@ type RenderContext struct {
 	RepoPartials fs.FS
 }
 
+// ResolvePartialPath determines which FS and file should be used for a given partial path.
+func (ctx *RenderContext) ResolvePartialPath(partialPath string) (fs.FS, string, error) {
+	// Path Types:
+	// 1. System Template <vibe/coder>
+	// 2. Repo Root Template @common/header
+	// 3. Local Template ./helpers/buttons
+
+	switch {
+	case strings.HasPrefix(partialPath, "<") && strings.HasSuffix(partialPath, ">"):
+		// System template
+		path := strings.TrimPrefix(strings.TrimSuffix(partialPath, ">"), "<")
+		return ctx.SystemPartials, path, nil
+
+	case strings.HasPrefix(partialPath, "@"):
+		// Repo root template
+		path := strings.TrimPrefix(partialPath, "@")
+		return ctx.RepoPartials, path, nil
+
+	case strings.HasPrefix(partialPath, "./"):
+		// Local template (relative to current template)
+		if ctx.CurrentTemplatePath == "" {
+			return nil, "", fmt.Errorf("cannot resolve local path without CurrentTemplatePath")
+		}
+
+		// Get the directory of the current template
+		currentDir := filepath.Dir(ctx.CurrentTemplatePath)
+
+		// Calculate the path relative to the current template directory
+		localPath := strings.TrimPrefix(partialPath, "./")
+
+		// Join the paths to get the full path relative to the repo root
+		fullPath := filepath.Join(currentDir, localPath)
+
+		return ctx.RepoPartials, fullPath, nil
+
+	default:
+		return nil, "", fmt.Errorf("invalid partial path format: %s", partialPath)
+	}
+}
+
 // Renderer provides template rendering capabilities.
 type Renderer struct {
 	ctx *RenderContext
@@ -57,9 +97,9 @@ func (r *Renderer) loadTemplateContent(templatePath string) (string, error) {
 //
 // Parameters:
 //   - partialPath: The path to the template to render. Can be in one of three formats:
-//     - System template: <vibe/coder>
-//     - Repo root template: @common/header
-//     - Local template: ./helpers/buttons (relative to CurrentTemplatePath)
+//   - System template: <vibe/coder>
+//   - Repo root template: @common/header
+//   - Local template: ./helpers/buttons (relative to CurrentTemplatePath)
 //   - data: The data to pass to the template during rendering
 //
 // Returns:
@@ -134,44 +174,4 @@ func readTemplate(fsys fs.FS, filename string) (string, error) {
 		return "", err
 	}
 	return string(content), nil
-}
-
-// ResolvePartialPath determines which FS and file should be used for a given partial path.
-func (ctx *RenderContext) ResolvePartialPath(partialPath string) (fs.FS, string, error) {
-	// Path Types:
-	// 1. System Template <vibe/coder>
-	// 2. Repo Root Template @common/header
-	// 3. Local Template ./helpers/buttons
-
-	switch {
-	case strings.HasPrefix(partialPath, "<") && strings.HasSuffix(partialPath, ">"):
-		// System template
-		path := strings.TrimPrefix(strings.TrimSuffix(partialPath, ">"), "<")
-		return ctx.SystemPartials, path, nil
-
-	case strings.HasPrefix(partialPath, "@"):
-		// Repo root template
-		path := strings.TrimPrefix(partialPath, "@")
-		return ctx.RepoPartials, path, nil
-
-	case strings.HasPrefix(partialPath, "./"):
-		// Local template (relative to current template)
-		if ctx.CurrentTemplatePath == "" {
-			return nil, "", fmt.Errorf("cannot resolve local path without CurrentTemplatePath")
-		}
-
-		// Get the directory of the current template
-		currentDir := filepath.Dir(ctx.CurrentTemplatePath)
-
-		// Calculate the path relative to the current template directory
-		localPath := strings.TrimPrefix(partialPath, "./")
-
-		// Join the paths to get the full path relative to the repo root
-		fullPath := filepath.Join(currentDir, localPath)
-
-		return ctx.RepoPartials, fullPath, nil
-
-	default:
-		return nil, "", fmt.Errorf("invalid partial path format: %s", partialPath)
-	}
 }
