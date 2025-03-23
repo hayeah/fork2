@@ -20,7 +20,25 @@ type RenderContext struct {
 	SystemPartials fs.FS
 
 	// FS containing repository-level partials (e.g., @vibe/coder)
+	//
+	// Note: os.DirFS("/home/user/myrepo") to prevent relative path escape
 	RepoPartials fs.FS
+}
+
+// ResolvePartial resolves a partial template path and returns its content.
+// This is a higher-level method that combines path resolution and content loading.
+func (ctx *RenderContext) ResolvePartial(partialPath string) (string, error) {
+	// Resolve the partial path to determine which FS and file to use
+	fsys, filePath, err := ctx.ResolvePartialPath(partialPath)
+	if err != nil {
+		return "", fmt.Errorf("error resolving partial path %q: %w", partialPath, err)
+	}
+
+	content, err := fs.ReadFile(fsys, filePath)
+	if err != nil {
+		return "", err
+	}
+	return string(content), nil
 }
 
 // ResolvePartialPath determines which FS and file should be used for a given partial path.
@@ -72,19 +90,7 @@ func NewRenderer(ctx *RenderContext) *Renderer {
 
 // loadTemplateContent loads the content of a template from the given path.
 func (r *Renderer) loadTemplateContent(templatePath string) (string, error) {
-	// Resolve the template path
-	templateFS, templateFile, err := r.ctx.ResolvePartialPath(templatePath)
-	if err != nil {
-		return "", fmt.Errorf("error resolving template path: %w", err)
-	}
-
-	// Read the template content
-	templateContent, err := readTemplate(templateFS, templateFile)
-	if err != nil {
-		return "", fmt.Errorf("error reading template: %w", err)
-	}
-
-	return templateContent, nil
+	return r.ctx.ResolvePartial(templatePath)
 }
 
 // RenderPartial renders a template without a layout.
@@ -133,8 +139,10 @@ func (r *Renderer) Render(contentPath string, layoutPath string, data any) (stri
 	templateTarget := "main"
 
 	if layoutPath != "" {
-		// Parse the layout template
+		// Set template target to "layout"
 		templateTarget = "layout"
+
+		// Parse the layout template
 		layoutContent, err := r.loadTemplateContent(layoutPath)
 		if err != nil {
 			return "", fmt.Errorf("error loading layout template: %w", err)
@@ -160,13 +168,4 @@ func (r *Renderer) Render(contentPath string, layoutPath string, data any) (stri
 	}
 
 	return buf.String(), nil
-}
-
-// readTemplate reads a template file from the specified filesystem.
-func readTemplate(fsys fs.FS, filename string) (string, error) {
-	content, err := fs.ReadFile(fsys, filename)
-	if err != nil {
-		return "", err
-	}
-	return string(content), nil
 }
