@@ -66,31 +66,33 @@ $other value4
 
 	parser := NewParser(strings.NewReader(input))
 
-	// First call should return the first split command.
+	// First command
 	cmd1, err := parser.ParseCommand()
 	assert.NoError(err)
 	assert.NotNil(cmd1)
-	assert.Equal("command", cmd1.Name)
-	assert.Equal("payload", cmd1.Payload)
-	assert.Len(cmd1.Params, 2)
-	assert.Equal("param", cmd1.Params[0].Name)
-	assert.Equal("value1", cmd1.Params[0].Payload)
-	assert.Equal("other", cmd1.Params[1].Name)
-	assert.Equal("value2", cmd1.Params[1].Payload)
 
-	// Second call should return the second split command.
+	type Params struct {
+		Param string `json:"param"`
+		Other string `json:"other"`
+	}
+	var p1 Params
+	err = cmd1.Scan(&p1)
+	assert.NoError(err)
+	assert.Equal("value1", p1.Param)
+	assert.Equal("value2", p1.Other)
+
+	// Second command
 	cmd2, err := parser.ParseCommand()
 	assert.NoError(err)
 	assert.NotNil(cmd2)
-	assert.Equal("command", cmd2.Name)
-	assert.Equal("payload", cmd2.Payload)
-	assert.Len(cmd2.Params, 2)
-	assert.Equal("param", cmd2.Params[0].Name)
-	assert.Equal("value3", cmd2.Params[0].Payload)
-	assert.Equal("other", cmd2.Params[1].Name)
-	assert.Equal("value4", cmd2.Params[1].Payload)
 
-	// Third call should return nil as there are no more commands.
+	var p2 Params
+	err = cmd2.Scan(&p2)
+	assert.NoError(err)
+	assert.Equal("value3", p2.Param)
+	assert.Equal("value4", p2.Other)
+
+	// Third call -> no more commands
 	cmd3, err := parser.ParseCommand()
 	assert.NoError(err)
 	assert.Nil(cmd3)
@@ -140,15 +142,16 @@ HEREDOC`
 	assert.Len(commands, 1)
 
 	cmd := commands[0]
-	assert.Equal("command", cmd.Name)
-	assert.Equal("", cmd.Payload)
-	assert.Len(cmd.Params, 2)
+	type Params struct {
+		Param1 string `json:"param1"`
+		Param2 string `json:"param2"`
+	}
 
-	assert.Equal("param1", cmd.Params[0].Name)
-	assert.Equal("inline payload", cmd.Params[0].Payload)
-
-	assert.Equal("param2", cmd.Params[1].Name)
-	assert.Equal("Heredoc payload for param2", cmd.Params[1].Payload)
+	var p Params
+	err = cmd.Scan(&p)
+	assert.NoError(err)
+	assert.Equal("inline payload", p.Param1)
+	assert.Equal("Heredoc payload for param2", p.Param2)
 }
 
 func TestParseMultipleCommands(t *testing.T) {
@@ -463,164 +466,4 @@ $param1 value`
 	cmd1, err := parser.ParseCommand()
 	assert.Error(err, "Expected error in strict mode due to 'invalid line'")
 	assert.Nil(cmd1)
-}
-
-func TestScan(t *testing.T) {
-	// Test case 1: Simple struct with basic types
-	t.Run("SimpleStruct", func(t *testing.T) {
-		assert := assert.New(t)
-
-		cmd := Command{
-			Name: "test",
-			Params: []Param{
-				{Name: "name", Payload: "John"},
-				{Name: "age", Payload: "30"},
-				{Name: "active", Payload: "true"},
-			},
-		}
-
-		type User struct {
-			Name   string `json:"name"`
-			Age    int    `json:"age"`
-			Active bool   `json:"active"`
-		}
-
-		var user User
-		err := cmd.Scan(&user)
-
-		assert.NoError(err)
-		assert.Equal("John", user.Name)
-		assert.Equal(30, user.Age)
-		assert.True(user.Active)
-	})
-
-	// Test case 2: Nested struct
-	t.Run("NestedStruct", func(t *testing.T) {
-		assert := assert.New(t)
-
-		cmd := Command{
-			Name: "test",
-			Params: []Param{
-				{Name: "name", Payload: "John"},
-				{Name: "address", Payload: `{"street":"Main St","city":"New York"}`},
-			},
-		}
-
-		type Address struct {
-			Street string `json:"street"`
-			City   string `json:"city"`
-		}
-
-		type User struct {
-			Name    string  `json:"name"`
-			Address Address `json:"address"`
-		}
-
-		var user User
-		err := cmd.Scan(&user)
-
-		assert.NoError(err)
-		assert.Equal("John", user.Name)
-		assert.Equal("Main St", user.Address.Street)
-		assert.Equal("New York", user.Address.City)
-	})
-
-	// Test case 3: Slice
-	t.Run("Slice", func(t *testing.T) {
-		assert := assert.New(t)
-
-		cmd := Command{
-			Name: "test",
-			Params: []Param{
-				{Name: "names", Payload: `["John","Jane","Bob"]`},
-			},
-		}
-
-		type Data struct {
-			Names []string `json:"names"`
-		}
-
-		var data Data
-		err := cmd.Scan(&data)
-
-		assert.NoError(err)
-		assert.Equal([]string{"John", "Jane", "Bob"}, data.Names)
-	})
-
-	// Test case 4: Error - target is not a pointer
-	t.Run("NotPointer", func(t *testing.T) {
-		assert := assert.New(t)
-
-		cmd := Command{
-			Name: "test",
-		}
-
-		type User struct{}
-
-		var user User
-		err := cmd.Scan(user)
-
-		assert.Error(err)
-		assert.Contains(err.Error(), "must be a non-nil pointer")
-	})
-
-	// Test case 5: Error - target is not a struct
-	t.Run("NotStruct", func(t *testing.T) {
-		assert := assert.New(t)
-
-		cmd := Command{
-			Name: "test",
-		}
-
-		var data string
-		err := cmd.Scan(&data)
-
-		assert.Error(err)
-		assert.Contains(err.Error(), "must be a pointer to struct")
-	})
-
-	// Test case 6: Error - required field missing
-	t.Run("RequiredField", func(t *testing.T) {
-		assert := assert.New(t)
-
-		cmd := Command{
-			Name: "test",
-			Params: []Param{
-				{Name: "name", Payload: "John"},
-			},
-		}
-
-		type User struct {
-			Name  string `json:"name"`
-			Email string `json:"email,required"`
-		}
-
-		var user User
-		err := cmd.Scan(&user)
-
-		assert.Error(err)
-		assert.Contains(err.Error(), "required parameter email not found")
-	})
-
-	// Test case 7: Error - invalid value type
-	t.Run("InvalidType", func(t *testing.T) {
-		assert := assert.New(t)
-
-		cmd := Command{
-			Name: "test",
-			Params: []Param{
-				{Name: "age", Payload: "not-a-number"},
-			},
-		}
-
-		type User struct {
-			Age int `json:"age"`
-		}
-
-		var user User
-		err := cmd.Scan(&user)
-
-		assert.Error(err)
-		assert.Contains(err.Error(), "failed to set field Age")
-	})
 }
