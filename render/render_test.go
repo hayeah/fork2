@@ -120,6 +120,9 @@ func TestPartial(t *testing.T) {
 		RepoPartials:        repoFS,
 	}
 
+	// Create a renderer with the context
+	renderer := NewRenderer(ctx)
+
 	// Test data
 	testData := struct {
 		Value string
@@ -131,7 +134,7 @@ func TestPartial(t *testing.T) {
 		assert := assert.New(t)
 
 		// Test a simple partial
-		result, err := ctx.Partial("@common/header", testData)
+		result, err := renderer.Partial("@common/header", testData)
 		assert.NoError(err, "Partial should not return an error")
 		assert.Equal("Repo Header with test value", result, "Partial should render with variable interpolation")
 	})
@@ -140,7 +143,7 @@ func TestPartial(t *testing.T) {
 		assert := assert.New(t)
 
 		// Test a nested partial
-		result, err := ctx.Partial("<vibe/coder>", testData)
+		result, err := renderer.Partial("<vibe/coder>", testData)
 		assert.NoError(err, "Nested partial should not return an error")
 		assert.Equal("System Footer", result, "Nested partial should be correctly rendered")
 	})
@@ -149,7 +152,7 @@ func TestPartial(t *testing.T) {
 		assert := assert.New(t)
 
 		// Test a local partial that references a repo partial
-		result, err := ctx.Partial("./local/helper", testData)
+		result, err := renderer.Partial("./local/helper", testData)
 		assert.NoError(err, "Local partial should not return an error")
 		assert.Equal("Local Helper that uses Repo Header with test value",
 			result, "Local partial should correctly include repo partial with variable interpolation")

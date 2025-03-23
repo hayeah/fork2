@@ -23,12 +23,6 @@ type RenderContext struct {
 	RepoPartials fs.FS
 }
 
-// PartialContext is the interface for any context that can render partials.
-type PartialContext interface {
-	Partial(partialPath string, data any) (string, error)
-	ResolvePartialPath(partialPath string) (fs.FS, string, error)
-}
-
 // Renderer provides template rendering capabilities.
 type Renderer struct {
 	ctx *RenderContext
@@ -79,7 +73,7 @@ func (r *Renderer) Render(userContentPath string, layoutPath string, data any) (
 	tmpl := template.New("layout")
 	tmpl = tmpl.Funcs(template.FuncMap{
 		"partial": func(partialPath string) (string, error) {
-			return r.ctx.Partial(partialPath, data)
+			return r.Partial(partialPath, data)
 		},
 	})
 
@@ -115,9 +109,9 @@ func readTemplate(fsys fs.FS, filename string) (string, error) {
 }
 
 // Partial locates and executes the partial specified by partialPath, returning rendered content.
-func (ctx *RenderContext) Partial(partialPath string, data any) (string, error) {
+func (r *Renderer) Partial(partialPath string, data any) (string, error) {
 	// Resolve the partial path to get the fs and file
-	fs, file, err := ctx.ResolvePartialPath(partialPath)
+	fs, file, err := r.ctx.ResolvePartialPath(partialPath)
 	if err != nil {
 		return "", fmt.Errorf("error resolving partial path: %w", err)
 	}
@@ -129,16 +123,16 @@ func (ctx *RenderContext) Partial(partialPath string, data any) (string, error) 
 	}
 
 	// Store original current template path
-	originalPath := ctx.CurrentTemplatePath
+	originalPath := r.ctx.CurrentTemplatePath
 
 	// Update current template path for local partial resolution within this partial
-	ctx.CurrentTemplatePath = file
+	r.ctx.CurrentTemplatePath = file
 
 	// Create a template with a custom partial function
 	tmpl := template.New(file)
 	tmpl = tmpl.Funcs(template.FuncMap{
 		"partial": func(nestedPartialPath string) (string, error) {
-			return ctx.Partial(nestedPartialPath, data)
+			return r.Partial(nestedPartialPath, data)
 		},
 	})
 
@@ -146,7 +140,7 @@ func (ctx *RenderContext) Partial(partialPath string, data any) (string, error) 
 	tmpl, err = tmpl.Parse(partialContent)
 	if err != nil {
 		// Restore original path before returning error
-		ctx.CurrentTemplatePath = originalPath
+		r.ctx.CurrentTemplatePath = originalPath
 		return "", fmt.Errorf("error parsing partial template: %w", err)
 	}
 
@@ -155,12 +149,12 @@ func (ctx *RenderContext) Partial(partialPath string, data any) (string, error) 
 	err = tmpl.Execute(&buf, data)
 	if err != nil {
 		// Restore original path before returning error
-		ctx.CurrentTemplatePath = originalPath
+		r.ctx.CurrentTemplatePath = originalPath
 		return "", fmt.Errorf("error executing partial template: %w", err)
 	}
 
 	// Restore original path
-	ctx.CurrentTemplatePath = originalPath
+	r.ctx.CurrentTemplatePath = originalPath
 
 	return buf.String(), nil
 }
