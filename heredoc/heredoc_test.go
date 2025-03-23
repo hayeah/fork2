@@ -20,6 +20,82 @@ func TestParseSimpleCommand(t *testing.T) {
 	assert.Empty(commands[0].Params)
 }
 
+// TestSplitCommandParams tests the helper function splitCommandParams directly.
+func TestSplitCommandParams(t *testing.T) {
+	assert := assert.New(t)
+
+	// Create a command with repeated parameter names.
+	cmd := Command{
+		LineNo:  1,
+		Name:    "command",
+		Payload: "payload",
+		Params: []Param{
+			{Name: "param", Payload: "value1"},
+			{Name: "other", Payload: "value2"},
+			{Name: "param", Payload: "value3"},
+			{Name: "another", Payload: "value4"},
+			{Name: "other", Payload: "value5"},
+		},
+	}
+
+	splitCmds := splitCommandParams(cmd)
+	assert.Len(splitCmds, 2)
+
+	assert.Equal([]Param{
+		{Name: "param", Payload: "value1"},
+		{Name: "other", Payload: "value2"},
+	}, splitCmds[0].Params)
+
+	assert.Equal([]Param{
+		{Name: "param", Payload: "value3"},
+		{Name: "another", Payload: "value4"},
+		{Name: "other", Payload: "value5"},
+	}, splitCmds[1].Params)
+}
+
+// TestParseCommandWithRepeatedParams tests the parser integration when repeated parameters occur.
+func TestParseCommandWithRepeatedParams(t *testing.T) {
+	assert := assert.New(t)
+	input := `:command payload
+$param value1
+$other value2
+
+$param value3
+$other value4
+`
+
+	parser := NewParser(strings.NewReader(input))
+
+	// First call should return the first split command.
+	cmd1, err := parser.ParseCommand()
+	assert.NoError(err)
+	assert.NotNil(cmd1)
+	assert.Equal("command", cmd1.Name)
+	assert.Equal("payload", cmd1.Payload)
+	assert.Len(cmd1.Params, 2)
+	assert.Equal("param", cmd1.Params[0].Name)
+	assert.Equal("value1", cmd1.Params[0].Payload)
+	assert.Equal("other", cmd1.Params[1].Name)
+	assert.Equal("value2", cmd1.Params[1].Payload)
+
+	// Second call should return the second split command.
+	cmd2, err := parser.ParseCommand()
+	assert.NoError(err)
+	assert.NotNil(cmd2)
+	assert.Equal("command", cmd2.Name)
+	assert.Equal("payload", cmd2.Payload)
+	assert.Len(cmd2.Params, 2)
+	assert.Equal("param", cmd2.Params[0].Name)
+	assert.Equal("value3", cmd2.Params[0].Payload)
+	assert.Equal("other", cmd2.Params[1].Name)
+	assert.Equal("value4", cmd2.Params[1].Payload)
+
+	// Third call should return nil as there are no more commands.
+	cmd3, err := parser.ParseCommand()
+	assert.NoError(err)
+	assert.Nil(cmd3)
+}
+
 func TestParseCommandWithInlinePayload(t *testing.T) {
 	assert := assert.New(t)
 

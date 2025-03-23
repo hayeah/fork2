@@ -46,11 +46,12 @@ func (c *Command) GetParam(name string) *Param {
 
 // Parser handles the parsing of heredoc formatted content
 type Parser struct {
-	scanner *bufio.Scanner
-	lineNo  int     // The line number of the most recently peeked/consumed line
-	peeked  *string // If not nil, it holds the last peeked line that hasn't been consumed yet
-	eof     bool    // True if we've reached the end of the reader
-	strict  bool    // if true, parser is in strict mode
+	scanner      *bufio.Scanner
+	lineNo       int     // The line number of the most recently peeked/consumed line
+	peeked       *string // If not nil, it holds the last peeked line that hasn't been consumed yet
+	eof          bool    // True if we've reached the end of the reader
+	strict       bool    // if true, parser is in strict mode
+	nextCommands []Command // queued commands from splitting repeated params
 }
 
 // NewParser creates a new Parser instance
@@ -105,34 +106,39 @@ func (p *Parser) UseStrict() {
 // This method is useful for streaming applications where commands
 // need to be processed incrementally.
 func (p *Parser) ParseCommand() (*Command, error) {
+	// If there are queued commands from previous splitting, return the next one.
+	if len(p.nextCommands) > 0 {
+		cmd := p.nextCommands[0]
+		p.nextCommands = p.nextCommands[1:]
+		return &cmd, nil
+	}
+
 	// Attempt to skip until a command/param or EOF
 	err := p.skipEmptyAndComments()
 	if err == io.EOF {
 		return nil, nil
 	}
-
 	if err != nil {
 		return nil, err
 	}
-
 	line, err := p.peekLine()
 	if err != nil {
 		return nil, err
 	}
-
 	if strings.HasPrefix(line, ":") {
 		// We found a command
-		cmd, err := p.parseCommand()
+		baseCmd, err := p.parseCommand()
 		if err != nil {
 			return nil, err
 		}
-		return &cmd, nil
+		// Split parameters into multiple commands if repeated param names are found.
+		cmds := splitCommandParams(baseCmd)
+		if len(cmds) > 1 {
+			// Queue additional commands.
+			p.nextCommands = append(p.nextCommands, cmds[1:]...)
+		}
+		return &cmds[0], nil
 	} else {
-		// The only valid lines that remain after skipUntil... are commands/params
-		// If this line isn't a command, it must be an error unless it's "$" param.
-		// But a lone "$" param here would also be an error because
-		// top-level data should come in as commands.
-
 		if p.strict {
 			return nil, errors.New("invalid line outside command: " + line)
 		} else {
@@ -393,4 +399,40 @@ func (p *Parser) parseHeredocPayload(line string) (string, error) {
 	}
 
 	return sb.String(), nil
+}
+
+// splitCommandParams splits a command's parameters into multiple commands based on repeated parameter names.
+// It iterates over the parameters and, upon encountering a parameter name that has already been seen,
+// finalizes the current command and starts a new one with the repeated parameter.
+func splitCommandParams(cmd Command) []Command {
+	var result []Command
+	var currentParams []Param
+	seen := make(map[string]bool)
+	for _, param := range cmd.Params {
+		if seen[param.Name] {
+			// Finalize the current command and start a new one.
+			newCmd := Command{
+				LineNo:  cmd.LineNo,
+				Name:    cmd.Name,
+				Payload: cmd.Payload,
+				Params:  currentParams,
+			}
+			result = append(result, newCmd)
+			// Reset for the new command, starting with the current parameter.
+			currentParams = []Param{param}
+			seen = map[string]bool{param.Name: true}
+		} else {
+			currentParams = append(currentParams, param)
+			seen[param.Name] = true
+		}
+	}
+	// Append the final command with the remaining parameters.
+	newCmd := Command{
+		LineNo:  cmd.LineNo,
+		Name:    cmd.Name,
+		Payload: cmd.Payload,
+		Params:  currentParams,
+	}
+	result = append(result, newCmd)
+	return result
 }
