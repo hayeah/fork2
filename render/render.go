@@ -41,31 +41,38 @@ func NewRenderer(ctx *RenderContext) *Renderer {
 	}
 }
 
+// loadTemplateContent loads the content of a template from the given path.
+func (r *Renderer) loadTemplateContent(templatePath string) (string, error) {
+	// Resolve the template path
+	templateFS, templateFile, err := r.ctx.ResolvePartialPath(templatePath)
+	if err != nil {
+		return "", fmt.Errorf("error resolving template path: %w", err)
+	}
+
+	// Read the template content
+	templateContent, err := readTemplate(templateFS, templateFile)
+	if err != nil {
+		return "", fmt.Errorf("error reading template: %w", err)
+	}
+
+	return templateContent, nil
+}
+
 // Render renders a layout template by wrapping the user's content in a "main" block.
 // layoutPath indicates which layout template to use.
 // userContentPath indicates the path to the user's content template.
 // data is the data to pass to the template.
 func (r *Renderer) Render(userContentPath string, layoutPath string, data any) (string, error) {
 	// Get the layout content
-	layoutFS, layoutFile, err := r.ctx.ResolvePartialPath(layoutPath)
+	layoutContent, err := r.loadTemplateContent(layoutPath)
 	if err != nil {
-		return "", fmt.Errorf("error resolving layout path: %w", err)
-	}
-
-	layoutContent, err := readTemplate(layoutFS, layoutFile)
-	if err != nil {
-		return "", fmt.Errorf("error reading layout template: %w", err)
+		return "", fmt.Errorf("error loading layout template: %w", err)
 	}
 
 	// Get the user content
-	userFS, userFile, err := r.ctx.ResolvePartialPath(userContentPath)
+	userContent, err := r.loadTemplateContent(userContentPath)
 	if err != nil {
-		return "", fmt.Errorf("error resolving user content path: %w", err)
-	}
-
-	userContent, err := readTemplate(userFS, userFile)
-	if err != nil {
-		return "", fmt.Errorf("error reading user content template: %w", err)
+		return "", fmt.Errorf("error loading user content template: %w", err)
 	}
 
 	// Create a template set
