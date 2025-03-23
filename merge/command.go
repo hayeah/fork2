@@ -22,6 +22,8 @@ func CommandToAction(cmd *heredoc.Command) (Action, error) {
 		return &Create{Command: cmd}, nil
 	case "delete":
 		return &Delete{Command: cmd}, nil
+	case "exec":
+		return &Exec{Command: cmd}, nil
 	default:
 		return nil, fmt.Errorf("unsupported command: %s", cmd.Name)
 	}

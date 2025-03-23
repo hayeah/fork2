@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -215,4 +216,56 @@ func (d *Delete) Apply() error {
 	}
 
 	return nil
+}
+
+// Exec represents a command execution action.
+type Exec struct {
+	*heredoc.Command
+}
+
+func (e *Exec) Description() string {
+	descParam := e.GetParam("description")
+	if descParam != nil {
+		return descParam.Payload
+	}
+	return fmt.Sprintf("Execute command: %s", e.Payload)
+}
+
+func (e *Exec) Verify() error {
+	cmdParts := strings.Fields(e.Payload)
+	if len(cmdParts) == 0 {
+		return fmt.Errorf("command cannot be empty")
+	}
+
+	// Check if the executable exists in PATH
+	executable := cmdParts[0]
+	_, err := exec.LookPath(executable)
+	if err != nil {
+		return fmt.Errorf("executable not found: %s", executable)
+	}
+
+	return nil
+}
+
+func (e *Exec) Apply() error {
+	if err := e.Verify(); err != nil {
+		return fmt.Errorf("verification failed: %w", err)
+	}
+
+	cmdParts := strings.Fields(e.Payload)
+	executable := cmdParts[0]
+	args := cmdParts[1:]
+
+	// Append any arguments from the args parameter
+	argsParam := e.GetParam("args")
+	if argsParam != nil && argsParam.Payload != "" {
+		additionalArgs := strings.Fields(argsParam.Payload)
+		args = append(args, additionalArgs...)
+	}
+
+	cmd := exec.Command(executable, args...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	return cmd.Run()
 }
