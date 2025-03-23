@@ -59,6 +59,7 @@ HEREDOC
 - If not using heredoc, the payload is the string up to the end of line.
 
 ## Format Guidelines
+
 1. **plan**: Begin with a `:plan` block to explain your approach.
 3. **modify,rewrite,create,delete**: Provide `:description` parameter to clarify each change.
 4. **modify**: Provide code blocks enclosed by HEREDOC. Respect indentation exactly, ensuring the `$search` block matches the original source down to braces, spacing, and any comments. The new `$replace` block will replace the `$search` block, and should fit perfectly in the space left by it's removal.
@@ -69,81 +70,55 @@ HEREDOC
 
 -----
 
-### Example: Modify (Add email property)
+### Example: Make Multiple Edits
+
+To make multiple changes, for each change, you should issue a new `:modify` or `:rewrite` block.
 
 ```
-:plan<HEREDOC
-Add an email property to `User` via search/replace.
-HEREDOC
-
-:modify Models/User.swift
+:modify path/model.ts
 
 $description<HEREDOC
-Add email property to User struct.
+add email to user model
 HEREDOC
 
 $search<HEREDOC
-struct User {
-  let id: UUID
-  var name: String
+// User model
+interface User {
+    id: number;
+    name: string;
 }
 HEREDOC
 
 $replace<HEREDOC
-struct User {
-    let id: UUID
-    var name: String
-    var email: String
+// User model
+interface User {
+    id: number;
+    name: string;
+    email: string;
 }
 HEREDOC
-```
 
-### Example: Negative Example - One-Line Search Block
-
-```
-:plan<HEREDOC
-Avoid one-line search if the text is too short to be non-ambigious.
-HEREDOC
-
-:modify path/service.swift
+:modify path/model.ts
 
 $description<HEREDOC
-Negative demo: Ambiguous one-line search block. Don't do this
+add name to role model
 HEREDOC
 
 $search<HEREDOC
-var email: String
-HEREDOC
-
-$replace<HEREDOC
-var emailNew: String
-HEREDOC
-```
-
-### Example: Example - Insert New Code
-
-```
-:plan<HEREDOC
-Insert ABOVE an existing definition
-HEREDOC
-
-:modify path/service.swift
-
-$description<HEREDOC
-Ambiguous search block with multiple closing braces
-HEREDOC
-
-$search<HEREDOC
-// ParseStrict parses the input in strict mode and returns all commands.
-HEREDOC
-
-$replace<HEREDOC
-// Parse parses the input and returns all commands
-func Parse(input string) (Commands, error) {
-	return ParseReader(strings.NewReader(input))
+// Role model
+interface Role {
+    id: number;
+    permissions: string[];
 }
+HEREDOC
 
-// ParseStrict parses the input in strict mode and returns all commands.
+$replace<HEREDOC
+// Role model
+interface Role {
+    id: number;
+    permissions: string[];
+    name: string;
+}
 HEREDOC
 ```
 
@@ -223,4 +198,3 @@ HEREDOC
 6. If a file tree is provided, place your files logically within that structure. Respect the user’s relative or absolute paths.
 9. **IMPORTANT** IF MAKING FILE CHANGES, YOU MUST USE THE AVAILABLE FORMATTING CAPABILITIES PROVIDED ABOVE - IT IS THE ONLY WAY FOR YOUR CHANGES TO BE APPLIED.
 10. The final output must apply cleanly with no leftover syntax errors.
-
