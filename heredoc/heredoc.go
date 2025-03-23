@@ -47,10 +47,10 @@ func (c *Command) GetParam(name string) *Param {
 // Parser handles the parsing of heredoc formatted content
 type Parser struct {
 	scanner      *bufio.Scanner
-	lineNo       int     // The line number of the most recently peeked/consumed line
-	peeked       *string // If not nil, it holds the last peeked line that hasn't been consumed yet
-	eof          bool    // True if we've reached the end of the reader
-	strict       bool    // if true, parser is in strict mode
+	lineNo       int       // The line number of the most recently peeked/consumed line
+	peeked       *string   // If not nil, it holds the last peeked line that hasn't been consumed yet
+	eof          bool      // True if we've reached the end of the reader
+	strict       bool      // if true, parser is in strict mode
 	nextCommands []Command // queued commands from splitting repeated params
 }
 
