@@ -224,6 +224,86 @@ func (r *AskRunner) handleOutput(selectedFiles []string) error {
 	}
 }
 
+// findRepoRoot returns the path to the repository root by looking for a .git directory.
+// It starts from the given directory and moves up until it finds .git or reaches the filesystem root.
+func findRepoRoot(startPath string) (string, error) {
+	currentPath, err := filepath.Abs(startPath)
+	if err != nil {
+		return "", err
+	}
+
+	for {
+		gitPath := filepath.Join(currentPath, ".git")
+		if info, err := os.Stat(gitPath); err == nil && info.IsDir() {
+			return currentPath, nil
+		}
+
+		// Check if we've reached the filesystem root
+		parentPath := filepath.Dir(currentPath)
+		if parentPath == currentPath {
+			// We've reached the root without finding .git
+			return "", fmt.Errorf("no .git directory found up to filesystem root")
+		}
+
+		currentPath = parentPath
+	}
+}
+
+// loadVibeFiles loads .vibe.md files from the current directory up to the repo root.
+// It returns the content of all found .vibe.md files concatenated in order from repo root down to current dir.
+func loadVibeFiles(startPath string) (string, error) {
+	// Find the repo root
+	repoRoot, err := findRepoRoot(startPath)
+	if err != nil {
+		// Not finding a repo root is not a fatal error, we just won't load .vibe.md files
+		return "", nil
+	}
+
+	// Build the list of directories from repo root to current dir
+	var dirs []string
+	currentPath, err := filepath.Abs(startPath)
+	if err != nil {
+		return "", err
+	}
+
+	// Start with the repo root
+	dirs = append(dirs, repoRoot)
+
+	// Add all directories from repo root down to current dir (if different)
+	if currentPath != repoRoot {
+		rel, err := filepath.Rel(repoRoot, currentPath)
+		if err != nil {
+			return "", err
+		}
+
+		parts := strings.Split(rel, string(filepath.Separator))
+		path := repoRoot
+		for _, part := range parts {
+			path = filepath.Join(path, part)
+			if path != repoRoot { // Don't add repo root twice
+				dirs = append(dirs, path)
+			}
+		}
+	}
+
+	// Load .vibe.md files from each directory
+	var content strings.Builder
+	for _, dir := range dirs {
+		vibePath := filepath.Join(dir, ".vibe.md")
+		if info, err := os.Stat(vibePath); err == nil && !info.IsDir() {
+			data, err := os.ReadFile(vibePath)
+			if err != nil {
+				return "", fmt.Errorf("error reading %s: %v", vibePath, err)
+			}
+			content.WriteString("<!-- From " + vibePath + " -->\n")
+			content.Write(data)
+			content.WriteString("\n\n")
+		}
+	}
+
+	return content.String(), nil
+}
+
 // writeOutput outputs the directory tree, file map, and the user's instructions
 func (r *AskRunner) writeOutput(w io.Writer, selectedFiles []string) error {
 	// Sort the selected files
@@ -247,6 +327,25 @@ func (r *AskRunner) writeOutput(w io.Writer, selectedFiles []string) error {
 	err = fork2.WriteFileMap(w, selectedFiles, r.RootPath)
 	if err != nil {
 		return fmt.Errorf("failed to write file map: %v", err)
+	}
+
+	// Load .vibe.md files from the current directory up to the repo root
+	vibeContent, err := loadVibeFiles(r.RootPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to load .vibe.md files: %v\n", err)
+	}
+
+	// Include vibe file content if found
+	if vibeContent != "" {
+		_, err = fmt.Fprintln(w, "\n# Repo Configuration")
+		if err != nil {
+			return fmt.Errorf("failed to write vibe configuration header: %v", err)
+		}
+
+		_, err = fmt.Fprint(w, vibeContent)
+		if err != nil {
+			return fmt.Errorf("failed to write vibe configuration content: %v", err)
+		}
 	}
 
 	// Include user instruction if provided
