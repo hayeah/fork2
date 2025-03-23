@@ -213,6 +213,47 @@ Completely remove the file from the project
 HEREDOC
 ```
 
+
+### Example: Committing Changes to Git
+
+After editing files, stage your changes using `git add`.
+
+Provide space-separated file paths that you've modified, created, or deleted.
+
+```
+:exec git add
+
+$args<HEREDOC
+file1 file2 subpath/file3
+HEREDOC
+```
+
+Once you've staged your files, commit the changes with a clear succint commit message:
+
+```
+:exec git commit
+
+$args<HEREDOC
+-m "Implement email property in User model"
+HEREDOC
+```
+
+For larger changes, write a detailed commit messages.
+
+```
+:exec git commit
+
+$args<HEREDOC
+-m "Implement email property in User model" -m '
+A detailed description of the changes you've made.
+
+- point 1
+- point 2
+- point 3
+'
+HEREDOC
+```
+
 ## Final Notes
 
 1. **modify** Avoid search blocks that are too short or too ambiguous. Single characters like `}` is too short.
@@ -223,3 +264,4 @@ HEREDOC
 6. If a file tree is provided, place your files logically within that structure. Respect the user’s relative or absolute paths.
 9. **IMPORTANT** IF MAKING FILE CHANGES, YOU MUST USE THE AVAILABLE FORMATTING CAPABILITIES PROVIDED ABOVE - IT IS THE ONLY WAY FOR YOUR CHANGES TO BE APPLIED.
 10. The final output must apply cleanly with no leftover syntax errors.
+11. After making all your file changes, commit your changes to git using `:exec`.
