@@ -19,13 +19,13 @@ import (
 
 // AskCmd contains the arguments for the 'ask' subcommand
 type AskCmd struct {
-	TokenEstimator string `arg:"--token-estimator" help:"Token count estimator to use: 'simple' (size/4) or 'tiktoken'" default:"simple"`
-	All            bool   `arg:"-a,--all" help:"Select all files and output immediately"`
-	Copy           bool   `arg:"-c,--copy" help:"Copy output to clipboard instead of stdout"`
-	Diff           bool   `arg:"--diff" help:"Enable diff output format"`
-	Select         string `arg:"--select" help:"Select files matching fuzzy pattern and output immediately"`
-	SelectRegex    string `arg:"--select-re" help:"Select files matching regex pattern and output immediately"`
-	Instruction    string `arg:"positional" help:"User instruction or path to instruction file"`
+	TokenEstimator string   `arg:"--token-estimator" help:"Token count estimator to use: 'simple' (size/4) or 'tiktoken'" default:"simple"`
+	All            bool     `arg:"-a,--all" help:"Select all files and output immediately"`
+	Copy           bool     `arg:"-c,--copy" help:"Copy output to clipboard instead of stdout"`
+	Diff           bool     `arg:"--diff" help:"Enable diff output format"`
+	Select         []string `arg:"--select,separate" help:"Select files matching fuzzy pattern and output immediately (can be specified multiple times)"`
+	SelectRegex    string   `arg:"--select-re" help:"Select files matching regex pattern and output immediately"`
+	Instruction    string   `arg:"positional" help:"User instruction or path to instruction file"`
 }
 
 // Merge merges src fields into the current AskCmd instance, with the current instance
@@ -47,7 +47,7 @@ func (cmd *AskCmd) Merge(src *AskCmd) {
 	cmd.Diff = cmd.Diff || src.Diff
 
 	// Strings: if empty, overwrite
-	if cmd.Select == "" {
+	if len(cmd.Select) == 0 {
 		cmd.Select = src.Select
 	}
 	if cmd.SelectRegex == "" {
@@ -155,10 +155,30 @@ func (r *AskRunner) filterFiles() ([]string, error) {
 	if r.Args.All {
 		// Select all files
 		selectedFiles, err = selectAllFiles(r.Items)
-	} else if r.Args.Select != "" {
-		// Select files matching fuzzy pattern
-		pattern := r.Args.Select
-		selectedFiles, err = selectFuzzyFiles(r.Items, pattern)
+	} else if len(r.Args.Select) > 0 {
+		// Select files matching fuzzy patterns
+		filesSet := make(map[string]struct{})
+
+		for _, pattern := range r.Args.Select {
+			log.Println("select", pattern)
+			patternFiles, patternErr := selectFuzzyFiles(r.Items, pattern)
+			if patternErr != nil {
+				return nil, fmt.Errorf("error selecting files with pattern '%s': %w", pattern, patternErr)
+			}
+
+			// Add to set to avoid duplicates
+			for _, file := range patternFiles {
+				filesSet[file] = struct{}{}
+			}
+		}
+
+		// Convert set to slice
+		selectedFiles = make([]string, 0, len(filesSet))
+		for file := range filesSet {
+			selectedFiles = append(selectedFiles, file)
+		}
+
+		err = nil // No errors encountered
 	} else if r.Args.SelectRegex != "" {
 		// Select files matching regex pattern
 		pattern := r.Args.SelectRegex

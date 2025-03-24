@@ -53,13 +53,13 @@ func TestAskCmd_Merge_Precedence(t *testing.T) {
 	src := &AskCmd{
 		TokenEstimator: "tiktoken",
 		Diff:           false,
-		Select:         "some/path",
+		Select:         []string{"some/path"},
 		Instruction:    "front matter instructions",
 	}
 	dst.Merge(src)
 	assert.Equal(t, "simple", dst.TokenEstimator, "dst wins if non-empty")
 	assert.True(t, dst.Diff, "dst wins if it's true")
-	assert.Equal(t, "some/path", dst.Select, "src sets select if dst was empty")
+	assert.Equal(t, []string{"some/path"}, dst.Select, "src sets select if dst was empty")
 	assert.Equal(t, "CLI instructions", dst.Instruction, "dst instruction wins if present")
 }
 
