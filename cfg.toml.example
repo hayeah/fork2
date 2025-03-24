@@ -1,0 +1,10 @@
+[Database]
+Dialect = "sqlite3"
+DSN = "fork2.sqlite3"
+
+[Logging]
+LogLevel = "DEBUG"
+LogFormat = "console"
+
+[Anthropic]
+APIKey = "sk-ant-api03-......"
