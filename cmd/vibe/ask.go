@@ -232,9 +232,9 @@ func (r *AskRunner) handleOutput(selectedFiles []string) error {
 		out = &buf
 	}
 
-	role := "<vibe/base>"
+	role := "<base>"
 	if r.Args.Diff {
-		role = "<vibe/coder>"
+		role = "<coder>"
 	}
 
 	// Use VibeContext.WriteOutput
