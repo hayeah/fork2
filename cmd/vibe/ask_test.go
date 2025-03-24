@@ -18,7 +18,7 @@ line2
 
 func TestParseFrontMatter_Delimited(t *testing.T) {
 	data := []byte(`+++
---diff
+--role=base
 --all
 +++
 some instructions
@@ -28,7 +28,7 @@ line2
 	assert.NoError(t, err)
 	assert.NotNil(t, cmd)
 	assert.True(t, cmd.All)
-	assert.True(t, cmd.Diff)
+	assert.Equal(t, "base", cmd.Role)
 	assert.Equal(t, []byte("some instructions\nline2\n"), remainder)
 }
 
@@ -47,18 +47,18 @@ line2
 func TestAskCmd_Merge_Precedence(t *testing.T) {
 	dst := &AskCmd{
 		TokenEstimator: "simple",
-		Diff:           true,
+		Role:           "base",
 		Instruction:    "CLI instructions",
 	}
 	src := &AskCmd{
 		TokenEstimator: "tiktoken",
-		Diff:           false,
+		Role:           "coder",
 		Select:         []string{"some/path"},
 		Instruction:    "front matter instructions",
 	}
 	dst.Merge(src)
 	assert.Equal(t, "simple", dst.TokenEstimator, "dst wins if non-empty")
-	assert.True(t, dst.Diff, "dst wins if it's true")
+	assert.Equal(t, "base", dst.Role, "dst role wins if non-empty")
 	assert.Equal(t, []string{"some/path"}, dst.Select, "src sets select if dst was empty")
 	assert.Equal(t, "CLI instructions", dst.Instruction, "dst instruction wins if present")
 }
@@ -109,12 +109,12 @@ func TestNewAskRunner_FrontMatterParsing(t *testing.T) {
 	// Test with instruction string containing front matter
 	cmdArgs := AskCmd{
 		TokenEstimator: "simple",
-		Instruction:    "---\n--diff\n---\nThis is a test instruction",
+		Instruction:    "---\n--role=base\n---\nThis is a test instruction",
 	}
 
 	runner, err := NewAskRunner(cmdArgs, tempDir)
 	assert.NoError(t, err)
 	assert.NotNil(t, runner)
-	assert.True(t, runner.Args.Diff)
+	assert.Equal(t, "base", runner.Args.Role)
 	assert.Equal(t, "This is a test instruction", runner.UserInstruction)
 }

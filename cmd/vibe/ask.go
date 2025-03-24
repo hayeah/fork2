@@ -21,7 +21,7 @@ type AskCmd struct {
 	TokenEstimator string   `arg:"--token-estimator" help:"Token count estimator to use: 'simple' (size/4) or 'tiktoken'" default:"simple"`
 	All            bool     `arg:"-a,--all" help:"Select all files and output immediately"`
 	Copy           bool     `arg:"-c,--copy" help:"Copy output to clipboard instead of stdout"`
-	Diff           bool     `arg:"--diff" help:"Enable diff output format"`
+	Role           string   `arg:"--role" help:"Role/layout to use for output"`
 	Select         []string `arg:"--select,separate" help:"Select files matching fuzzy pattern and output immediately (can be specified multiple times)"`
 	SelectRegex    string   `arg:"--select-re" help:"Select files matching regex pattern and output immediately"`
 	Instruction    string   `arg:"positional" help:"User instruction or path to instruction file"`
@@ -43,7 +43,11 @@ func (cmd *AskCmd) Merge(src *AskCmd) {
 	// Booleans: once set to true, keep them
 	cmd.All = cmd.All || src.All
 	cmd.Copy = cmd.Copy || src.Copy
-	cmd.Diff = cmd.Diff || src.Diff
+
+	// Strings: if empty, overwrite
+	if cmd.Role == "" {
+		cmd.Role = src.Role
+	}
 
 	// Strings: if empty, overwrite
 	if len(cmd.Select) == 0 {
@@ -232,13 +236,16 @@ func (r *AskRunner) handleOutput(selectedFiles []string) error {
 		out = &buf
 	}
 
-	role := "<base>"
-	if r.Args.Diff {
-		role = "<coder>"
+	role := r.Args.Role
+	if role == "" {
+		role = "coder"
 	}
 
+	// Wrap the specified role in "<...>"
+	wrappedRole := "<" + role + ">"
+
 	// Use VibeContext.WriteOutput
-	err = vibeCtx.WriteOutput(out, r.Args.Instruction, role, selectedFiles)
+	err = vibeCtx.WriteOutput(out, r.Args.Instruction, wrappedRole, selectedFiles)
 	if err != nil {
 		return err
 	}
