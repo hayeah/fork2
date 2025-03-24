@@ -368,19 +368,6 @@ func (r *AskRunner) writeOutput(w io.Writer, selectedFiles []string) error {
 		}
 	}
 
-	// In the footnote, remind the LLM to follow instructions.
-	footNotes := `
-IMPORTANT: Output your response in the format described in the instructions. Quote the response as code for display, so user can read it and copy it easily.
-
-In follow up messages, assume previous commands have already applied.
-`
-
-	// Add the reminder
-	_, err = fmt.Fprintln(w, footNotes)
-	if err != nil {
-		return fmt.Errorf("failed to write reminder: %v", err)
-	}
-
 	return nil
 }
 
