@@ -13,7 +13,6 @@ import (
 
 	"github.com/alexflint/go-arg"
 	"github.com/atotto/clipboard"
-	"github.com/hayeah/fork2"
 	"github.com/pkoukk/tiktoken-go"
 )
 
@@ -160,7 +159,6 @@ func (r *AskRunner) filterFiles() ([]string, error) {
 		filesSet := make(map[string]struct{})
 
 		for _, pattern := range r.Args.Select {
-			log.Println("select", pattern)
 			patternFiles, patternErr := selectFuzzyFiles(r.Items, pattern)
 			if patternErr != nil {
 				return nil, fmt.Errorf("error selecting files with pattern '%s': %w", pattern, patternErr)
@@ -221,15 +219,32 @@ func calculateTokenCount(filePaths []string, tokenEstimator TokenEstimator) (int
 
 // handleOutput processes the user instruction and outputs the result
 func (r *AskRunner) handleOutput(selectedFiles []string) error {
+	// Create a new VibeContext
+	vibeCtx, err := NewVibeContext(r)
+	if err != nil {
+		return fmt.Errorf("failed to create vibe context: %v", err)
+	}
+
+	var buf bytes.Buffer
+	var out io.Writer
+	out = os.Stdout
+	if r.Args.Copy {
+		out = &buf
+	}
+
+	role := "<vibe/base>"
+	if r.Args.Diff {
+		role = "<vibe/coder>"
+	}
+
+	// Use VibeContext.WriteOutput
+	err = vibeCtx.WriteOutput(out, r.Args.Instruction, role, selectedFiles)
+	if err != nil {
+		return err
+	}
+
 	// Handle output based on --copy flag
 	if r.Args.Copy {
-		// Write to buffer and copy to clipboard
-		var buf bytes.Buffer
-		err := r.writeOutput(&buf, selectedFiles)
-		if err != nil {
-			return err
-		}
-
 		// Copy buffer contents to clipboard
 		err = clipboard.WriteAll(buf.String())
 		if err != nil {
@@ -238,10 +253,9 @@ func (r *AskRunner) handleOutput(selectedFiles []string) error {
 
 		fmt.Fprintln(os.Stderr, "Output copied to clipboard")
 		return nil
-	} else {
-		// Write output to stdout
-		return r.writeOutput(os.Stdout, selectedFiles)
 	}
+
+	return nil
 }
 
 // findRepoRoot returns the path to the repository root by looking for a .git directory.
@@ -324,73 +338,6 @@ func loadVibeFiles(startPath string) (string, error) {
 	return content.String(), nil
 }
 
-// writeOutput outputs the directory tree, file map, and the user's instructions
-func (r *AskRunner) writeOutput(w io.Writer, selectedFiles []string) error {
-	// Sort the selected files
-	sort.Strings(selectedFiles)
-
-	// If diff output is enabled, include the diff prompt at the beginning
-	if r.Args.Diff {
-		_, err := fmt.Fprint(w, diffHeredocPrompt)
-		if err != nil {
-			return fmt.Errorf("failed to write diff prompt: %v", err)
-		}
-	}
-
-	// Generate directory tree structure
-	err := generateDirectoryTree(w, r.RootPath, r.Items)
-	if err != nil {
-		return fmt.Errorf("failed to generate directory tree: %v", err)
-	}
-
-	// Write the file map of selected files
-	err = fork2.WriteFileMap(w, selectedFiles, r.RootPath)
-	if err != nil {
-		return fmt.Errorf("failed to write file map: %v", err)
-	}
-
-	// Load .vibe.md files from the current directory up to the repo root
-	vibeContent, err := loadVibeFiles(r.RootPath)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: failed to load .vibe.md files: %v\n", err)
-	}
-
-	// Include vibe file content if found
-	if vibeContent != "" {
-		_, err = fmt.Fprintln(w, "\n# Repo Configuration")
-		if err != nil {
-			return fmt.Errorf("failed to write vibe configuration header: %v", err)
-		}
-
-		_, err = fmt.Fprint(w, vibeContent)
-		if err != nil {
-			return fmt.Errorf("failed to write vibe configuration content: %v", err)
-		}
-	}
-
-	// Include user instruction if provided
-	if r.UserInstruction != "" {
-		// Write the header and user instruction
-		_, err = fmt.Fprintln(w, "\n# User Instructions")
-		if err != nil {
-			return fmt.Errorf("failed to write instruction header: %v", err)
-		}
-
-		_, err = fmt.Fprintln(w, r.UserInstruction)
-		if err != nil {
-			return fmt.Errorf("failed to write user instruction: %v", err)
-		}
-
-		// Add a blank line after the instruction
-		_, err = fmt.Fprintln(w)
-		if err != nil {
-			return fmt.Errorf("failed to write newline: %v", err)
-		}
-	}
-
-	return nil
-}
-
 // generateDirectoryTree creates a tree-like structure for the directory and writes it to the provided writer
 // using the items already gathered by gatherFiles
 func generateDirectoryTree(w io.Writer, rootPath string, items []item) error {
@@ -442,9 +389,6 @@ func generateDirectoryTree(w io.Writer, rootPath string, items []item) error {
 			}
 		}
 	}
-
-	// Write the opening file_map tag
-	fmt.Fprintln(w, "<file_map>")
 
 	// Function to recursively build the tree string
 	var writeTreeNode func(node *treeNode, prefix string, isLast bool) error
@@ -500,9 +444,6 @@ func generateDirectoryTree(w io.Writer, rootPath string, items []item) error {
 	if err := writeTreeNode(rootNode, "", true); err != nil {
 		return err
 	}
-
-	// Write the closing file_map tag
-	fmt.Fprintln(w, "</file_map>")
 
 	return nil
 }

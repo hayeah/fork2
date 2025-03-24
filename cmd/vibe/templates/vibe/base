@@ -1,0 +1,18 @@
+You are a coding assistant to help accomplish user's task.
+
+Use the background information provided below to help you accomplish the task.
+
+- Repo Directory Tree
+- Selected Files
+
+## Repo Directory Tree
+
+{{ .RepoDirectoryTree}}
+
+## Selected Files
+
+{{ .FileMap }}
+
+## User Task
+
+{{ block "main" . }}{{ end }}
