@@ -8,7 +8,6 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 
 	"github.com/alexflint/go-arg"
@@ -71,8 +70,7 @@ var diffHeredocPrompt string
 type AskRunner struct {
 	Args            AskCmd
 	RootPath        string
-	Items           []item
-	ChildrenMap     map[string][]string
+	DirTree         *DirectoryTree
 	TokenEstimator  TokenEstimator
 	UserInstruction string
 }
@@ -117,9 +115,9 @@ func NewAskRunner(cmdArgs AskCmd, rootPath string) (*AskRunner, error) {
 func (r *AskRunner) Run() error {
 	// Gather files/dirs
 	var err error
-	r.Items, r.ChildrenMap, err = gatherFiles(r.RootPath)
+	r.DirTree, err = LoadDirectoryTree(r.RootPath)
 	if err != nil {
-		return fmt.Errorf("failed to gather files: %v", err)
+		return fmt.Errorf("failed to load directory tree: %v", err)
 	}
 
 	// Filter phase: select files either automatically or interactively
@@ -157,51 +155,41 @@ func (r *AskRunner) filterFiles() ([]string, error) {
 
 	if r.Args.All {
 		// Select all files
-		selectedFiles, err = selectAllFiles(r.Items)
+		selectedFiles = r.DirTree.SelectAllFiles()
 	} else if len(r.Args.Select) > 0 {
 		// Select files matching fuzzy patterns
 		filesSet := make(map[string]struct{})
-
 		for _, pattern := range r.Args.Select {
-			patternFiles, patternErr := selectFuzzyFiles(r.Items, pattern)
+			patternFiles, patternErr := r.DirTree.SelectFuzzyFiles(pattern)
 			if patternErr != nil {
 				return nil, fmt.Errorf("error selecting files with pattern '%s': %w", pattern, patternErr)
 			}
-
-			// Add to set to avoid duplicates
 			for _, file := range patternFiles {
 				filesSet[file] = struct{}{}
 			}
 		}
-
 		// Convert set to slice
 		selectedFiles = make([]string, 0, len(filesSet))
 		for file := range filesSet {
 			selectedFiles = append(selectedFiles, file)
 		}
-
-		err = nil // No errors encountered
+		err = nil
 	} else if r.Args.SelectRegex != "" {
-		// Select files matching regex pattern
 		pattern := r.Args.SelectRegex
-		selectedFiles, err = selectRegexFiles(r.Items, pattern)
+		selectedFiles, err = r.DirTree.SelectRegexFiles(pattern)
 	} else {
 		// Interactive selection
-		selectedFiles, _, err = selectFilesInteractively(r.Items, r.ChildrenMap, r.TokenEstimator)
+		selectedFiles, _, err = selectFilesInteractively(r.DirTree, r.TokenEstimator)
 		if err != nil {
 			return nil, err
 		}
-
-		// If no files were selected (user aborted), return early
 		if selectedFiles == nil {
 			return nil, nil
 		}
 	}
-
 	if err != nil {
 		return nil, err
 	}
-
 	return selectedFiles, nil
 }
 
@@ -343,116 +331,6 @@ func loadVibeFiles(startPath string) (string, error) {
 	}
 
 	return content.String(), nil
-}
-
-// generateDirectoryTree creates a tree-like structure for the directory and writes it to the provided writer
-// using the items already gathered by gatherFiles
-func generateDirectoryTree(w io.Writer, rootPath string, items []item) error {
-	type treeNode struct {
-		path     string
-		name     string
-		isDir    bool
-		children []*treeNode
-	}
-
-	// Create a map to store nodes by their path
-	nodeMap := make(map[string]*treeNode)
-
-	// Create the root node
-	rootName := filepath.Base(rootPath)
-	rootNode := &treeNode{
-		path:     rootPath,
-		name:     rootName,
-		isDir:    true,
-		children: []*treeNode{},
-	}
-	nodeMap[rootPath] = rootNode
-
-	// Process the items to build the tree structure
-	for _, item := range items {
-		// Skip the root itself
-		if item.Path == rootPath {
-			continue
-		}
-
-		name := filepath.Base(item.Path)
-		parent := filepath.Dir(item.Path)
-
-		// Create a new node if it doesn't exist yet
-		if _, exists := nodeMap[item.Path]; !exists {
-			node := &treeNode{
-				path:     item.Path,
-				name:     name,
-				isDir:    item.IsDir,
-				children: []*treeNode{},
-			}
-			nodeMap[item.Path] = node
-		}
-
-		// Add this node to its parent's children
-		if parentNode, ok := nodeMap[parent]; ok {
-			if childNode, ok := nodeMap[item.Path]; ok {
-				parentNode.children = append(parentNode.children, childNode)
-			}
-		}
-	}
-
-	// Function to recursively build the tree string
-	var writeTreeNode func(node *treeNode, prefix string, isLast bool) error
-	writeTreeNode = func(node *treeNode, prefix string, isLast bool) error {
-		// Sort children by name
-		sort.Slice(node.children, func(i, j int) bool {
-			// Directories first, then files
-			if node.children[i].isDir != node.children[j].isDir {
-				return node.children[i].isDir
-			}
-			return node.children[i].name < node.children[j].name
-		})
-
-		if node.path == rootPath {
-			// Use the absolute path for the root node
-			absPath, err := filepath.Abs(rootPath)
-			if err != nil {
-				absPath = rootPath // Fallback
-			}
-			_, err = fmt.Fprintln(w, absPath)
-			if err != nil {
-				return err
-			}
-		} else {
-			connector := "├── "
-			if isLast {
-				connector = "└── "
-			}
-			_, err := fmt.Fprintln(w, prefix+connector+node.name)
-			if err != nil {
-				return err
-			}
-		}
-
-		for i, child := range node.children {
-			isLastChild := i == len(node.children)-1
-			newPrefix := prefix
-			if node.path != rootPath {
-				if isLast {
-					newPrefix += "    "
-				} else {
-					newPrefix += "│   "
-				}
-			}
-			if err := writeTreeNode(child, newPrefix, isLastChild); err != nil {
-				return err
-			}
-		}
-
-		return nil
-	}
-
-	if err := writeTreeNode(rootNode, "", true); err != nil {
-		return err
-	}
-
-	return nil
 }
 
 // estimateTokenCountSimple estimates tokens using the simple size/4 method

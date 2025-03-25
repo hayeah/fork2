@@ -74,7 +74,9 @@ func (ctx *VibeContext) RepoDirectoryTree() string {
 	ctx.repoFilesOnce.Do(func() {
 		var buf strings.Builder
 		ask := ctx.ask
-		_ = generateDirectoryTree(&buf, ask.RootPath, ask.Items)
+		if ask.DirTree != nil {
+			_ = ask.DirTree.GenerateDirectoryTree(&buf)
+		}
 		ctx.repoFiles = buf.String()
 	})
 	return ctx.repoFiles

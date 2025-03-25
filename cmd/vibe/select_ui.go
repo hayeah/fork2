@@ -53,7 +53,7 @@ type model struct {
 
 // selectFilesInteractively runs the TUI for interactive file selection
 // and returns the selected files and their total token count
-func selectFilesInteractively(items []item, childrenMap map[string][]string, tokenEstimator TokenEstimator) ([]string, int, error) {
+func selectFilesInteractively(dt *DirectoryTree, tokenEstimator TokenEstimator) ([]string, int, error) {
 	// Set up initial model
 	ti := textinput.New()
 	ti.Placeholder = "Type to fuzzy-search..."
@@ -62,21 +62,21 @@ func selectFilesInteractively(items []item, childrenMap map[string][]string, tok
 	ti.Focus()
 
 	selected := make(map[string]bool)
-	lookup := make(map[string]int, len(items))
-	for i, it := range items {
+	lookup := make(map[string]int, len(dt.Items))
+	for i, it := range dt.Items {
 		lookup[it.Path] = i
 	}
 
 	m := model{
 		textInput:       ti,
-		allItems:        items,
-		filteredItems:   items, // default to showing them all
+		allItems:        dt.Items,
+		filteredItems:   dt.Items,
 		selected:        selected,
 		lookup:          lookup,
-		childrenMap:     childrenMap,
-		viewport:        viewport.New(0, 0), // Will be properly sized in tea.WindowSizeMsg
+		childrenMap:     dt.ChildrenMap,
+		viewport:        viewport.New(0, 0),
 		ready:           false,
-		totalTokenCount: 0, // Initialize token count
+		totalTokenCount: 0,
 		tokenEstimator:  tokenEstimator,
 		tokenCache:      make(map[string]int),
 	}
