@@ -195,25 +195,25 @@ func TestSelectPattern(t *testing.T) {
 	}
 
 	// Test empty pattern (select all)
-	selected, err := selectPattern(paths, "")
+	selected, err := selectSinglePattern(paths, "")
 	assert.NoError(err)
 	assert.Equal(paths, selected, "Empty pattern should select all paths")
 
 	// Test fuzzy pattern
-	fuzzySelected, err := selectPattern(paths, "fo")
+	fuzzySelected, err := selectSinglePattern(paths, "fo")
 	assert.NoError(err)
 	assert.Len(fuzzySelected, 1, "Should match only one file with 'fo'")
 	assert.Equal("abc/foo", fuzzySelected[0], "Should match 'abc/foo'")
 
 	// Test regex pattern with leading slash
-	regexSelected, err := selectPattern(paths, "/^[a-z]{3}/")
+	regexSelected, err := selectSinglePattern(paths, "/^[a-z]{3}/")
 	assert.NoError(err)
 	assert.Len(regexSelected, 2, "Regex should match two paths with 3-letter dirs")
 	assert.Contains(regexSelected, "abc/foo", "Should match 'abc/foo'")
 	assert.Contains(regexSelected, "def/bar", "Should match 'def/bar'")
 
 	// Test regex pattern with invalid regex
-	_, err = selectPattern(paths, "/[invalid regex")
+	_, err = selectSinglePattern(paths, "/[invalid regex")
 	assert.Error(err, "Should return error for invalid regex")
 	assert.Contains(err.Error(), "invalid regex pattern", "Error message should mention invalid regex")
 }
@@ -233,8 +233,8 @@ func TestSelectByPatterns(t *testing.T) {
 	t.Run("NoPatterns", func(t *testing.T) {
 		result, err := selectByPatterns(paths, []string{})
 		assert.NoError(err)
-		// No patterns means we get all
-		assert.ElementsMatch(paths, result)
+		// Empty result set with no patterns
+		assert.Empty(result, "No patterns should result in an empty set")
 	})
 
 	t.Run("SinglePositiveFuzzy", func(t *testing.T) {
@@ -257,10 +257,21 @@ func TestSelectByPatterns(t *testing.T) {
 	})
 
 	t.Run("MultiplePatterns", func(t *testing.T) {
-		// keep only .go files, then exclude the ones with _test
-		result, err := selectByPatterns(paths, []string{"/\\.go$", "!_test.go"})
+		// Collect both .go files and .md files (union of matches)
+		result, err := selectByPatterns(paths, []string{"/\\.go$", "/\\.md$"})
 		assert.NoError(err)
-		assert.ElementsMatch([]string{"src/foo.go", "internal/baz.go"}, result)
+		assert.ElementsMatch(
+			[]string{
+				"src/foo.go",
+				"src/foo_test.go",
+				"internal/baz_test.go",
+				"internal/baz.go",
+				"docs/bar.md",
+				"README.md",
+			},
+			result,
+			"Should include all .go and .md files",
+		)
 	})
 
 	t.Run("InvalidRegex", func(t *testing.T) {
@@ -280,13 +291,13 @@ func TestSelectPatternWithRelativePaths(t *testing.T) {
 	}
 
 	// Test with "./" prefix
-	dotSlashSelected, err := selectPattern(paths, "./foo")
+	dotSlashSelected, err := selectSinglePattern(paths, "./foo")
 	assert.NoError(err)
 	assert.Len(dotSlashSelected, 1, "Should match one file with './foo'")
 	assert.Equal("src/foo.go", dotSlashSelected[0], "Should match 'src/foo.go'")
 
 	// Test with "../" prefix (should be rejected)
-	_, err = selectPattern(paths, "../foo")
+	_, err = selectSinglePattern(paths, "../foo")
 	assert.Error(err, "Should reject patterns with '../'")
 	assert.Contains(err.Error(), "not supported for security reasons", "Error should mention security reasons")
 }
