@@ -21,8 +21,7 @@ type AskCmd struct {
 	All            bool     `arg:"-a,--all" help:"Select all files and output immediately"`
 	Copy           bool     `arg:"-c,--copy" help:"Copy output to clipboard instead of stdout"`
 	Role           string   `arg:"--role" help:"Role/layout to use for output"`
-	Select         []string `arg:"--select,separate" help:"Select files matching fuzzy pattern and output immediately (can be specified multiple times)"`
-	SelectRegex    string   `arg:"--select-re" help:"Select files matching regex pattern and output immediately"`
+	Select         []string `arg:"--select,separate" help:"Select files matching pattern and output immediately (can be specified multiple times). Use fuzzy match by default or regex pattern with a '/' prefix"`
 	Instruction    string   `arg:"positional" help:"User instruction or path to instruction file"`
 }
 
@@ -51,9 +50,6 @@ func (cmd *AskCmd) Merge(src *AskCmd) {
 	// Strings: if empty, overwrite
 	if len(cmd.Select) == 0 {
 		cmd.Select = src.Select
-	}
-	if cmd.SelectRegex == "" {
-		cmd.SelectRegex = src.SelectRegex
 	}
 	if cmd.Instruction == "" {
 		cmd.Instruction = src.Instruction
@@ -157,10 +153,14 @@ func (r *AskRunner) filterFiles() ([]string, error) {
 		// Select all files
 		selectedFiles = r.DirTree.SelectAllFiles()
 	} else if len(r.Args.Select) > 0 {
-		// Select files matching fuzzy patterns
+		// Select files matching patterns (fuzzy or regex)
 		filesSet := make(map[string]struct{})
 		for _, pattern := range r.Args.Select {
-			patternFiles, patternErr := r.DirTree.SelectFuzzyFiles(pattern)
+			var patternFiles []string
+			var patternErr error
+
+			patternFiles, patternErr = r.DirTree.SelectFilesByPattern(pattern)
+
 			if patternErr != nil {
 				return nil, fmt.Errorf("error selecting files with pattern '%s': %w", pattern, patternErr)
 			}
@@ -174,9 +174,6 @@ func (r *AskRunner) filterFiles() ([]string, error) {
 			selectedFiles = append(selectedFiles, file)
 		}
 		err = nil
-	} else if r.Args.SelectRegex != "" {
-		pattern := r.Args.SelectRegex
-		selectedFiles, err = r.DirTree.SelectRegexFiles(pattern)
 	} else {
 		// Interactive selection
 		selectedFiles, _, err = selectFilesInteractively(r.DirTree, r.TokenEstimator)

@@ -225,8 +225,11 @@ func (dt *DirectoryTree) SelectAllFiles() []string {
 	return filePaths
 }
 
-// SelectFuzzyFiles returns file paths matching a fuzzy pattern
-func (dt *DirectoryTree) SelectFuzzyFiles(pattern string) ([]string, error) {
+// SelectFilesByPattern returns file paths matching a pattern
+// If pattern is empty, returns all paths
+// If pattern starts with '/', treats it as a regex pattern
+// Otherwise uses fuzzy matching
+func (dt *DirectoryTree) SelectFilesByPattern(pattern string) ([]string, error) {
 	filePaths := dt.SelectAllFiles()
 	return selectPattern(filePaths, pattern)
 }

@@ -65,7 +65,7 @@ func TestAskCmd_Merge_Precedence(t *testing.T) {
 
 func TestParseFrontMatter_MultipleFlags(t *testing.T) {
 	data := []byte(`---
---copy --select-re=xyz
+--copy --select=/xyz
 ---
 real content
 `)
@@ -73,7 +73,7 @@ real content
 	assert.NoError(t, err)
 	assert.NotNil(t, cmd)
 	assert.True(t, cmd.Copy)
-	assert.Equal(t, "xyz", cmd.SelectRegex)
+	assert.Contains(t, cmd.Select, "/xyz")
 	assert.Equal(t, []byte("real content\n"), remainder)
 }
 

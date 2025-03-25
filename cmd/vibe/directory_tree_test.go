@@ -101,12 +101,12 @@ func TestDirectoryTree_SelectFuzzyFiles(t *testing.T) {
 	dt, err := LoadDirectoryTree(tempDir)
 	assert.NoError(err)
 
-	fuzzA, err := dt.SelectFuzzyFiles("alp")
+	fuzzA, err := dt.SelectFilesByPattern("alp")
 	assert.NoError(err)
 	assert.Len(fuzzA, 1, "Should find only alpha.go with pattern 'alp'")
 	assert.Contains(fuzzA, filepath.Join(tempDir, "dirA", "alpha.go"))
 
-	fuzzAll, err := dt.SelectFuzzyFiles(".")
+	fuzzAll, err := dt.SelectFilesByPattern(".")
 	assert.NoError(err)
 	assert.GreaterOrEqual(len(fuzzAll), 3, "Should find multiple files with '.'")
 }
