@@ -270,8 +270,11 @@ func selectSinglePattern(paths []string, pattern string) ([]string, error) {
 		pattern = pattern[2:] // Remove the leading "./"
 	}
 
+	// Create sets for the input paths and matches
+	pathsSet := NewSetFromSlice(paths)
+	matchesSet := NewSet[string]()
+
 	// Find matches based on the pattern type
-	var matches []string
 	if strings.HasPrefix(pattern, "/") {
 		// Regex pattern
 		regexPattern := pattern[1:] // Remove the leading '/'
@@ -282,39 +285,30 @@ func selectSinglePattern(paths []string, pattern string) ([]string, error) {
 
 		for _, path := range paths {
 			if regex.MatchString(path) {
-				matches = append(matches, path)
+				matchesSet.Add(path)
 			}
 		}
 	} else {
 		// Fuzzy matching
 		fuzzyMatches := fuzzy.Find(pattern, paths)
 		for _, match := range fuzzyMatches {
-			matches = append(matches, paths[match.Index])
+			matchesSet.Add(paths[match.Index])
 		}
 	}
 
 	// If this is a negation pattern, return paths that don't match
 	if isNegation {
-		var result []string
-		matchSet := make(map[string]struct{})
-		for _, match := range matches {
-			matchSet[match] = struct{}{}
-		}
-		for _, path := range paths {
-			if _, found := matchSet[path]; !found {
-				result = append(result, path)
-			}
-		}
-		return result, nil
+		resultSet := pathsSet.Difference(matchesSet)
+		return resultSet.Values(), nil
 	}
 
-	return matches, nil
+	return matchesSet.Values(), nil
 }
 
 // selectByPatterns collects matches from multiple patterns
 func selectByPatterns(paths []string, patterns []string) ([]string, error) {
-	// Use a map to track the result set (for efficient lookups)
-	resultSet := make(map[string]struct{})
+	// Create an empty result set
+	resultSet := NewSet[string]()
 
 	// Process each pattern sequentially
 	for _, pattern := range patterns {
@@ -325,16 +319,9 @@ func selectByPatterns(paths []string, patterns []string) ([]string, error) {
 		}
 
 		// Add matches to the result set
-		for _, match := range matches {
-			resultSet[match] = struct{}{}
-		}
+		resultSet.AddValues(matches)
 	}
 
-	// Convert the result set map back to a slice
-	var result []string
-	for path := range resultSet {
-		result = append(result, path)
-	}
-
-	return result, nil
+	// Return the values from the set
+	return resultSet.Values(), nil
 }
