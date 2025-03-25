@@ -271,7 +271,11 @@ HEREDOC
 
 {{ .FileMap }}
 
-## User Task
+# Repo Wide Instructions
+
+{{ .RepoPrompts }}
+
+# User Task
 
 {{ block "main" . }}{{ end }}
 

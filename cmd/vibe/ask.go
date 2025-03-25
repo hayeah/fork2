@@ -324,7 +324,15 @@ func loadVibeFiles(startPath string) (string, error) {
 			if err != nil {
 				return "", fmt.Errorf("error reading %s: %v", vibePath, err)
 			}
-			content.WriteString("<!-- From " + vibePath + " -->\n")
+
+			// find relative path to repo root
+			rel, err := filepath.Rel(repoRoot, dir)
+			if err != nil {
+				return "", fmt.Errorf("error finding relative path: %v", err)
+			}
+			relPath := filepath.Join(rel, ".vibe.md")
+
+			content.WriteString("<!-- " + relPath + " -->\n")
 			content.Write(data)
 			content.WriteString("\n\n")
 		}
