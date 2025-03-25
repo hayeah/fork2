@@ -181,11 +181,23 @@ type SelectFn func(paths []string, pattern string) ([]string, error)
 // selectPattern is a helper function to select file paths based on a pattern
 // If pattern is empty, returns all paths
 // If pattern starts with '/', treats it as a regex pattern
+// If pattern starts with './', strips the prefix for matching
+// If pattern starts with '../', returns an error
 // Otherwise uses fuzzy matching
 func selectPattern(paths []string, pattern string) ([]string, error) {
 	// Empty pattern selects all files
 	if pattern == "" {
 		return paths, nil
+	}
+
+	// Reject patterns starting with "../" as they are potentially dangerous
+	if strings.HasPrefix(pattern, "../") {
+		return nil, fmt.Errorf("patterns with '../' are not supported for security reasons")
+	}
+
+	// Strip "./" prefix if present
+	if strings.HasPrefix(pattern, "./") {
+		pattern = pattern[2:] // Remove the leading "./"
 	}
 
 	// Regex pattern starts with '/'

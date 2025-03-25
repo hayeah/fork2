@@ -269,3 +269,24 @@ func TestSelectByPatterns(t *testing.T) {
 		assert.Contains(err.Error(), "invalid regex pattern")
 	})
 }
+
+func TestSelectPatternWithRelativePaths(t *testing.T) {
+	assert := assert.New(t)
+
+	paths := []string{
+		"src/foo.go",
+		"src/bar.go",
+		"docs/readme.md",
+	}
+
+	// Test with "./" prefix
+	dotSlashSelected, err := selectPattern(paths, "./foo")
+	assert.NoError(err)
+	assert.Len(dotSlashSelected, 1, "Should match one file with './foo'")
+	assert.Equal("src/foo.go", dotSlashSelected[0], "Should match 'src/foo.go'")
+
+	// Test with "../" prefix (should be rejected)
+	_, err = selectPattern(paths, "../foo")
+	assert.Error(err, "Should reject patterns with '../'")
+	assert.Contains(err.Error(), "not supported for security reasons", "Error should mention security reasons")
+}
