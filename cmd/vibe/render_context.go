@@ -47,6 +47,21 @@ func NewVibeContext(ask *AskRunner) (*VibeContext, error) {
 		return nil, fmt.Errorf("failed to create system prompts fs: %v", err)
 	}
 
+	// // list system templates
+	// var buf strings.Builder
+	// _ = fs.WalkDir(systemfs, ".", func(path string, d fs.DirEntry, err error) error {
+	// 	if err != nil {
+	// 		return err
+	// 	}
+	// 	if d.IsDir() {
+	// 		return nil
+	// 	}
+	// 	fmt.Fprintln(&buf, path)
+	// 	return nil
+	// })
+	// fmt.Println("System templates:")
+	// fmt.Println(buf.String())
+
 	ctx.RenderContext = &render.RenderContext{
 		SystemPartials: systemfs,
 		RepoPartials:   os.DirFS(ask.RootPath),

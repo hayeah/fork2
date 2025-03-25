@@ -1,0 +1,224 @@
+## File Editing Tools
+
+The \`:edit\` command allows you to edit files by searching for the content you want to edit.
+
+- The available actions are: `writeAll`, `change`, `insert`, `append`, `delete`.
+
+
+### **Format to Follow HEREDOC Diff Protocol**
+
+```
+:plan<HEREDOC
+Add an email property to `User` via search/replace.
+HEREDOC
+
+:edit Models/User.swift
+
+$description<HEREDOC
+Add email property to User struct.
+HEREDOC
+
+$action change
+
+$search<HEREDOC
+struct User {
+  let id: UUID
+  var name: String
+}
+HEREDOC
+
+$content<HEREDOC
+struct User {
+    let id: UUID
+    var name: String
+    var email: String
+}
+HEREDOC
+```
+
+- A command starts with a line that has a leading `:`.
+- A parameter starts with a line that has a leading `$`.
+- A command may have parameters in lines that follow.
+
+- A comment starts with a line that has a leading `#`.
+
+- A command or a paramter may have a string payload.
+- Heredoc: A heredoc value after a command or action, with `<`.
+- If not using heredoc, the payload is the string up to the end of line.
+
+
+# Edit Examples
+
+## Example: **Write all content to a file**
+
+Overwrites the entire file, or creates a new one if it doesn't exist.
+
+```bash
+:edit file.txt
+
+$action writeAll
+
+:content<HEREDOC
+This
+is the new content
+of the file
+HEREDOC
+```
+
+## Example: **Search and replace a block of content**
+
+The target text is defined by two markers in the \`$search\` block (start and end). The entire region from the first marker line to the second (inclusive) is replaced.
+
+```bash
+:edit file.txt
+
+:description rewrite foo function as bar
+
+$action change
+
+$search<HEREDOC
+// foo is a function
+function foo() {
+   console.log("hello foo");
+...
+   return null;
+}
+HEREDOC
+
+:content<HEREDOC
+// bar is a function
+function bar() {
+   printf("hello bar");
+...
+   return null;
+}
+HEREDOC
+```
+
+## Example: Insert new content before a matched block
+
+The \`:content\` block is inserted before the first line of the \`$search\`.
+
+```bash
+:edit file.txt
+
+:description define runBeforeFoo before foo()
+
+$action insert
+
+$search<HEREDOC
+// foo is a function
+function foo() {
+   console.log("hello foo");
+...
+   return null;
+}
+HEREDOC
+
+:content<HEREDOC
+// do stuff before foo
+function runBeforeFoo() {
+   setupFoo();
+}
+HEREDOC
+```
+
+## Example: Append new content after a matched block
+
+The \`:content\` block is appended right after the final line of the \`$search\`.
+
+```bash
+:edit file.txt
+
+:description define runAfterFoo after foo()
+
+$action append
+
+$search<HEREDOC
+// foo is a function
+function foo() {
+console.log("hello foo");
+...
+return null;
+}
+HEREDOC
+
+:content<HEREDOC
+// do stuff after foo
+function runAfterFoo() {
+teardownFoo();
+}
+HEREDOC
+```
+
+## Example: Delete a matched block of content
+
+```bash
+:edit file.txt
+
+:description delete foo function
+
+$action delete
+
+$search<HEREDOC
+// foo is a function
+function foo() {
+console.log("hello foo");
+...
+return null;
+}
+HEREDOC
+```
+
+
+## Example: Search with Fewer Tokens
+
+IMPORTANT: To save output tokens when searching, you don't need to repeat the whole function text. Just include a few starting lines, and a few ending lines. Just give enough to disambiguate.
+
+Negative Example:
+
+```
+$search<HEREDOC
+// RepoDirectoryTree generates the directory tree structure as a string.
+// It memoizes the result so subsequent calls are fast.
+func (ctx *VibeContext) RepoDirectoryTree() string {
+	ctx.repoFilesOnce.Do(func() {
+		// Generate directory tree structure
+		var buf strings.Builder
+		items, _, err := gatherFiles(ctx.ask.RootPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to gather files: %v\n", err)
+			ctx.repoFiles = ""
+			return
+		}
+
+		ctx.repoFiles = "Repo directory structure goes here"
+	})
+	return ctx.repoFiles
+}
+HEREDOC
+```
+
+Positive Example:
+
+```
+$search<HEREDOC
+// RepoDirectoryTree generates the directory tree structure as a string.
+// It memoizes the result so subsequent calls are fast.
+func (ctx *VibeContext) RepoDirectoryTree() string {
+	...
+	return ctx.repoFiles
+}
+HEREDOC
+```
+
+Note the usage of "..." to elide the middle of the function.
+
+## Key Points
+
+- **\`$search\`** must match the original text exactly (spacing, braces, comments).
+- **\`$action\`** decides whether you rewrite all, change a block, insert, append, delete
+- If the file **does not exist** and you specify **writeAll**, a new file is created.
+- If the file **exists** and you specify **writeAll**, you overwrite the entire file content.
+
+With these commands, you can edit files incrementally, or in larger wholesale replacements, depending on your needs.

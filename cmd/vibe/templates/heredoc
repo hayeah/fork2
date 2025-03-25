@@ -1,0 +1,65 @@
+
+## **Format to Follow HEREDOC Diff Protocol**
+
+```
+:plan<HEREDOC
+Add an email property to `User` via search/replace.
+HEREDOC
+
+:modify Models/User.swift
+
+$description<HEREDOC
+Add email property to User struct.
+HEREDOC
+
+$search<HEREDOC
+struct User {
+  let id: UUID
+  var name: String
+}
+HEREDOC
+
+$replace<HEREDOC
+struct User {
+    let id: UUID
+    var name: String
+    var email: String
+}
+HEREDOC
+```
+
+- A command starts with a line that has a leading `:`.
+- A parameter starts with a line that has a leading `$`.
+- A command may have parameters in lines that follow.
+
+- A comment starts with a line that has a leading `#`.
+
+- A command or a paramter may have a string payload.
+- Heredoc: A heredoc value after a command or action, with `<`.
+- If not using heredoc, the payload is the string up to the end of line.
+
+
+### Example: Nested HEREDOCs
+
+If your output heredoc payload contains heredoc, choose a different UNIQUE heredoc string (e.g. PINEAPPLE, MAXIMUS, HEREDOC2, HEREDOCMETA, etc.) to delimit this output.
+
+```
+:modify path/heredoc.txt
+
+$description<HEREDOC
+make change to a HEREDOC payload
+HEREDOC
+
+
+$search<HEREDOC_2
+$search<HEREDOC
+heredoc payload
+HEREDOC
+HEREDOC_2
+
+$replace<HEREDOC_2
+$search<HEREDOC
+new heredoc payload
+HEREDOC
+HEREDOC_2
+```
