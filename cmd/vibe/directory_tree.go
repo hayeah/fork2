@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strings"
 
 	"github.com/hayeah/fork2/ignore"
 	"github.com/sahilm/fuzzy"
@@ -174,46 +175,68 @@ func (dt *DirectoryTree) GenerateDirectoryTree(w io.Writer) error {
 	return writeTreeNode(rootNode, "", true)
 }
 
+// SelectFn is a function type that selects file paths based on a pattern
+type SelectFn func(paths []string, pattern string) ([]string, error)
+
+// selectPattern is a helper function to select file paths based on a pattern
+// If pattern is empty, returns all paths
+// If pattern starts with '/', treats it as a regex pattern
+// Otherwise uses fuzzy matching
+func selectPattern(paths []string, pattern string) ([]string, error) {
+	// Empty pattern selects all files
+	if pattern == "" {
+		return paths, nil
+	}
+
+	// Regex pattern starts with '/'
+	if strings.HasPrefix(pattern, "/") {
+		regexPattern := pattern[1:] // Remove the leading '/'
+		regex, err := regexp.Compile(regexPattern)
+		if err != nil {
+			return nil, fmt.Errorf("invalid regex pattern: %v", err)
+		}
+
+		var selected []string
+		for _, path := range paths {
+			if regex.MatchString(path) {
+				selected = append(selected, path)
+			}
+		}
+		return selected, nil
+	}
+
+	// Otherwise use fuzzy matching
+	matches := fuzzy.Find(pattern, paths)
+	var selected []string
+	for _, match := range matches {
+		selected = append(selected, paths[match.Index])
+	}
+	return selected, nil
+}
+
 // SelectAllFiles returns all non-directory file paths
 func (dt *DirectoryTree) SelectAllFiles() []string {
-	var selected []string
+	var filePaths []string
 	for _, it := range dt.Items {
 		if !it.IsDir {
-			selected = append(selected, it.Path)
+			filePaths = append(filePaths, it.Path)
 		}
 	}
-	return selected
+	return filePaths
 }
 
 // SelectFuzzyFiles returns file paths matching a fuzzy pattern
 func (dt *DirectoryTree) SelectFuzzyFiles(pattern string) ([]string, error) {
-	var filePaths []string
-	var fileItems []item
-	for _, it := range dt.Items {
-		if !it.IsDir {
-			filePaths = append(filePaths, it.Path)
-			fileItems = append(fileItems, it)
-		}
-	}
-	matches := fuzzy.Find(pattern, filePaths)
-	var selected []string
-	for _, match := range matches {
-		selected = append(selected, fileItems[match.Index].Path)
-	}
-	return selected, nil
+	filePaths := dt.SelectAllFiles()
+	return selectPattern(filePaths, pattern)
 }
 
 // SelectRegexFiles returns file paths matching a regex pattern
 func (dt *DirectoryTree) SelectRegexFiles(pattern string) ([]string, error) {
-	regex, err := regexp.Compile(pattern)
-	if err != nil {
-		return nil, fmt.Errorf("invalid regex pattern: %v", err)
+	filePaths := dt.SelectAllFiles()
+	// Ensure the pattern starts with '/' for regex
+	if !strings.HasPrefix(pattern, "/") {
+		pattern = "/" + pattern
 	}
-	var selected []string
-	for _, it := range dt.Items {
-		if !it.IsDir && regex.MatchString(it.Path) {
-			selected = append(selected, it.Path)
-		}
-	}
-	return selected, nil
+	return selectPattern(filePaths, pattern)
 }

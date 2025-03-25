@@ -184,3 +184,36 @@ func TestDirectoryTree_EmptyDir(t *testing.T) {
 	allFiles = dt.SelectAllFiles()
 	assert.Len(allFiles, 0, "No files to select in an empty dir")
 }
+
+func TestSelectPattern(t *testing.T) {
+	assert := assert.New(t)
+
+	paths := []string{
+		"abc/foo",
+		"def/bar",
+		"qux",
+	}
+
+	// Test empty pattern (select all)
+	selected, err := selectPattern(paths, "")
+	assert.NoError(err)
+	assert.Equal(paths, selected, "Empty pattern should select all paths")
+
+	// Test fuzzy pattern
+	fuzzySelected, err := selectPattern(paths, "fo")
+	assert.NoError(err)
+	assert.Len(fuzzySelected, 1, "Should match only one file with 'fo'")
+	assert.Equal("abc/foo", fuzzySelected[0], "Should match 'abc/foo'")
+
+	// Test regex pattern with leading slash
+	regexSelected, err := selectPattern(paths, "/^[a-z]{3}/")
+	assert.NoError(err)
+	assert.Len(regexSelected, 2, "Regex should match two paths with 3-letter dirs")
+	assert.Contains(regexSelected, "abc/foo", "Should match 'abc/foo'")
+	assert.Contains(regexSelected, "def/bar", "Should match 'def/bar'")
+
+	// Test regex pattern with invalid regex
+	_, err = selectPattern(paths, "/[invalid regex")
+	assert.Error(err, "Should return error for invalid regex")
+	assert.Contains(err.Error(), "invalid regex pattern", "Error message should mention invalid regex")
+}
