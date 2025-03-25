@@ -234,6 +234,73 @@ func (dt *DirectoryTree) SelectFilesByPattern(pattern string) ([]string, error) 
 	return selectPattern(filePaths, pattern)
 }
 
+// selectByPatterns applies multiple patterns in sequence (a "pattern pipeline").
+// It starts with all paths, then for each pattern in patterns, we either intersect
+// (for normal patterns) or exclude (for negative patterns) the matches.
+//
+// Negative patterns start with '!' (e.g. "!_test.go"), which means "filter out
+// anything matching _test.go". Otherwise we keep only the matches.
+func selectByPatterns(paths []string, patterns []string) ([]string, error) {
+	currentSet := paths
+
+	for _, pat := range patterns {
+		negate := false
+		pattern := pat
+		if strings.HasPrefix(pat, "!") {
+			negate = true
+			pattern = strings.TrimPrefix(pat, "!")
+		}
+
+		matched, err := selectPattern(currentSet, pattern)
+		if err != nil {
+			return nil, err
+		}
+
+		if negate {
+			// Exclude matched from currentSet
+			m := make(map[string]bool, len(currentSet))
+			for _, p := range currentSet {
+				m[p] = true
+			}
+			for _, p := range matched {
+				delete(m, p)
+			}
+			var newSet []string
+			for p := range m {
+				newSet = append(newSet, p)
+			}
+			currentSet = newSet
+		} else {
+			// Intersect matched with currentSet
+			m := make(map[string]bool, len(matched))
+			for _, p := range matched {
+				m[p] = true
+			}
+			var newSet []string
+			for _, p := range currentSet {
+				if m[p] {
+					newSet = append(newSet, p)
+				}
+			}
+			currentSet = newSet
+		}
+	}
+
+	return currentSet, nil
+}
+
+// SelectByPatterns applies multiple patterns in sequence to filter the directory tree files.
+// It starts with all files, then for each pattern in patterns, we either intersect
+// (for normal patterns) or exclude (for negative patterns) the matches.
+//
+// Negative patterns start with '!' (e.g. "!_test.go"), which means "filter out
+// anything matching _test.go". Otherwise we keep only the matches.
+func (dt *DirectoryTree) SelectByPatterns(patterns []string) ([]string, error) {
+	// Start from all non-directory files
+	allFiles := dt.SelectAllFiles()
+	return selectByPatterns(allFiles, patterns)
+}
+
 // SelectRegexFiles returns file paths matching a regex pattern
 func (dt *DirectoryTree) SelectRegexFiles(pattern string) ([]string, error) {
 	filePaths := dt.SelectAllFiles()

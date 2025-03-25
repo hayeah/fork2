@@ -153,26 +153,12 @@ func (r *AskRunner) filterFiles() ([]string, error) {
 		// Select all files
 		selectedFiles = r.DirTree.SelectAllFiles()
 	} else if len(r.Args.Select) > 0 {
-		// Select files matching patterns (fuzzy or regex)
-		filesSet := make(map[string]struct{})
-		for _, pattern := range r.Args.Select {
-			var patternFiles []string
-			var patternErr error
-
-			patternFiles, patternErr = r.DirTree.SelectFilesByPattern(pattern)
-
-			if patternErr != nil {
-				return nil, fmt.Errorf("error selecting files with pattern '%s': %w", pattern, patternErr)
-			}
-			for _, file := range patternFiles {
-				filesSet[file] = struct{}{}
-			}
+		// Stepwise narrowing using multiple patterns, with support for negative patterns
+		selectedFiles, err = r.DirTree.SelectByPatterns(r.Args.Select)
+		if err != nil {
+			return nil, fmt.Errorf("error selecting files with patterns %v: %w", r.Args.Select, err)
 		}
-		// Convert set to slice
-		selectedFiles = make([]string, 0, len(filesSet))
-		for file := range filesSet {
-			selectedFiles = append(selectedFiles, file)
-		}
+		err = nil
 		err = nil
 	} else {
 		// Interactive selection

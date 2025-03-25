@@ -217,3 +217,55 @@ func TestSelectPattern(t *testing.T) {
 	assert.Error(err, "Should return error for invalid regex")
 	assert.Contains(err.Error(), "invalid regex pattern", "Error message should mention invalid regex")
 }
+
+func TestSelectByPatterns(t *testing.T) {
+	assert := assert.New(t)
+
+	paths := []string{
+		"src/foo.go",
+		"src/foo_test.go",
+		"docs/bar.md",
+		"internal/baz_test.go",
+		"internal/baz.go",
+		"README.md",
+	}
+
+	t.Run("NoPatterns", func(t *testing.T) {
+		result, err := selectByPatterns(paths, []string{})
+		assert.NoError(err)
+		// No patterns means we get all
+		assert.ElementsMatch(paths, result)
+	})
+
+	t.Run("SinglePositiveFuzzy", func(t *testing.T) {
+		result, err := selectByPatterns(paths, []string{"baz"})
+		assert.NoError(err)
+		assert.ElementsMatch([]string{"internal/baz.go", "internal/baz_test.go"}, result)
+	})
+
+	t.Run("SingleRegex", func(t *testing.T) {
+		result, err := selectByPatterns(paths, []string{"/\\.md$"})
+		assert.NoError(err)
+		assert.ElementsMatch([]string{"docs/bar.md", "README.md"}, result)
+	})
+
+	t.Run("NegateTests", func(t *testing.T) {
+		result, err := selectByPatterns(paths, []string{"!_test.go"})
+		assert.NoError(err)
+		// This should remove anything matching _test.go
+		assert.ElementsMatch([]string{"src/foo.go", "docs/bar.md", "internal/baz.go", "README.md"}, result)
+	})
+
+	t.Run("MultiplePatterns", func(t *testing.T) {
+		// keep only .go files, then exclude the ones with _test
+		result, err := selectByPatterns(paths, []string{"/\\.go$", "!_test.go"})
+		assert.NoError(err)
+		assert.ElementsMatch([]string{"src/foo.go", "internal/baz.go"}, result)
+	})
+
+	t.Run("InvalidRegex", func(t *testing.T) {
+		_, err := selectByPatterns(paths, []string{"/[invalid"})
+		assert.Error(err)
+		assert.Contains(err.Error(), "invalid regex pattern")
+	})
+}
