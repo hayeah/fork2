@@ -74,13 +74,13 @@ Below is a simple vibe flow:
 
 ## The UserPrompt Template
 
-Each “prompt file” can have **front matter** at the top enclosed in `+++ ... +++` or `--- ... ---` lines. 
+Each “prompt file” can have **front matter** at the top enclosed in `+++ ... +++` or `--- ... ---` lines.
 
 Suppose you have a prompt file: `ask-diff-to-role.md`
 
 ```
 +++
---select cmd/vibe/ask.go 
+--select cmd/vibe/ask.go
 --copy
 +++
 
@@ -115,6 +115,43 @@ See these files for the relevant input and output:
 - examples/ask-diff-to-role.prompt.md
 - examples/ask-diff-to-role.response.md
 
+## Pattern Types
+
+- **Fuzzy Matching** (default)
+  Simple text patterns match files using fuzzy search:
+  ```
+  --select foo      # Matches files containing "foo" anywhere in the path
+  ```
+
+- **Regex Patterns**
+  Prefix with `/` to use regular expressions:
+  ```
+  --select "/\.go$"  # Matches files ending with ".go"
+  ```
+
+- **Negation Patterns**
+  Prefix with `!` to exclude matches:
+  ```
+  --select "!_test.go"  # Select files not matching "_test.go"
+  ```
+
+- **Compound Filtering**
+  Use `|` to combine patterns (logical AND):
+  ```
+  --select "cmd|main.go"  # Files containing both "cmd" AND "main.go"
+  ```
+
+- **Relative Paths**
+
+  ```
+  --select "./cmd"  # Same as --select cmd
+  ```
+
+- **Multiple Patterns**
+  Specify multiple `--select` flags to collect together different sets of files:
+  ```
+  --select "/\.go$" --select "/\.md$"  # All Go and Markdown files
+  ```
 
 ## Template Partials
 
