@@ -227,10 +227,27 @@ func (dt *DirectoryTree) SelectRegexFiles(pattern string) ([]string, error) {
 // If pattern starts with './', strips the prefix for matching
 // If pattern starts with '../', returns an error
 // Otherwise uses fuzzy matching
+// If pattern contains '|', it splits the pattern and applies each part as a filter (logical AND)
 func selectSinglePattern(paths []string, pattern string) ([]string, error) {
 	// Empty pattern selects all files
 	if pattern == "" {
 		return paths, nil
+	}
+
+	// Check if this is a compound pattern with '|' operator (logical AND)
+	if strings.Contains(pattern, "|") {
+		parts := strings.Split(pattern, "|")
+		currentPaths := paths
+		var err error
+
+		for _, part := range parts {
+			// Apply each pattern part sequentially, narrowing down the results
+			currentPaths, err = selectSinglePattern(currentPaths, part)
+			if err != nil {
+				return nil, fmt.Errorf("in pattern part '%s': %v", part, err)
+			}
+		}
+		return currentPaths, nil
 	}
 
 	// Check if this is a negation pattern

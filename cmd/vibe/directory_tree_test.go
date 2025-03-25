@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 
@@ -300,4 +301,59 @@ func TestSelectPatternWithRelativePaths(t *testing.T) {
 	_, err = selectSinglePattern(paths, "../foo")
 	assert.Error(err, "Should reject patterns with '../'")
 	assert.Contains(err.Error(), "not supported for security reasons", "Error should mention security reasons")
+}
+
+func TestSelectPatternWithFilteringOperator(t *testing.T) {
+	assert := assert.New(t)
+
+	paths := []string{
+		"cmd/testclip/main.go",
+		"cmd/vibe/directory_tree.go",
+		"cmd/vibe/directory_tree_test.go",
+		"cmd/vibe/doc.md",
+		"cmd/vibe/main.go",
+		"internal/utils.go",
+		"internal/utils_test.go",
+	}
+	sort.Strings(paths)
+
+	var results []string
+	var err error
+
+	// Test filtering operator with cmd and .go files (logical AND)
+	results, err = selectSinglePattern(paths, "cmd|.go")
+
+	assert.NoError(err)
+	sort.Strings(results)
+	assert.Equal(results, []string{
+		"cmd/testclip/main.go",
+		"cmd/vibe/directory_tree.go",
+		"cmd/vibe/directory_tree_test.go",
+		"cmd/vibe/main.go",
+	})
+
+	// Test filtering operator with negation pattern (exclude test files)
+	results, err = selectSinglePattern(paths, "cmd.go|!_test.go")
+	assert.NoError(err)
+	sort.Strings(results)
+	assert.Equal([]string{
+		"cmd/testclip/main.go",
+		"cmd/vibe/directory_tree.go",
+		"cmd/vibe/main.go",
+	}, results)
+
+	// Test filtering operator (include only test files)
+	results, err = selectSinglePattern(paths, "cmd.go|_test.go")
+	assert.NoError(err)
+	sort.Strings(results)
+	assert.Equal([]string{
+		"cmd/vibe/directory_tree_test.go",
+	}, results)
+
+	// Test with regex patterns
+	cmdRegex, err := selectSinglePattern(paths, "cmd|/tree")
+	assert.NoError(err)
+	assert.Len(cmdRegex, 2, "Should match cmd files containing 'tree'")
+	assert.Contains(cmdRegex, "cmd/vibe/directory_tree.go")
+	assert.Contains(cmdRegex, "cmd/vibe/directory_tree_test.go")
 }
