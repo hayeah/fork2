@@ -114,23 +114,7 @@ func (ctx *VibeContext) RepoPrompts() string {
 
 // WriteOutput processes the selected files and outputs the result using the renderer
 func (ctx *VibeContext) WriteOutput(w io.Writer, userPath string, systemPath string, selectedFiles []string) error {
-	ctx.RenderContext.CurrentTemplatePath = "./"
-	defer func() {
-		ctx.RenderContext.CurrentTemplatePath = "./"
-	}()
-
-	// Sort the selected files
 	sort.Strings(selectedFiles)
-
-	// Prepare template data
-	data := map[string]interface{}{
-		"RepoDirectoryTree": ctx.RepoDirectoryTree(),
-		"RepoPrompts":       ctx.RepoPrompts(),
-		"SelectedFiles":     selectedFiles,
-	}
-
-	// Write the file map of selected files to a string
-	var fileMapBuf strings.Builder
 
 	// Convert selectedFiles to FileSelection
 	fileSelections := make([]FileSelection, len(selectedFiles))
@@ -141,6 +125,24 @@ func (ctx *VibeContext) WriteOutput(w io.Writer, userPath string, systemPath str
 		}
 	}
 
+	return ctx.WriteFileSelections(w, userPath, systemPath, fileSelections)
+}
+
+// WriteFileSelections processes the selected files and outputs the result using the renderer
+func (ctx *VibeContext) WriteFileSelections(w io.Writer, userPath string, systemPath string, fileSelections []FileSelection) error {
+	ctx.RenderContext.CurrentTemplatePath = "./"
+	defer func() {
+		ctx.RenderContext.CurrentTemplatePath = "./"
+	}()
+
+	// Prepare template data
+	data := map[string]interface{}{
+		"RepoDirectoryTree": ctx.RepoDirectoryTree(),
+		"RepoPrompts":       ctx.RepoPrompts(),
+	}
+
+	// Write the file map of selected files to a string
+	var fileMapBuf strings.Builder
 	err := WriteFileMap(&fileMapBuf, fileSelections, ctx.ask.RootPath)
 	if err != nil {
 		return fmt.Errorf("failed to write file map: %v", err)
