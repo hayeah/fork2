@@ -122,6 +122,26 @@ func (r *AskRunner) Run() error {
 		return fmt.Errorf("failed to load directory tree: %v", err)
 	}
 
+	// If we have FileSelections from TOML, output partial files directly
+	if len(r.FileSelections) > 0 {
+		var buf bytes.Buffer
+		out := io.Writer(os.Stdout)
+		if r.Args.Copy {
+			out = &buf
+		}
+		// Write partial file content
+		if err := WriteFileMap(out, r.FileSelections, r.RootPath); err != nil {
+			return err
+		}
+		if r.Args.Copy {
+			if err := clipboard.WriteAll(buf.String()); err != nil {
+				return fmt.Errorf("failed to copy to clipboard: %v", err)
+			}
+			fmt.Fprintln(os.Stderr, "Output copied to clipboard")
+		}
+		return nil
+	}
+
 	// Filter phase: select files either automatically or interactively
 	selectedFiles, err := r.filterFiles()
 	if err != nil {
@@ -139,14 +159,14 @@ func (r *AskRunner) Run() error {
 		return err
 	}
 
-	// Calculate and report token count after output is handled
-	totalTokenCount, err := calculateTokenCount(selectedFiles, r.TokenEstimator)
-	if err != nil {
-		return fmt.Errorf("error calculating token count: %v", err)
-	}
+	// // Calculate and report token count after output is handled
+	// totalTokenCount, err := calculateTokenCount(selectedFiles, r.TokenEstimator)
+	// if err != nil {
+	// 	return fmt.Errorf("error calculating token count: %v", err)
+	// }
 
-	// Print total token count to stderr
-	fmt.Fprintf(os.Stderr, "Total tokens: %d\n", totalTokenCount)
+	// // Print total token count to stderr
+	// fmt.Fprintf(os.Stderr, "Total tokens: %d\n", totalTokenCount)
 
 	return nil
 }
@@ -200,26 +220,6 @@ func calculateTokenCount(filePaths []string, tokenEstimator TokenEstimator) (int
 
 // handleOutput processes the user instruction and outputs the result
 func (r *AskRunner) handleOutput(selectedFiles []string) error {
-	// If we have FileSelections from TOML, output partial files directly
-	if len(r.FileSelections) > 0 {
-		var buf bytes.Buffer
-		out := io.Writer(os.Stdout)
-		if r.Args.Copy {
-			out = &buf
-		}
-		// Write partial file content
-		if err := WriteFileMap(out, r.FileSelections, r.RootPath); err != nil {
-			return err
-		}
-		if r.Args.Copy {
-			if err := clipboard.WriteAll(buf.String()); err != nil {
-				return fmt.Errorf("failed to copy to clipboard: %v", err)
-			}
-			fmt.Fprintln(os.Stderr, "Output copied to clipboard")
-		}
-		return nil
-	}
-
 	// Otherwise, use the old approach with VibeContext
 	vibeCtx, err := NewVibeContext(r)
 	if err != nil {
@@ -502,8 +502,8 @@ func parseInstructionWithFrontMatter(runner *AskRunner) (string, error) {
 
 	firstNonEmpty := bytes.TrimSpace(lines[idx])
 	// If it starts with --, or exactly '---' or '+++', parse front matter flags
-	if bytes.Equal(firstNonEmpty, []byte("---")) ||
-		bytes.Equal(firstNonEmpty, []byte("+++")) {
+	if bytes.HasPrefix(firstNonEmpty, []byte("---")) ||
+		bytes.HasPrefix(firstNonEmpty, []byte("+++")) {
 
 		tag, frontMatter, remainder, err := parseFrontMatter(string(instructionContent))
 		if err != nil {

@@ -223,6 +223,8 @@ func extractSelectedLines(filePath string, sortedRanges []LineRange) (string, er
 	rangeIdx := 0
 	var result strings.Builder
 
+	lastSeenRange := -1
+
 	for scanner.Scan() {
 		// If we've processed all ranges, break early.
 		if rangeIdx >= len(sortedRanges) {
@@ -233,12 +235,18 @@ func extractSelectedLines(filePath string, sortedRanges []LineRange) (string, er
 		for rangeIdx < len(sortedRanges) && lineNum > sortedRanges[rangeIdx].End {
 			rangeIdx++
 		}
+
 		if rangeIdx >= len(sortedRanges) {
 			break
 		}
 
 		// Write the line if it falls within the current range.
 		if lineNum >= sortedRanges[rangeIdx].Start && lineNum <= sortedRanges[rangeIdx].End {
+			if rangeIdx > lastSeenRange {
+				lastSeenRange = rangeIdx
+				fmt.Fprintf(&result, "\n--- %s#%d,%d ---\n", filePath, sortedRanges[rangeIdx].Start, sortedRanges[rangeIdx].End)
+			}
+
 			result.WriteString(scanner.Text())
 			result.WriteString("\n")
 		}
@@ -252,5 +260,3 @@ func extractSelectedLines(filePath string, sortedRanges []LineRange) (string, er
 
 	return result.String(), nil
 }
-
-
