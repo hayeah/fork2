@@ -23,9 +23,6 @@ type AskCmd struct {
 	Role           string   `arg:"--role" help:"Role/layout to use for output"`
 	Select         []string `arg:"--select,separate" help:"Select files matching pattern and output immediately (can be specified multiple times). Use fuzzy match by default or regex pattern with a '/' prefix"`
 	Instruction    string   `arg:"positional" help:"User instruction or path to instruction file"`
-
-	// If we parse the instruction as TOML, we'll store the resulting partial file selections here.
-	FileSelections []FileSelection
 }
 
 // Merge merges src fields into the current AskCmd instance, with the current instance
@@ -72,6 +69,9 @@ type AskRunner struct {
 	DirTree         *DirectoryTree
 	TokenEstimator  TokenEstimator
 	UserInstruction string
+
+	// If we parse the instruction as TOML, we'll store the resulting partial file selections here.
+	FileSelections []FileSelection
 }
 
 // NewAskRunner creates and initializes a new PickRunner
@@ -85,12 +85,6 @@ func NewAskRunner(cmdArgs AskCmd, rootPath string) (*AskRunner, error) {
 		return nil, fmt.Errorf("not a directory: %s", rootPath)
 	}
 
-	// Parse front matter from instruction
-	userInstruction, err := parseInstructionWithFrontMatter(&cmdArgs)
-	if err != nil {
-		return nil, err
-	}
-
 	// Select the token estimator based on the flag
 	var tokenEstimator TokenEstimator
 	switch cmdArgs.TokenEstimator {
@@ -102,12 +96,21 @@ func NewAskRunner(cmdArgs AskCmd, rootPath string) (*AskRunner, error) {
 		return nil, fmt.Errorf("unknown token estimator: %s", cmdArgs.TokenEstimator)
 	}
 
-	return &AskRunner{
-		Args:            cmdArgs,
-		RootPath:        rootPath,
-		TokenEstimator:  tokenEstimator,
-		UserInstruction: userInstruction,
-	}, nil
+	r := &AskRunner{
+		Args:           cmdArgs,
+		RootPath:       rootPath,
+		TokenEstimator: tokenEstimator,
+	}
+
+	// Parse front matter from instruction
+	userInstruction, err := parseInstructionWithFrontMatter(r)
+	if err != nil {
+		return nil, err
+	}
+
+	r.UserInstruction = userInstruction
+
+	return r, nil
 }
 
 // Run executes the file picking process
@@ -126,7 +129,8 @@ func (r *AskRunner) Run() error {
 	}
 
 	// If no files were selected (user aborted), return early
-	if selectedFiles == nil {
+	if len(selectedFiles) == 0 {
+		fmt.Println("No files selected. Aborting.")
 		return nil
 	}
 
@@ -161,18 +165,17 @@ func (r *AskRunner) filterFiles() ([]string, error) {
 		if err != nil {
 			return nil, fmt.Errorf("error selecting files with patterns %v: %w", r.Args.Select, err)
 		}
-		err = nil
-		err = nil
-	} else {
-		// Interactive selection
-		selectedFiles, _, err = selectFilesInteractively(r.DirTree, r.TokenEstimator)
-		if err != nil {
-			return nil, err
-		}
-		if selectedFiles == nil {
-			return nil, nil
-		}
 	}
+	// else {
+	// 	// Interactive selection
+	// 	selectedFiles, _, err = selectFilesInteractively(r.DirTree, r.TokenEstimator)
+	// 	if err != nil {
+	// 		return nil, err
+	// 	}
+	// 	if selectedFiles == nil {
+	// 		return nil, nil
+	// 	}
+	// }
 	if err != nil {
 		return nil, err
 	}
@@ -198,14 +201,14 @@ func calculateTokenCount(filePaths []string, tokenEstimator TokenEstimator) (int
 // handleOutput processes the user instruction and outputs the result
 func (r *AskRunner) handleOutput(selectedFiles []string) error {
 	// If we have FileSelections from TOML, output partial files directly
-	if len(r.Args.FileSelections) > 0 {
+	if len(r.FileSelections) > 0 {
 		var buf bytes.Buffer
 		out := io.Writer(os.Stdout)
 		if r.Args.Copy {
 			out = &buf
 		}
 		// Write partial file content
-		if err := WriteFileMap(out, convertToSelections(r.Args.FileSelections), r.RootPath); err != nil {
+		if err := WriteFileMap(out, r.FileSelections, r.RootPath); err != nil {
 			return err
 		}
 		if r.Args.Copy {
@@ -248,11 +251,6 @@ func (r *AskRunner) handleOutput(selectedFiles []string) error {
 	}
 
 	return nil
-}
-
-// convertToSelections converts FileSelection slices to the form needed by WriteFileMap
-func convertToSelections(fileSelections []FileSelection) []FileSelection {
-	return fileSelections
 }
 
 // findRepoRoot returns the path to the repository root by looking for a .git directory.
@@ -370,50 +368,60 @@ func estimateTokenCountTiktoken(filePath string) (int, error) {
 	return len(tokens), nil
 }
 
-// parseFrontMatter attempts to parse front matter from data. It returns a *AskCmd
-// and the remainder of the data after the front matter. If there's no front matter,
-// returns nil, original data, no error. If front matter is found but not properly
-// closed, returns an error.
-func parseFrontMatter(data []byte) (*AskCmd, []byte, error) {
-	lines := bytes.Split(data, []byte("\n"))
+// parseFrontMatter inspects the first line of data and checks if it starts with
+// "---" or "+++". If so, we extract the tag as the substring *after* that delimiter,
+// gather lines until we reach the corresponding delimiter (e.g. "---" or "+++"), and
+// return (tag, frontMatter, remainder, error).
+func parseFrontMatter(data string) (string, string, string, error) {
+	lines := strings.Split(data, "\n")
 	if len(lines) == 0 {
-		return nil, data, nil
+		// No data => nothing to parse.
+		return "", "", data, nil
 	}
 
-	// Check if the first line is '---' or '+++'
-	delimiter := ""
-	if bytes.Equal(lines[0], []byte("---")) || bytes.Equal(lines[0], []byte("+++")) {
-		delimiter = string(lines[0])
-	} else {
-		// no front matter
-		return nil, data, nil
+	// Check if the first line begins with "---" or "+++"
+	firstLine := string(lines[0])
+	var delimiter, tag string
+
+	switch {
+	case strings.HasPrefix(firstLine, "---"):
+		delimiter = "---"
+		tag = strings.TrimPrefix(firstLine, "---")
+	case strings.HasPrefix(firstLine, "+++"):
+		delimiter = "+++"
+		tag = strings.TrimPrefix(firstLine, "+++")
+	default:
+		// Not front matter at all; just return everything as remainder
+		return "", "", string(data), nil
 	}
 
-	// Find the closing delimiter
+	tag = strings.TrimSpace(tag)
+
+	// Now find the matching closing delimiter line.
 	var frontMatterLines []byte
-	foundEnd := false
+	foundClose := false
+
 	i := 1
 	for ; i < len(lines); i++ {
-		if bytes.Equal(lines[i], []byte(delimiter)) {
-			foundEnd = true
+		if string(lines[i]) == delimiter {
+			foundClose = true
 			break
 		}
 		frontMatterLines = append(frontMatterLines, lines[i]...)
 		frontMatterLines = append(frontMatterLines, '\n')
 	}
 
-	if !foundEnd {
-		return nil, nil, fmt.Errorf("front matter not closed with %s", delimiter)
+	if !foundClose {
+		return "", "", "", fmt.Errorf(
+			"front matter not closed; expected closing delimiter %q", delimiter,
+		)
 	}
 
-	parsedCmd, err := parseFlags(frontMatterLines)
-	if err != nil {
-		return nil, nil, err
-	}
+	// Remainder is everything after the line with the closing delimiter
+	remainderLines := lines[i+1:]
+	remainder := strings.Join(remainderLines, "\n")
 
-	// remainder is everything after the closing delimiter line
-	remainder := bytes.Join(lines[i+1:], []byte("\n"))
-	return parsedCmd, remainder, nil
+	return tag, string(frontMatterLines), string(remainder), nil
 }
 
 // parseFlags interprets lines of text as flags for AskCmd using go-arg library
@@ -466,7 +474,9 @@ func parseFlags(frontMatter []byte) (*AskCmd, error) {
 // parseInstructionWithFrontMatter parses the instruction from a file or string,
 // extracts any front matter, and returns the remaining instruction content.
 // It modifies the provided AskCmd with any flags found in the front matter.
-func parseInstructionWithFrontMatter(cmdArgs *AskCmd) (string, error) {
+func parseInstructionWithFrontMatter(runner *AskRunner) (string, error) {
+	cmdArgs := &runner.Args
+
 	if cmdArgs.Instruction == "" {
 		return "", nil
 	}
@@ -492,29 +502,33 @@ func parseInstructionWithFrontMatter(cmdArgs *AskCmd) (string, error) {
 
 	firstNonEmpty := bytes.TrimSpace(lines[idx])
 	// If it starts with --, or exactly '---' or '+++', parse front matter flags
-	if bytes.HasPrefix(firstNonEmpty, []byte("--")) ||
-		bytes.Equal(firstNonEmpty, []byte("---")) ||
+	if bytes.Equal(firstNonEmpty, []byte("---")) ||
 		bytes.Equal(firstNonEmpty, []byte("+++")) {
 
-		frontCmd, remainder, fmErr := parseFrontMatter(instructionContent)
-		// If parseFrontMatter fails in a scenario it can't handle, return an error
-		if fmErr != nil && frontCmd == nil {
-			return "", fmErr
+		tag, frontMatter, remainder, err := parseFrontMatter(string(instructionContent))
+		if err != nil {
+			return "", err
 		}
-		if frontCmd != nil {
-			cmdArgs.Merge(frontCmd)
+
+		switch tag {
+		case "toml":
+			fileSelections, tomlErr := ParseTomlSelections(bytes.NewBufferString(frontMatter), ".")
+			if tomlErr != nil {
+				return "", tomlErr
+			}
+			runner.FileSelections = fileSelections
+		default:
+			cmd, err := parseFlags([]byte(frontMatter))
+			if err != nil {
+				return "", err
+			}
+			cmdArgs.Merge(cmd)
 		}
+
 		return string(remainder), nil
 	}
 
-	// Otherwise, consider it TOML specifying partial file selections
-	fileSelections, tomlErr := ParseTomlSelections(bytes.NewReader(instructionContent), ".")
-	if tomlErr != nil {
-		return "", tomlErr
-	}
-	cmdArgs.FileSelections = fileSelections
-	// We'll consider there's no 'remainder' in the TOML scenario
-	return "", nil
+	return string(instructionContent), nil
 }
 
 // readInstructionContent reads the instruction content from a file if the path exists,
