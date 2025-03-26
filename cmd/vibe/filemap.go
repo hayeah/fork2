@@ -5,7 +5,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
 	"unicode"
 	"unicode/utf8"
 )
@@ -43,80 +42,41 @@ func IsBinaryFile(content []byte) bool {
 	return float64(nonPrintable)/float64(totalRunes) > threshold
 }
 
-// WriteFileMap writes a filemap to the provided writer
-func WriteFileMap(w io.Writer, paths []string, dir string) error {
-	for _, path := range paths {
-		// Create absolute path by joining directory and path
-		absPath := filepath.Join(dir, path)
-
+// WriteFileMap writes a filemap to the provided writer for the given file selections
+func WriteFileMap(w io.Writer, selections []FileSelection, baseDir string) error {
+	for _, selection := range selections {
 		// Skip directories
-		fileInfo, err := os.Stat(absPath)
+		fileInfo, err := os.Stat(selection.Path)
 		if err != nil {
-			return fmt.Errorf("failed to stat file %s: %w", absPath, err)
+			return fmt.Errorf("failed to stat file %s: %w", selection.Path, err)
 		}
 		if fileInfo.IsDir() {
 			continue
 		}
 
-		// Read file content
-		content, err := os.ReadFile(absPath)
+		// Read file content using FileSelection.ReadString()
+		content, err := selection.ReadString()
 		if err != nil {
-			return fmt.Errorf("failed to read file %s: %w", absPath, err)
+			return fmt.Errorf("failed to read selected content from %s: %w", selection.Path, err)
 		}
 
-		// Check if file is binary
-		if IsBinaryFile(content) {
+		// Check if content is binary
+		if IsBinaryFile([]byte(content)) {
 			continue // Skip binary files
 		}
 
-		// Determine language for code block based on file extension
-		ext := filepath.Ext(path)
-		language := ""
-		switch strings.ToLower(ext) {
-		case ".go":
-			language = "go"
-		case ".js":
-			language = "javascript"
-		case ".py":
-			language = "python"
-		case ".rb":
-			language = "ruby"
-		case ".java":
-			language = "java"
-		case ".c", ".cpp", ".h", ".hpp":
-			language = "cpp"
-		case ".cs":
-			language = "csharp"
-		case ".php":
-			language = "php"
-		case ".ts":
-			language = "typescript"
-		case ".html":
-			language = "html"
-		case ".css":
-			language = "css"
-		case ".md":
-			language = "markdown"
-		case ".json":
-			language = "json"
-		case ".yaml", ".yml":
-			language = "yaml"
-		case ".toml":
-			language = "toml"
-		case ".sh", ".bash":
-			language = "bash"
-		case ".sql":
-			language = "sql"
-		default:
-			language = ""
+		// Get relative path for display
+		relPath, err := filepath.Rel(baseDir, selection.Path)
+		if err != nil {
+			relPath = selection.Path // Fallback to absolute path
 		}
-
+		
 		// Write file header
-		fmt.Fprintf(w, "File: %s\n", path)
-		fmt.Fprintf(w, "```%s\n", language)
+		fmt.Fprintf(w, "File: %s\n", relPath)
+		fmt.Fprint(w, "```\n")
 
 		// Write file content
-		fmt.Fprint(w, string(content))
+		fmt.Fprint(w, content)
 
 		// Ensure the content ends with a newline
 		if len(content) > 0 && content[len(content)-1] != '\n' {

@@ -10,7 +10,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/hayeah/fork2"
 	"github.com/hayeah/fork2/render"
 )
 
@@ -132,7 +131,17 @@ func (ctx *VibeContext) WriteOutput(w io.Writer, userPath string, systemPath str
 
 	// Write the file map of selected files to a string
 	var fileMapBuf strings.Builder
-	err := fork2.WriteFileMap(&fileMapBuf, selectedFiles, ctx.ask.RootPath)
+
+	// Convert selectedFiles to FileSelection
+	fileSelections := make([]FileSelection, len(selectedFiles))
+	for i, path := range selectedFiles {
+		fileSelections[i] = FileSelection{
+			Path:   path,
+			Ranges: nil, // selected all lines
+		}
+	}
+
+	err := WriteFileMap(&fileMapBuf, fileSelections, ctx.ask.RootPath)
 	if err != nil {
 		return fmt.Errorf("failed to write file map: %v", err)
 	}

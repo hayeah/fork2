@@ -182,7 +182,7 @@ func TestExtractSelectedLines(t *testing.T) {
 	assert.NoError(err)
 
 	// Test extracting all lines (no ranges)
-	allLines, err := ExtractSelectedLines(testFile, []LineRange{})
+	allLines, err := extractSelectedLines(testFile, []LineRange{})
 	assert.NoError(err)
 	assert.Equal(content.String(), allLines)
 
@@ -192,65 +192,11 @@ func TestExtractSelectedLines(t *testing.T) {
 		{Start: 10, End: 12},
 	}
 	expected := "Line 1\nLine 2\nLine 3\nLine 10\nLine 11\nLine 12\n"
-	selectedLines, err := ExtractSelectedLines(testFile, ranges)
+	selectedLines, err := extractSelectedLines(testFile, ranges)
 	assert.NoError(err)
 	assert.Equal(expected, selectedLines)
 
 	// Test with non-existent file
-	_, err = ExtractSelectedLines(filepath.Join(tempDir, "nonexistent.txt"), ranges)
-	assert.Error(err)
-}
-
-func TestGeneratePartialContent(t *testing.T) {
-	assert := assert.New(t)
-
-	// Create temporary test files
-	tempDir := t.TempDir()
-
-	// Create test files
-	file1 := filepath.Join(tempDir, "file1.txt")
-	file2 := filepath.Join(tempDir, "file2.txt")
-
-	content1 := "Line 1\nLine 2\nLine 3\nLine 4\nLine 5\n"
-	content2 := "Line A\nLine B\nLine C\nLine D\nLine E\n"
-
-	err := os.WriteFile(file1, []byte(content1), 0644)
-	assert.NoError(err)
-
-	err = os.WriteFile(file2, []byte(content2), 0644)
-	assert.NoError(err)
-
-	// Create file selections
-	selections := []FileSelection{
-		{
-			Path:   file1,
-			Ranges: []LineRange{{Start: 2, End: 4}},
-		},
-		{
-			Path:   file2,
-			Ranges: []LineRange{}, // All lines
-		},
-	}
-
-	// Test generating partial content
-	result, err := GeneratePartialContent(selections)
-	assert.NoError(err)
-	assert.Len(result, 2)
-
-	// Check content for file1
-	assert.Equal("Line 2\nLine 3\nLine 4\n", result[file1])
-
-	// Check content for file2
-	assert.Equal(content2, result[file2])
-
-	// Test with non-existent file
-	badSelections := []FileSelection{
-		{
-			Path:   filepath.Join(tempDir, "nonexistent.txt"),
-			Ranges: []LineRange{},
-		},
-	}
-
-	_, err = GeneratePartialContent(badSelections)
+	_, err = extractSelectedLines(filepath.Join(tempDir, "nonexistent.txt"), ranges)
 	assert.Error(err)
 }

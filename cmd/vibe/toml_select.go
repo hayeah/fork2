@@ -26,6 +26,12 @@ type FileSelection struct {
 	Ranges []LineRange // Line ranges to include, empty means all lines
 }
 
+// ReadString reads selected line ranges from the file.
+// If Ranges is empty, it returns the entire file content.
+func (fs *FileSelection) ReadString() (string, error) {
+	return extractSelectedLines(fs.Path, fs.Ranges)
+}
+
 // TomlSelect represents a file selection in TOML
 type TomlSelect struct {
 	File string `toml:"file"` // File path with optional line range
@@ -178,11 +184,11 @@ func coalesceRanges(ranges []LineRange) []LineRange {
 	return result
 }
 
-// ExtractSelectedLines reads selected line ranges from a file.
+// extractSelectedLines reads selected line ranges from a file.
 // It assumes that the provided sortedRanges are already sorted and merged.
 // If sortedRanges is empty, it returns the entire file content.
 // Returns an error if the ranges are not sorted or merged.
-func ExtractSelectedLines(filePath string, sortedRanges []LineRange) (string, error) {
+func extractSelectedLines(filePath string, sortedRanges []LineRange) (string, error) {
 	// Open the file.
 	file, err := os.Open(filePath)
 	if err != nil {
@@ -247,17 +253,4 @@ func ExtractSelectedLines(filePath string, sortedRanges []LineRange) (string, er
 	return result.String(), nil
 }
 
-// GeneratePartialContent generates partial content for all selected files
-func GeneratePartialContent(selections []FileSelection) (map[string]string, error) {
-	result := make(map[string]string)
 
-	for _, selection := range selections {
-		content, err := ExtractSelectedLines(selection.Path, selection.Ranges)
-		if err != nil {
-			return nil, err
-		}
-		result[selection.Path] = content
-	}
-
-	return result, nil
-}
