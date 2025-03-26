@@ -23,6 +23,9 @@ type AskCmd struct {
 	Role           string   `arg:"--role" help:"Role/layout to use for output"`
 	Select         []string `arg:"--select,separate" help:"Select files matching pattern and output immediately (can be specified multiple times). Use fuzzy match by default or regex pattern with a '/' prefix"`
 	Instruction    string   `arg:"positional" help:"User instruction or path to instruction file"`
+
+	// If we parse the instruction as TOML, we'll store the resulting partial file selections here.
+	FileSelections []FileSelection
 }
 
 // Merge merges src fields into the current AskCmd instance, with the current instance
@@ -194,15 +197,34 @@ func calculateTokenCount(filePaths []string, tokenEstimator TokenEstimator) (int
 
 // handleOutput processes the user instruction and outputs the result
 func (r *AskRunner) handleOutput(selectedFiles []string) error {
-	// Create a new VibeContext
+	// If we have FileSelections from TOML, output partial files directly
+	if len(r.Args.FileSelections) > 0 {
+		var buf bytes.Buffer
+		out := io.Writer(os.Stdout)
+		if r.Args.Copy {
+			out = &buf
+		}
+		// Write partial file content
+		if err := WriteFileMap(out, convertToSelections(r.Args.FileSelections), r.RootPath); err != nil {
+			return err
+		}
+		if r.Args.Copy {
+			if err := clipboard.WriteAll(buf.String()); err != nil {
+				return fmt.Errorf("failed to copy to clipboard: %v", err)
+			}
+			fmt.Fprintln(os.Stderr, "Output copied to clipboard")
+		}
+		return nil
+	}
+
+	// Otherwise, use the old approach with VibeContext
 	vibeCtx, err := NewVibeContext(r)
 	if err != nil {
 		return fmt.Errorf("failed to create vibe context: %v", err)
 	}
 
 	var buf bytes.Buffer
-	var out io.Writer
-	out = os.Stdout
+	out := io.Writer(os.Stdout)
 	if r.Args.Copy {
 		out = &buf
 	}
@@ -211,29 +233,26 @@ func (r *AskRunner) handleOutput(selectedFiles []string) error {
 	if role == "" {
 		role = "coder"
 	}
-
-	// Wrap the specified role in "<...>"
 	wrappedRole := "<" + role + ">"
 
-	// Use VibeContext.WriteOutput
 	err = vibeCtx.WriteOutput(out, r.Args.Instruction, wrappedRole, selectedFiles)
 	if err != nil {
 		return err
 	}
 
-	// Handle output based on --copy flag
 	if r.Args.Copy {
-		// Copy buffer contents to clipboard
-		err = clipboard.WriteAll(buf.String())
-		if err != nil {
+		if err := clipboard.WriteAll(buf.String()); err != nil {
 			return fmt.Errorf("failed to copy to clipboard: %v", err)
 		}
-
 		fmt.Fprintln(os.Stderr, "Output copied to clipboard")
-		return nil
 	}
 
 	return nil
+}
+
+// convertToSelections converts FileSelection slices to the form needed by WriteFileMap
+func convertToSelections(fileSelections []FileSelection) []FileSelection {
+	return fileSelections
 }
 
 // findRepoRoot returns the path to the repository root by looking for a .git directory.
@@ -452,25 +471,50 @@ func parseInstructionWithFrontMatter(cmdArgs *AskCmd) (string, error) {
 		return "", nil
 	}
 
-	// First step: Read the instruction content (from file or use as-is)
+	// Read the content (from file or raw string)
 	instructionContent, err := readInstructionContent(cmdArgs.Instruction)
 	if err != nil {
 		return "", err
 	}
 
-	// Second step: Parse front matter from the content
-	frontCmd, remainder, err := parseFrontMatter(instructionContent)
-	if err != nil && frontCmd == nil {
-		// invalid front matter => error
-		return "", err
+	// Split into lines, skip leading blanks
+	lines := bytes.Split(instructionContent, []byte("\n"))
+	idx := 0
+	for ; idx < len(lines); idx++ {
+		if len(bytes.TrimSpace(lines[idx])) > 0 {
+			break
+		}
+	}
+	if idx >= len(lines) {
+		// All blank
+		return "", nil
 	}
 
-	// Apply any front matter flags to command args
-	if frontCmd != nil {
-		cmdArgs.Merge(frontCmd)
+	firstNonEmpty := bytes.TrimSpace(lines[idx])
+	// If it starts with --, or exactly '---' or '+++', parse front matter flags
+	if bytes.HasPrefix(firstNonEmpty, []byte("--")) ||
+		bytes.Equal(firstNonEmpty, []byte("---")) ||
+		bytes.Equal(firstNonEmpty, []byte("+++")) {
+
+		frontCmd, remainder, fmErr := parseFrontMatter(instructionContent)
+		// If parseFrontMatter fails in a scenario it can't handle, return an error
+		if fmErr != nil && frontCmd == nil {
+			return "", fmErr
+		}
+		if frontCmd != nil {
+			cmdArgs.Merge(frontCmd)
+		}
+		return string(remainder), nil
 	}
 
-	return string(remainder), nil
+	// Otherwise, consider it TOML specifying partial file selections
+	fileSelections, tomlErr := ParseTomlSelections(bytes.NewReader(instructionContent), ".")
+	if tomlErr != nil {
+		return "", tomlErr
+	}
+	cmdArgs.FileSelections = fileSelections
+	// We'll consider there's no 'remainder' in the TOML scenario
+	return "", nil
 }
 
 // readInstructionContent reads the instruction content from a file if the path exists,
