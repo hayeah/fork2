@@ -34,12 +34,12 @@ func (fs *FileSelection) ReadString() (string, error) {
 
 // TomlSelect represents a file selection in TOML
 type TomlSelect struct {
-	File string `toml:"file"` // File path with optional line range
+	Path string `toml:"path"` // File path with optional line range
 }
 
 // TomlHeader represents the TOML file header
 type TomlHeader struct {
-	Selects []TomlSelect `toml:"select"`
+	Files []TomlSelect `toml:"file"`
 }
 
 // parseLineRange parses a line range string like "1,5" or "10,15"
@@ -117,8 +117,8 @@ func ParseTomlSelections(r io.Reader, rootPath string) ([]FileSelection, error) 
 	selectionsMap := make(map[string]*FileSelection)
 
 	// Process each select entry
-	for _, select_ := range header.Selects {
-		fileSelection, err := parseFilePathWithRange(select_.File, rootPath)
+	for _, select_ := range header.Files {
+		fileSelection, err := parseFilePathWithRange(select_.Path, rootPath)
 		if err != nil {
 			return nil, err
 		}

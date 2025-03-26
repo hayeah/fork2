@@ -124,20 +124,9 @@ func (r *AskRunner) Run() error {
 
 	// If we have FileSelections from TOML, output partial files directly
 	if len(r.FileSelections) > 0 {
-		var buf bytes.Buffer
-		out := io.Writer(os.Stdout)
-		if r.Args.Copy {
-			out = &buf
-		}
-		// Write partial file content
-		if err := WriteFileMap(out, r.FileSelections, r.RootPath); err != nil {
+		err := r.handleOutput2(r.FileSelections)
+		if err != nil {
 			return err
-		}
-		if r.Args.Copy {
-			if err := clipboard.WriteAll(buf.String()); err != nil {
-				return fmt.Errorf("failed to copy to clipboard: %v", err)
-			}
-			fmt.Fprintln(os.Stderr, "Output copied to clipboard")
 		}
 		return nil
 	}
@@ -216,6 +205,41 @@ func calculateTokenCount(filePaths []string, tokenEstimator TokenEstimator) (int
 	}
 
 	return totalTokenCount, nil
+}
+
+// handleOutput processes the user instruction and outputs the result
+func (r *AskRunner) handleOutput2(selectedFiles []FileSelection) error {
+	// Otherwise, use the old approach with VibeContext
+	vibeCtx, err := NewVibeContext(r)
+	if err != nil {
+		return fmt.Errorf("failed to create vibe context: %v", err)
+	}
+
+	var buf bytes.Buffer
+	out := io.Writer(os.Stdout)
+	if r.Args.Copy {
+		out = &buf
+	}
+
+	role := r.Args.Role
+	if role == "" {
+		role = "coder"
+	}
+	wrappedRole := "<" + role + ">"
+
+	err = vibeCtx.WriteFileSelections(out, r.Args.Instruction, wrappedRole, selectedFiles)
+	if err != nil {
+		return err
+	}
+
+	if r.Args.Copy {
+		if err := clipboard.WriteAll(buf.String()); err != nil {
+			return fmt.Errorf("failed to copy to clipboard: %v", err)
+		}
+		fmt.Fprintln(os.Stderr, "Output copied to clipboard")
+	}
+
+	return nil
 }
 
 // handleOutput processes the user instruction and outputs the result
