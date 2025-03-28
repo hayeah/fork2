@@ -6,7 +6,6 @@ import (
 	"io"
 	"io/fs"
 	"os"
-	"sort"
 	"strings"
 	"sync"
 
@@ -112,21 +111,7 @@ func (ctx *VibeContext) RepoPrompts() string {
 	return ctx.repoPrompts
 }
 
-// WriteOutput processes the selected files and outputs the result using the renderer
-func (ctx *VibeContext) WriteOutput(w io.Writer, userPath string, systemPath string, selectedFiles []string) error {
-	sort.Strings(selectedFiles)
-
-	// Convert selectedFiles to FileSelection
-	fileSelections := make([]FileSelection, len(selectedFiles))
-	for i, path := range selectedFiles {
-		fileSelections[i] = FileSelection{
-			Path:   path,
-			Ranges: nil, // selected all lines
-		}
-	}
-
-	return ctx.WriteFileSelections(w, userPath, systemPath, fileSelections)
-}
+// WriteOutput removed in favor of WriteFileSelections
 
 // WriteFileSelections processes the selected files and outputs the result using the renderer
 func (ctx *VibeContext) WriteFileSelections(w io.Writer, userPath string, systemPath string, fileSelections []FileSelection) error {

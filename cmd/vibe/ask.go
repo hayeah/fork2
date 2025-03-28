@@ -62,6 +62,12 @@ var diffPrompt string
 //go:embed diff-heredoc.md
 var diffHeredocPrompt string
 
+// FrontMatter represents the front matter section of an instruction
+type FrontMatter struct {
+	Content string
+	Tag     string
+}
+
 // AskRunner encapsulates the state and behavior for the file picker
 type AskRunner struct {
 	Args            AskCmd
@@ -69,9 +75,7 @@ type AskRunner struct {
 	DirTree         *DirectoryTree
 	TokenEstimator  TokenEstimator
 	UserInstruction string
-
-	// If we parse the instruction as TOML, we'll store the resulting partial file selections here.
-	FileSelections []FileSelection
+	ParsedFrontMatter *FrontMatter
 }
 
 // NewAskRunner creates and initializes a new PickRunner
@@ -122,19 +126,19 @@ func (r *AskRunner) Run() error {
 		return fmt.Errorf("failed to load directory tree: %v", err)
 	}
 
+	// Filter phase: select files either automatically or interactively
+	selectedFiles, fileSelections, err := r.filterFiles()
+	if err != nil {
+		return err
+	}
+
 	// If we have FileSelections from TOML, output partial files directly
-	if len(r.FileSelections) > 0 {
-		err := r.handleOutput2(r.FileSelections)
+	if fileSelections != nil && len(fileSelections) > 0 {
+		err := r.handleOutput(fileSelections)
 		if err != nil {
 			return err
 		}
 		return nil
-	}
-
-	// Filter phase: select files either automatically or interactively
-	selectedFiles, err := r.filterFiles()
-	if err != nil {
-		return err
 	}
 
 	// If no files were selected (user aborted), return early
@@ -143,8 +147,17 @@ func (r *AskRunner) Run() error {
 		return nil
 	}
 
+	// Convert selectedFiles to FileSelection
+	fileSelections = make([]FileSelection, len(selectedFiles))
+	for i, path := range selectedFiles {
+		fileSelections[i] = FileSelection{
+			Path:   path,
+			Ranges: nil, // selected all lines
+		}
+	}
+
 	// Output phase: generate user instruction and handle output
-	if err := r.handleOutput(selectedFiles); err != nil {
+	if err := r.handleOutput(fileSelections); err != nil {
 		return err
 	}
 
@@ -161,10 +174,33 @@ func (r *AskRunner) Run() error {
 }
 
 // filterFiles handles the file selection phase, either automatically or interactively
-func (r *AskRunner) filterFiles() ([]string, error) {
+// Returns either FileSelections (if using TOML front matter) or a list of file paths
+func (r *AskRunner) filterFiles() ([]string, []FileSelection, error) {
 	var selectedFiles []string
+	var fileSelections []FileSelection
 	var err error
 
+	// Process front matter if present
+	if r.ParsedFrontMatter != nil {
+		switch r.ParsedFrontMatter.Tag {
+		case "toml":
+			fileSelections, err = ParseTomlSelections(bytes.NewBufferString(r.ParsedFrontMatter.Content), ".")
+			if err != nil {
+				return nil, nil, fmt.Errorf("failed to parse TOML selections: %w", err)
+			}
+			// Return early with file selections
+			return nil, fileSelections, nil
+		default:
+			// Parse flags from front matter and merge with command args
+			cmd, err := parseFlags([]byte(r.ParsedFrontMatter.Content))
+			if err != nil {
+				return nil, nil, fmt.Errorf("failed to parse front matter flags: %w", err)
+			}
+			r.Args.Merge(cmd)
+		}
+	}
+
+	// Continue with regular file selection
 	if r.Args.All {
 		// Select all files
 		selectedFiles = r.DirTree.SelectAllFiles()
@@ -172,23 +208,23 @@ func (r *AskRunner) filterFiles() ([]string, error) {
 		// Stepwise narrowing using multiple patterns, with support for negative patterns
 		selectedFiles, err = r.DirTree.SelectByPatterns(r.Args.Select)
 		if err != nil {
-			return nil, fmt.Errorf("error selecting files with patterns %v: %w", r.Args.Select, err)
+			return nil, nil, fmt.Errorf("error selecting files with patterns %v: %w", r.Args.Select, err)
 		}
 	}
 	// else {
 	// 	// Interactive selection
 	// 	selectedFiles, _, err = selectFilesInteractively(r.DirTree, r.TokenEstimator)
 	// 	if err != nil {
-	// 		return nil, err
+	// 		return nil, nil, err
 	// 	}
 	// 	if selectedFiles == nil {
-	// 		return nil, nil
+	// 		return nil, nil, nil
 	// 	}
 	// }
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return selectedFiles, nil
+	return selectedFiles, nil, nil
 }
 
 // calculateTokenCount calculates the total token count for a list of file paths
@@ -208,8 +244,8 @@ func calculateTokenCount(filePaths []string, tokenEstimator TokenEstimator) (int
 }
 
 // handleOutput processes the user instruction and outputs the result
-func (r *AskRunner) handleOutput2(selectedFiles []FileSelection) error {
-	// Otherwise, use the old approach with VibeContext
+func (r *AskRunner) handleOutput(selectedFiles []FileSelection) error {
+	// Create a new vibe context
 	vibeCtx, err := NewVibeContext(r)
 	if err != nil {
 		return fmt.Errorf("failed to create vibe context: %v", err)
@@ -228,41 +264,6 @@ func (r *AskRunner) handleOutput2(selectedFiles []FileSelection) error {
 	wrappedRole := "<" + role + ">"
 
 	err = vibeCtx.WriteFileSelections(out, r.Args.Instruction, wrappedRole, selectedFiles)
-	if err != nil {
-		return err
-	}
-
-	if r.Args.Copy {
-		if err := clipboard.WriteAll(buf.String()); err != nil {
-			return fmt.Errorf("failed to copy to clipboard: %v", err)
-		}
-		fmt.Fprintln(os.Stderr, "Output copied to clipboard")
-	}
-
-	return nil
-}
-
-// handleOutput processes the user instruction and outputs the result
-func (r *AskRunner) handleOutput(selectedFiles []string) error {
-	// Otherwise, use the old approach with VibeContext
-	vibeCtx, err := NewVibeContext(r)
-	if err != nil {
-		return fmt.Errorf("failed to create vibe context: %v", err)
-	}
-
-	var buf bytes.Buffer
-	out := io.Writer(os.Stdout)
-	if r.Args.Copy {
-		out = &buf
-	}
-
-	role := r.Args.Role
-	if role == "" {
-		role = "coder"
-	}
-	wrappedRole := "<" + role + ">"
-
-	err = vibeCtx.WriteOutput(out, r.Args.Instruction, wrappedRole, selectedFiles)
 	if err != nil {
 		return err
 	}
@@ -496,8 +497,7 @@ func parseFlags(frontMatter []byte) (*AskCmd, error) {
 }
 
 // parseInstructionWithFrontMatter parses the instruction from a file or string,
-// extracts any front matter, and returns the remaining instruction content.
-// It modifies the provided AskCmd with any flags found in the front matter.
+// extracts any front matter, and returns the remaining instruction content along with the parsed front matter.
 func parseInstructionWithFrontMatter(runner *AskRunner) (string, error) {
 	cmdArgs := &runner.Args
 
@@ -534,19 +534,10 @@ func parseInstructionWithFrontMatter(runner *AskRunner) (string, error) {
 			return "", err
 		}
 
-		switch tag {
-		case "toml":
-			fileSelections, tomlErr := ParseTomlSelections(bytes.NewBufferString(frontMatter), ".")
-			if tomlErr != nil {
-				return "", tomlErr
-			}
-			runner.FileSelections = fileSelections
-		default:
-			cmd, err := parseFlags([]byte(frontMatter))
-			if err != nil {
-				return "", err
-			}
-			cmdArgs.Merge(cmd)
+		// Store the parsed front matter but don't process it here
+		runner.ParsedFrontMatter = &FrontMatter{
+			Content: frontMatter,
+			Tag:     tag,
 		}
 
 		return string(remainder), nil
