@@ -1,0 +1,12 @@
+{
+  "LineNo": 3,
+  "Name": "command",
+  "Payload": "payload",
+  "Params": [
+    {
+      "LineNo": 5,
+      "Name": "param",
+      "Payload": "value"
+    }
+  ]
+}

@@ -1,0 +1,4 @@
+{
+  "param1": "inline payload",
+  "param2": "Heredoc payload for param2"
+}

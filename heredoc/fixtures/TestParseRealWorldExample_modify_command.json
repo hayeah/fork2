@@ -1,0 +1,22 @@
+{
+  "LineNo": 5,
+  "Name": "modify",
+  "Payload": "cmd/pick/main.go",
+  "Params": [
+    {
+      "LineNo": 7,
+      "Name": "description",
+      "Payload": "Update Args struct to add UserInstruction parameter"
+    },
+    {
+      "LineNo": 11,
+      "Name": "search",
+      "Payload": "// Args defines the command-line arguments\ntype Args struct {\n\tTokenEstimator string\n\tAll            bool\n\tCopy           bool\n}"
+    },
+    {
+      "LineNo": 20,
+      "Name": "replace",
+      "Payload": "// Args defines the command-line arguments\ntype Args struct {\n\tTokenEstimator  string\n\tAll             bool\n\tCopy            bool\n\tUserInstruction string\n}"
+    }
+  ]
+}
