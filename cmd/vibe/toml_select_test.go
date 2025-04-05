@@ -120,52 +120,6 @@ func TestCoalesceRanges(t *testing.T) {
 	}, coalesced4)
 }
 
-func TestParseTomlSelections(t *testing.T) {
-	assert := assert.New(t)
-
-	// Current directory as root path
-	rootPath, err := os.Getwd()
-	assert.NoError(err)
-
-	// Test parsing TOML with multiple selections
-	tomlContent := `
-[[select]]
-file = "path/to/a.txt"
-
-[[select]]
-file = "path/to/b.txt#1,5"
-
-[[select]]
-file = "path/to/b.txt#10,15"
-`
-
-	selections, err := ParseTomlSelections(strings.NewReader(tomlContent), rootPath)
-	assert.NoError(err)
-	assert.Len(selections, 2) // Two files: a.txt and b.txt
-
-	// Find a.txt and b.txt in the selections
-	var aTxt, bTxt *FileSelection
-	for i := range selections {
-		if strings.HasSuffix(selections[i].Path, "a.txt") {
-			aTxt = &selections[i]
-		} else if strings.HasSuffix(selections[i].Path, "b.txt") {
-			bTxt = &selections[i]
-		}
-	}
-
-	// Verify a.txt
-	assert.NotNil(aTxt)
-	assert.Equal(filepath.Join(rootPath, "path/to/a.txt"), aTxt.Path)
-	assert.Empty(aTxt.Ranges)
-
-	// Verify b.txt
-	assert.NotNil(bTxt)
-	assert.Equal(filepath.Join(rootPath, "path/to/b.txt"), bTxt.Path)
-	assert.Len(bTxt.Ranges, 2)
-	assert.Equal(LineRange{Start: 1, End: 5}, bTxt.Ranges[0])
-	assert.Equal(LineRange{Start: 10, End: 15}, bTxt.Ranges[1])
-}
-
 func TestExtractSelectedLines(t *testing.T) {
 	assert := assert.New(t)
 

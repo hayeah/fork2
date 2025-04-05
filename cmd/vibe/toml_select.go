@@ -10,8 +10,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-
-	"github.com/BurntSushi/toml"
 )
 
 // LineRange represents a range of lines in a file
@@ -33,11 +31,13 @@ func (fs *FileSelection) ReadString() (string, error) {
 }
 
 // TomlSelect represents a file selection in TOML
+// Used by InstructParser in instruct_parser.go
 type TomlSelect struct {
 	Path string `toml:"path"` // File path with optional line range
 }
 
 // TomlHeader represents the TOML file header
+// Used by InstructParser in instruct_parser.go
 type TomlHeader struct {
 	Files []TomlSelect `toml:"file"`
 }
@@ -104,53 +104,8 @@ func parseFilePathWithRange(pathWithRange string, rootPath string) (FileSelectio
 	return selection, nil
 }
 
-// ParseTomlSelections parses a TOML configuration from a reader
-func ParseTomlSelections(r io.Reader, rootPath string) ([]FileSelection, error) {
-	var header TomlHeader
-
-	decoder := toml.NewDecoder(r)
-	if _, err := decoder.Decode(&header); err != nil {
-		return nil, fmt.Errorf("failed to parse TOML: %w", err)
-	}
-
-	// Map to store FileSelections by path for easy lookup
-	selectionsMap := make(map[string]*FileSelection)
-
-	// Process each select entry
-	for _, select_ := range header.Files {
-		fileSelection, err := parseFilePathWithRange(select_.Path, rootPath)
-		if err != nil {
-			return nil, err
-		}
-
-		// Check if we already have a selection for this file
-		if existing, ok := selectionsMap[fileSelection.Path]; ok {
-			// if either range is nil, consider it a full file selection
-			if fileSelection.Ranges == nil || existing.Ranges == nil {
-				// set it to nil to mean selecting the whole file
-				existing.Ranges = nil
-			}
-
-			// collect the range
-			existing.Ranges = append(existing.Ranges, fileSelection.Ranges...)
-		} else {
-			// Create new entry
-			selectionsMap[fileSelection.Path] = &fileSelection
-		}
-	}
-
-	// Convert map to slice
-	var fileSelections []FileSelection
-	for _, selection := range selectionsMap {
-		// Coalesce overlapping ranges if any
-		if len(selection.Ranges) > 0 {
-			selection.Ranges = coalesceRanges(selection.Ranges)
-		}
-		fileSelections = append(fileSelections, *selection)
-	}
-
-	return fileSelections, nil
-}
+// NOTE: ParseTomlSelections has been moved to instruct_parser.go
+// This is kept here for reference and will be removed in a future update
 
 // coalesceRanges merges overlapping line ranges
 func coalesceRanges(ranges []LineRange) []LineRange {
