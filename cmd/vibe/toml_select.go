@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -69,43 +67,6 @@ func parseLineRange(rangeStr string) (LineRange, error) {
 
 	return LineRange{Start: start, End: end}, nil
 }
-
-var pathRangeRegex = regexp.MustCompile(`^(.+?)(?:#(\d+,\d+))?$`)
-
-// parseFilePathWithRange parses a file path with an optional line range
-// Format: path/to/file.ext#start,end
-func parseFilePathWithRange(pathWithRange string, rootPath string) (FileSelection, error) {
-	matches := pathRangeRegex.FindStringSubmatch(pathWithRange)
-
-	if len(matches) < 2 {
-		return FileSelection{}, fmt.Errorf("invalid file path format: %s", pathWithRange)
-	}
-
-	relPath := matches[1]
-	absPath := relPath
-	if !filepath.IsAbs(relPath) {
-		absPath = filepath.Join(rootPath, relPath)
-	}
-
-	selection := FileSelection{
-		Path:   absPath,
-		Ranges: nil,
-	}
-
-	// If there's a range specifier
-	if len(matches) > 2 && matches[2] != "" {
-		lineRange, err := parseLineRange(matches[2])
-		if err != nil {
-			return FileSelection{}, err
-		}
-		selection.Ranges = append(selection.Ranges, lineRange)
-	}
-
-	return selection, nil
-}
-
-// NOTE: ParseTomlSelections has been moved to instruct_parser.go
-// This is kept here for reference and will be removed in a future update
 
 // coalesceRanges merges overlapping line ranges
 func coalesceRanges(ranges []LineRange) []LineRange {

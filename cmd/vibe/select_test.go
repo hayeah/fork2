@@ -7,7 +7,271 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestSelectPattern(t *testing.T) {
+// Common test paths used across multiple tests
+var testPaths = []string{
+	"src/foo.go",
+	"src/foo_test.go",
+	"docs/bar.md",
+	"internal/baz_test.go",
+	"internal/baz.go",
+	"README.md",
+}
+
+// TestFuzzyMatcher tests the FuzzyMatcher implementation
+func TestFuzzyMatcher(t *testing.T) {
+	assert := assert.New(t)
+
+	t.Run("EmptyPattern", func(t *testing.T) {
+		matcher := FuzzyMatcher{Pattern: ""}
+		results, err := matcher.Match(testPaths)
+		assert.NoError(err)
+		assert.Equal(testPaths, results, "Empty pattern should select all paths")
+	})
+
+	t.Run("SingleMatch", func(t *testing.T) {
+		matcher := FuzzyMatcher{Pattern: "foo"}
+		results, err := matcher.Match(testPaths)
+		assert.NoError(err)
+		assert.ElementsMatch([]string{"src/foo.go", "src/foo_test.go"}, results)
+	})
+
+	t.Run("NoMatches", func(t *testing.T) {
+		matcher := FuzzyMatcher{Pattern: "nonexistent"}
+		results, err := matcher.Match(testPaths)
+		assert.NoError(err)
+		assert.Empty(results, "Non-matching pattern should return empty results")
+	})
+
+	t.Run("PartialMatch", func(t *testing.T) {
+		matcher := FuzzyMatcher{Pattern: "ba"}
+		results, err := matcher.Match(testPaths)
+		assert.NoError(err)
+		assert.ElementsMatch([]string{"docs/bar.md", "internal/baz_test.go", "internal/baz.go"}, results)
+	})
+}
+
+// TestRegexMatcher tests the RegexMatcher implementation
+func TestRegexMatcher(t *testing.T) {
+	assert := assert.New(t)
+
+	t.Run("EmptyPattern", func(t *testing.T) {
+		matcher, err := NewRegexMatcher("")
+		assert.NoError(err)
+		results, err := matcher.Match(testPaths)
+		assert.NoError(err)
+		assert.Equal(testPaths, results, "Empty regex pattern should select all paths")
+	})
+
+	t.Run("ValidPattern", func(t *testing.T) {
+		matcher, err := NewRegexMatcher("\\.md$")
+		assert.NoError(err)
+		results, err := matcher.Match(testPaths)
+		assert.NoError(err)
+		assert.ElementsMatch([]string{"docs/bar.md", "README.md"}, results)
+	})
+
+	t.Run("InvalidPattern", func(t *testing.T) {
+		_, err := NewRegexMatcher("[invalid")
+		assert.Error(err, "Should return error for invalid regex")
+		assert.Contains(err.Error(), "invalid regex pattern")
+	})
+
+	t.Run("NoMatches", func(t *testing.T) {
+		matcher, err := NewRegexMatcher("\\.py$")
+		assert.NoError(err)
+		results, err := matcher.Match(testPaths)
+		assert.NoError(err)
+		assert.Empty(results, "Non-matching regex should return empty results")
+	})
+}
+
+// TestNegationMatcher tests the NegationMatcher implementation
+func TestNegationMatcher(t *testing.T) {
+	assert := assert.New(t)
+
+	t.Run("NegateRegex", func(t *testing.T) {
+		// Create a regex matcher for test files
+		regexMatcher, err := NewRegexMatcher("_test\\.go$")
+		assert.NoError(err)
+
+		// Wrap it with a negation matcher
+		negationMatcher := NegationMatcher{Wrapped: regexMatcher}
+
+		results, err := negationMatcher.Match(testPaths)
+		assert.NoError(err)
+		assert.ElementsMatch(
+			[]string{"src/foo.go", "docs/bar.md", "internal/baz.go", "README.md"},
+			results,
+			"Should exclude test files",
+		)
+	})
+
+	t.Run("NegateFuzzy", func(t *testing.T) {
+		// Create a fuzzy matcher for "foo" files
+		fuzzyMatcher := FuzzyMatcher{Pattern: "foo"}
+
+		// Wrap it with a negation matcher
+		negationMatcher := NegationMatcher{Wrapped: fuzzyMatcher}
+
+		results, err := negationMatcher.Match(testPaths)
+		assert.NoError(err)
+		assert.ElementsMatch(
+			[]string{"docs/bar.md", "internal/baz_test.go", "internal/baz.go", "README.md"},
+			results,
+			"Should exclude foo files",
+		)
+	})
+}
+
+// TestExactPathMatcher tests the ExactPathMatcher implementation
+func TestExactPathMatcher(t *testing.T) {
+	assert := assert.New(t)
+
+	t.Run("ExactMatch", func(t *testing.T) {
+		matcher := ExactPathMatcher{FileSelection{Path: "src/foo.go"}}
+		results, err := matcher.Match(testPaths)
+		assert.NoError(err)
+		assert.Equal([]string{"src/foo.go"}, results)
+	})
+
+	t.Run("NoMatch", func(t *testing.T) {
+		matcher := ExactPathMatcher{FileSelection{Path: "nonexistent.go"}}
+		results, err := matcher.Match(testPaths)
+		assert.NoError(err)
+		assert.Empty(results, "Non-matching exact path should return empty results")
+	})
+
+	t.Run("WithLineRange", func(t *testing.T) {
+		matcher := ExactPathMatcher{FileSelection{Path: "src/foo.go", Ranges: []LineRange{{Start: 10, End: 20}}}}
+		results, err := matcher.Match(testPaths)
+		assert.NoError(err)
+		assert.Equal([]string{"src/foo.go"}, results, "Line range should not affect path matching")
+	})
+}
+
+// TestCompoundMatcher tests the CompoundMatcher implementation
+func TestCompoundMatcher(t *testing.T) {
+	assert := assert.New(t)
+
+	t.Run("MultipleMatchers", func(t *testing.T) {
+		// First matcher: files containing "foo"
+		fuzzyMatcher := FuzzyMatcher{Pattern: "foo"}
+
+		// Second matcher: files with .go extension
+		regexMatcher, err := NewRegexMatcher("\\.go$")
+		assert.NoError(err)
+
+		// Combine them in a compound matcher (logical AND)
+		compoundMatcher := CompoundMatcher{
+			Matchers: []Matcher{fuzzyMatcher, regexMatcher},
+		}
+
+		results, err := compoundMatcher.Match(testPaths)
+		assert.NoError(err)
+		assert.ElementsMatch([]string{"src/foo.go", "src/foo_test.go"}, results)
+	})
+
+	t.Run("WithNegation", func(t *testing.T) {
+		// First matcher: files containing "foo"
+		fuzzyMatcher := FuzzyMatcher{Pattern: "foo"}
+
+		// Second matcher: negate files with _test.go
+		testFileMatcher, err := NewRegexMatcher("_test\\.go$")
+		assert.NoError(err)
+		negationMatcher := NegationMatcher{Wrapped: testFileMatcher}
+
+		// Combine them in a compound matcher
+		compoundMatcher := CompoundMatcher{
+			Matchers: []Matcher{fuzzyMatcher, negationMatcher},
+		}
+
+		results, err := compoundMatcher.Match(testPaths)
+		assert.NoError(err)
+		assert.Equal([]string{"src/foo.go"}, results)
+	})
+
+	t.Run("NoMatches", func(t *testing.T) {
+		// First matcher: files containing "foo"
+		fuzzyMatcher := FuzzyMatcher{Pattern: "foo"}
+
+		// Second matcher: files with .md extension
+		regexMatcher, err := NewRegexMatcher("\\.md$")
+		assert.NoError(err)
+
+		// These matchers have no overlapping matches
+		compoundMatcher := CompoundMatcher{
+			Matchers: []Matcher{fuzzyMatcher, regexMatcher},
+		}
+
+		results, err := compoundMatcher.Match(testPaths)
+		assert.NoError(err)
+		assert.Empty(results, "No overlapping matches should return empty results")
+	})
+}
+
+// TestParseMatcher tests the ParseMatcher function
+func TestParseMatcher(t *testing.T) {
+	assert := assert.New(t)
+
+	t.Run("FuzzyPattern", func(t *testing.T) {
+		matcher, err := ParseMatcher("foo")
+		assert.NoError(err)
+		_, ok := matcher.(FuzzyMatcher)
+		assert.True(ok, "Should create a FuzzyMatcher for normal pattern")
+	})
+
+	t.Run("RegexPattern", func(t *testing.T) {
+		matcher, err := ParseMatcher("/\\.go$")
+		assert.NoError(err)
+		_, ok := matcher.(*RegexMatcher)
+		assert.True(ok, "Should create a RegexMatcher for pattern starting with '/'")
+	})
+
+	t.Run("NegationPattern", func(t *testing.T) {
+		matcher, err := ParseMatcher("!foo")
+		assert.NoError(err)
+		negMatcher, ok := matcher.(NegationMatcher)
+		assert.True(ok, "Should create a NegationMatcher for pattern starting with '!'")
+		assert.IsType(negMatcher, NegationMatcher{})
+		assert.IsType(negMatcher.Wrapped, FuzzyMatcher{})
+	})
+
+	t.Run("CompoundPattern", func(t *testing.T) {
+		matcher, err := ParseMatcher("foo|/\\.go$")
+		assert.NoError(err)
+		compMatcher, ok := matcher.(CompoundMatcher)
+		assert.True(ok, "Should create a CompoundMatcher for pattern with '|'")
+		assert.Len(compMatcher.Matchers, 2, "Should have two matchers")
+	})
+
+	t.Run("ExactPathPattern", func(t *testing.T) {
+		matcher, err := ParseMatcher("=src/foo.go")
+		assert.NoError(err)
+		_, ok := matcher.(ExactPathMatcher)
+		assert.True(ok, "Should create an ExactPathMatcher for pattern starting with '='")
+	})
+
+	t.Run("InvalidPattern", func(t *testing.T) {
+		_, err := ParseMatcher("../foo")
+		assert.Error(err, "Should reject patterns with '../'")
+		assert.Contains(err.Error(), "not supported for security reasons")
+	})
+
+	t.Run("EmptyNegationPattern", func(t *testing.T) {
+		_, err := ParseMatcher("!")
+		assert.Error(err, "Should reject empty negation pattern")
+		assert.Contains(err.Error(), "empty negation pattern '!' is not valid")
+	})
+
+	t.Run("InvalidRegexPattern", func(t *testing.T) {
+		_, err := ParseMatcher("/[invalid")
+		assert.Error(err, "Should return error for invalid regex")
+		assert.Contains(err.Error(), "invalid regex pattern")
+	})
+}
+
+// TestSelectSinglePattern tests the selectSinglePattern function
+func TestSelectSinglePattern(t *testing.T) {
 	assert := assert.New(t)
 
 	paths := []string{
@@ -16,115 +280,136 @@ func TestSelectPattern(t *testing.T) {
 		"qux",
 	}
 
-	// Test empty pattern (select all)
-	selected, err := selectSinglePattern(paths, "")
-	assert.NoError(err)
-	assert.Equal(paths, selected, "Empty pattern should select all paths")
+	t.Run("EmptyPattern", func(t *testing.T) {
+		selected, err := selectSinglePattern(paths, "")
+		assert.NoError(err)
+		assert.Equal(paths, selected, "Empty pattern should select all paths")
+	})
 
-	// Test fuzzy pattern
-	fuzzySelected, err := selectSinglePattern(paths, "fo")
-	assert.NoError(err)
-	assert.Len(fuzzySelected, 1, "Should match only one file with 'fo'")
-	assert.Equal("abc/foo", fuzzySelected[0], "Should match 'abc/foo'")
+	t.Run("FuzzyPattern", func(t *testing.T) {
+		selected, err := selectSinglePattern(paths, "fo")
+		assert.NoError(err)
+		assert.Len(selected, 1, "Should match only one file with 'fo'")
+		assert.Equal("abc/foo", selected[0], "Should match 'abc/foo'")
+	})
 
-	// Test regex pattern with leading slash
-	regexSelected, err := selectSinglePattern(paths, "/^[a-z]{3}/")
-	assert.NoError(err)
-	assert.Len(regexSelected, 2, "Regex should match two paths with 3-letter dirs")
-	assert.Contains(regexSelected, "abc/foo", "Should match 'abc/foo'")
-	assert.Contains(regexSelected, "def/bar", "Should match 'def/bar'")
+	t.Run("RegexPattern", func(t *testing.T) {
+		selected, err := selectSinglePattern(paths, "/^[a-z]{3}/")
+		assert.NoError(err)
+		assert.Len(selected, 2, "Regex should match two paths with 3-letter dirs")
+		assert.Contains(selected, "abc/foo", "Should match 'abc/foo'")
+		assert.Contains(selected, "def/bar", "Should match 'def/bar'")
+	})
 
-	// Test regex pattern with invalid regex
-	_, err = selectSinglePattern(paths, "/[invalid regex")
-	assert.Error(err, "Should return error for invalid regex")
-	assert.Contains(err.Error(), "invalid regex pattern", "Error message should mention invalid regex")
+	t.Run("InvalidRegex", func(t *testing.T) {
+		_, err := selectSinglePattern(paths, "/[invalid regex")
+		assert.Error(err, "Should return error for invalid regex")
+		assert.Contains(err.Error(), "invalid regex pattern")
+	})
+
+	t.Run("RelativePath", func(t *testing.T) {
+		selected, err := selectSinglePattern(paths, "./foo")
+		assert.NoError(err)
+		assert.Len(selected, 1, "Should match one file with './foo'")
+		assert.Equal("abc/foo", selected[0], "Should match 'abc/foo'")
+	})
+
+	t.Run("UnsupportedPath", func(t *testing.T) {
+		_, err := selectSinglePattern(paths, "../foo")
+		assert.Error(err, "Should reject patterns with '../'")
+		assert.Contains(err.Error(), "not supported for security reasons")
+	})
 }
 
+// TestSelectByPatterns tests the selectByPatterns function
 func TestSelectByPatterns(t *testing.T) {
 	assert := assert.New(t)
 
-	paths := []string{
-		"src/foo.go",
-		"src/foo_test.go",
-		"docs/bar.md",
-		"internal/baz_test.go",
-		"internal/baz.go",
-		"README.md",
-	}
-
 	t.Run("NoPatterns", func(t *testing.T) {
-		result, err := selectByPatterns(paths, []string{})
+		result, err := selectByPatterns(testPaths, []string{})
 		assert.NoError(err)
-		// Empty result set with no patterns
 		assert.Empty(result, "No patterns should result in an empty set")
 	})
 
-	t.Run("SinglePositiveFuzzy", func(t *testing.T) {
-		result, err := selectByPatterns(paths, []string{"baz"})
+	t.Run("SinglePattern", func(t *testing.T) {
+		result, err := selectByPatterns(testPaths, []string{"baz"})
 		assert.NoError(err)
 		assert.ElementsMatch([]string{"internal/baz.go", "internal/baz_test.go"}, result)
 	})
 
-	t.Run("SingleRegex", func(t *testing.T) {
-		result, err := selectByPatterns(paths, []string{"/\\.md$"})
-		assert.NoError(err)
-		assert.ElementsMatch([]string{"docs/bar.md", "README.md"}, result)
-	})
-
-	t.Run("NegateTests", func(t *testing.T) {
-		result, err := selectByPatterns(paths, []string{"!_test.go"})
-		assert.NoError(err)
-		// This should remove anything matching _test.go
-		assert.ElementsMatch([]string{"src/foo.go", "docs/bar.md", "internal/baz.go", "README.md"}, result)
-	})
-
 	t.Run("MultiplePatterns", func(t *testing.T) {
-		// Collect both .go files and .md files (union of matches)
-		result, err := selectByPatterns(paths, []string{"/\\.go$", "/\\.md$"})
+		result, err := selectByPatterns(testPaths, []string{"/\\.go$", "/\\.md$"})
 		assert.NoError(err)
-		assert.ElementsMatch(
-			[]string{
-				"src/foo.go",
-				"src/foo_test.go",
-				"internal/baz_test.go",
-				"internal/baz.go",
-				"docs/bar.md",
-				"README.md",
-			},
-			result,
-			"Should include all .go and .md files",
-		)
+		assert.ElementsMatch(testPaths, result, "Should include all .go and .md files")
 	})
 
-	t.Run("InvalidRegex", func(t *testing.T) {
-		_, err := selectByPatterns(paths, []string{"/[invalid"})
+	t.Run("InvalidPattern", func(t *testing.T) {
+		_, err := selectByPatterns(testPaths, []string{"/[invalid"})
 		assert.Error(err)
 		assert.Contains(err.Error(), "invalid regex pattern")
 	})
 }
 
-func TestSelectPatternWithRelativePaths(t *testing.T) {
+// TestParseLineRangeFromPath tests the parseLineRangeFromPath function
+func TestParseLineRangeFromPath(t *testing.T) {
 	assert := assert.New(t)
 
-	paths := []string{
-		"src/foo.go",
-		"src/bar.go",
-		"docs/readme.md",
-	}
+	t.Run("PathWithoutRange", func(t *testing.T) {
+		result, err := parseLineRangeFromPath("path/to/file.go")
+		assert.NoError(err)
+		assert.Equal("path/to/file.go", result.Path)
+		assert.Empty(result.Ranges, "Should have no ranges for path without # marker")
+	})
 
-	// Test with "./" prefix
-	dotSlashSelected, err := selectSinglePattern(paths, "./foo")
-	assert.NoError(err)
-	assert.Len(dotSlashSelected, 1, "Should match one file with './foo'")
-	assert.Equal("src/foo.go", dotSlashSelected[0], "Should match 'src/foo.go'")
+	t.Run("PathWithValidRange", func(t *testing.T) {
+		result, err := parseLineRangeFromPath("path/to/file.go#10,20")
+		assert.NoError(err)
+		assert.Equal("path/to/file.go", result.Path)
+		assert.Len(result.Ranges, 1, "Should have one range")
+		assert.Equal(10, result.Ranges[0].Start)
+		assert.Equal(20, result.Ranges[0].End)
+	})
 
-	// Test with "../" prefix (should be rejected)
-	_, err = selectSinglePattern(paths, "../foo")
-	assert.Error(err, "Should reject patterns with '../'")
-	assert.Contains(err.Error(), "not supported for security reasons", "Error should mention security reasons")
+	t.Run("PathWithInvalidFormat", func(t *testing.T) {
+		_, err := parseLineRangeFromPath("path/to/file.go#abc,20")
+		assert.Error(err)
+		assert.Contains(err.Error(), "invalid file path format")
+	})
+
+	t.Run("PathWithInvalidEndLine", func(t *testing.T) {
+		// This will now fail at the regex matching stage
+		_, err := parseLineRangeFromPath("path/to/file.go#10,xyz")
+		assert.Error(err)
+		assert.Contains(err.Error(), "invalid file path format")
+	})
+
+	t.Run("PathWithHashButNoRange", func(t *testing.T) {
+		_, err := parseLineRangeFromPath("path/to/file.go#")
+		assert.Error(err)
+		assert.Contains(err.Error(), "invalid file path format")
+	})
+
+	t.Run("PathWithInvalidRangeFormat", func(t *testing.T) {
+		_, err := parseLineRangeFromPath("path/to/file.go#10-20")
+		assert.Error(err)
+		assert.Contains(err.Error(), "invalid file path format")
+	})
+
+	t.Run("PathWithMultipleHashes", func(t *testing.T) {
+		_, err := parseLineRangeFromPath("path/to/file#10#20")
+		assert.Error(err)
+		assert.Contains(err.Error(), "invalid file path format")
+	})
+
+	t.Run("PathWithMissingComma", func(t *testing.T) {
+		_, err := parseLineRangeFromPath("path/to/file.go#1020")
+		assert.Error(err)
+		assert.Contains(err.Error(), "invalid file path format")
+	})
 }
 
-func TestSelectPatternWithFilteringOperator(t *testing.T) {
+// TestCompoundPatterns tests compound patterns with the | operator
+func TestCompoundPatterns(t *testing.T) {
 	assert := assert.New(t)
 
 	paths := []string{
@@ -136,45 +421,48 @@ func TestSelectPatternWithFilteringOperator(t *testing.T) {
 		"internal/utils.go",
 		"internal/utils_test.go",
 	}
-	sort.Strings(paths)
 
-	var results []string
-	var err error
-
-	// Test filtering operator with cmd and .go files (logical AND)
-	results, err = selectSinglePattern(paths, "cmd|.go")
-
-	assert.NoError(err)
-	sort.Strings(results)
-	assert.Equal(results, []string{
-		"cmd/testclip/main.go",
-		"cmd/vibe/directory_tree.go",
-		"cmd/vibe/directory_tree_test.go",
-		"cmd/vibe/main.go",
+	t.Run("SimpleCompound", func(t *testing.T) {
+		results, err := selectSinglePattern(paths, "cmd|.go")
+		assert.NoError(err)
+		sort.Strings(results)
+		assert.ElementsMatch([]string{
+			"cmd/testclip/main.go",
+			"cmd/vibe/directory_tree.go",
+			"cmd/vibe/directory_tree_test.go",
+			"cmd/vibe/main.go",
+		}, results)
 	})
 
-	// Test filtering operator with negation pattern (exclude test files)
-	results, err = selectSinglePattern(paths, "cmd.go|!_test.go")
-	assert.NoError(err)
-	sort.Strings(results)
-	assert.Equal([]string{
-		"cmd/testclip/main.go",
-		"cmd/vibe/directory_tree.go",
-		"cmd/vibe/main.go",
-	}, results)
+	t.Run("WithNegation", func(t *testing.T) {
+		results, err := selectSinglePattern(paths, "cmd.go|!_test.go")
+		assert.NoError(err)
+		sort.Strings(results)
+		assert.ElementsMatch([]string{
+			"cmd/testclip/main.go",
+			"cmd/vibe/directory_tree.go",
+			"cmd/vibe/main.go",
+		}, results)
+	})
 
-	// Test filtering operator (include only test files)
-	results, err = selectSinglePattern(paths, "cmd.go|_test.go")
-	assert.NoError(err)
-	sort.Strings(results)
-	assert.Equal([]string{
-		"cmd/vibe/directory_tree_test.go",
-	}, results)
+	t.Run("WithRegex", func(t *testing.T) {
+		results, err := selectSinglePattern(paths, "cmd|/tree")
+		assert.NoError(err)
+		sort.Strings(results)
+		assert.ElementsMatch([]string{
+			"cmd/vibe/directory_tree.go",
+			"cmd/vibe/directory_tree_test.go",
+		}, results)
+	})
 
-	// Test with regex patterns
-	cmdRegex, err := selectSinglePattern(paths, "cmd|/tree")
-	assert.NoError(err)
-	assert.Len(cmdRegex, 2, "Should match cmd files containing 'tree'")
-	assert.Contains(cmdRegex, "cmd/vibe/directory_tree.go")
-	assert.Contains(cmdRegex, "cmd/vibe/directory_tree_test.go")
+	t.Run("ComplexCompound", func(t *testing.T) {
+		results, err := selectSinglePattern(paths, "cmd|/vibe|!doc.md")
+		assert.NoError(err)
+		sort.Strings(results)
+		assert.ElementsMatch([]string{
+			"cmd/vibe/directory_tree.go",
+			"cmd/vibe/directory_tree_test.go",
+			"cmd/vibe/main.go",
+		}, results)
+	})
 }

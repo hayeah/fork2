@@ -44,40 +44,6 @@ func TestParseLineRange(t *testing.T) {
 	assert.Contains(err.Error(), "invalid line range format")
 }
 
-func TestParseFilePathWithRange(t *testing.T) {
-	assert := assert.New(t)
-
-	// Current directory as root path
-	rootPath, err := os.Getwd()
-	assert.NoError(err)
-
-	// Test path without range
-	s1, err := parseFilePathWithRange("path/to/file.txt", rootPath)
-	assert.NoError(err)
-	assert.Equal(filepath.Join(rootPath, "path/to/file.txt"), s1.Path)
-	assert.Empty(s1.Ranges)
-
-	// Test path with range
-	s2, err := parseFilePathWithRange("path/to/file.txt#1,5", rootPath)
-	assert.NoError(err)
-	assert.Equal(filepath.Join(rootPath, "path/to/file.txt"), s2.Path)
-	assert.Len(s2.Ranges, 1)
-	assert.Equal(LineRange{Start: 1, End: 5}, s2.Ranges[0])
-
-	// Test absolute path
-	absPath, err := filepath.Abs("path/to/file.txt")
-	assert.NoError(err)
-	s3, err := parseFilePathWithRange(absPath, rootPath)
-	assert.NoError(err)
-	assert.Equal(absPath, s3.Path)
-	assert.Empty(s3.Ranges)
-
-	// Test invalid path with range
-	_, err = parseFilePathWithRange("path/to/file.txt#5,3", rootPath)
-	assert.Error(err)
-	assert.Contains(err.Error(), "end line (3) must be >= start line (5)")
-}
-
 func TestCoalesceRanges(t *testing.T) {
 	assert := assert.New(t)
 

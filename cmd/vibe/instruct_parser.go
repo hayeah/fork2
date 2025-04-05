@@ -149,34 +149,6 @@ type InstructHeader struct {
 	Files []TomlSelect `toml:"file"`
 }
 
-// parseFilePathWithRange parses a file path with an optional line range
-// Format: path/to/file.ext#start,end
-func (p *InstructHeader) parseFilePathWithRange(pathWithRange string) (FileSelection, error) {
-	matches := pathRangeRegex.FindStringSubmatch(pathWithRange)
-
-	if len(matches) < 2 {
-		return FileSelection{}, fmt.Errorf("invalid file path format: %s", pathWithRange)
-	}
-
-	relPath := matches[1]
-
-	selection := FileSelection{
-		Path:   relPath,
-		Ranges: nil,
-	}
-
-	// If there's a range specifier
-	if len(matches) > 2 && matches[2] != "" {
-		lineRange, err := parseLineRange(matches[2])
-		if err != nil {
-			return FileSelection{}, err
-		}
-		selection.Ranges = append(selection.Ranges, lineRange)
-	}
-
-	return selection, nil
-}
-
 // FileSelections extracts file selections from the header
 func (h *InstructHeader) FileSelections() ([]FileSelection, error) {
 	// Map to store FileSelections by path for easy lookup
@@ -184,7 +156,7 @@ func (h *InstructHeader) FileSelections() ([]FileSelection, error) {
 
 	// Process each select entry
 	for _, select_ := range h.Files {
-		fileSelection, err := h.parseFilePathWithRange(select_.Path)
+		fileSelection, err := parseLineRangeFromPath(select_.Path)
 		if err != nil {
 			return nil, err
 		}
