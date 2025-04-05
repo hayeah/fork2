@@ -1,3 +1,37 @@
+// Package main provides file selection functionality using various pattern matching techniques.
+//
+// # Pattern Syntax
+//
+// The pattern syntax supports several matching strategies:
+//
+// 1. Fuzzy Matching (default):
+//   - Example: "foo" matches any path containing characters that fuzzy match "foo"
+//   - This is the default when no special prefix is used
+//
+// 2. Regular Expression Matching:
+//   - Prefix: "/"
+//   - Example: "/\.go$" matches paths ending with ".go"
+//
+// 3. Exact Path Matching:
+//   - Prefix: "="
+//   - Example: "=path/to/file.go" matches only the exact path "path/to/file.go"
+//   - Can include line ranges: "=path/to/file.go#10,20" selects lines 10-20
+//
+// 4. Negation (exclude matches):
+//   - Prefix: "!"
+//   - Example: "!test" excludes paths that would match the pattern "test"
+//   - Can be combined with other pattern types: "!/\.test\.go$"
+//
+// 5. Compound Patterns (logical AND):
+//   - Separator: "|"
+//   - Example: "cmd|main" matches paths containing both "cmd" and "main"
+//   - Can combine different pattern types: "cmd|/\.go$|!test"
+//
+// # Special Cases
+//
+// - Empty pattern: "" matches all paths
+// - "./" prefix is automatically stripped
+// - "../" prefix is rejected for security reasons
 package main
 
 import (
@@ -258,14 +292,7 @@ func parseLineRangeFromPath(path string) (FileSelection, error) {
 	}, nil
 }
 
-// selectSinglePattern is a helper function to select file paths based on a pattern
-// If pattern is empty, returns all paths
-// If pattern starts with '!', negates the pattern (excludes matches)
-// If pattern starts with '/', treats it as a regex pattern
-// If pattern starts with './', strips the prefix for matching
-// If pattern starts with '../', returns an error
-// Otherwise uses fuzzy matching
-// If pattern contains '|', it splits the pattern and applies each part as a filter (logical AND)
+// selectSinglePattern selects file paths based on a pattern
 func selectSinglePattern(paths []string, pattern string) ([]string, error) {
 	// Empty pattern selects all paths
 	if pattern == "" {
