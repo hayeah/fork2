@@ -10,40 +10,6 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestParseLineRange(t *testing.T) {
-	assert := assert.New(t)
-
-	// Test valid ranges
-	r1, err := parseLineRange("1,5")
-	assert.NoError(err)
-	assert.Equal(LineRange{Start: 1, End: 5}, r1)
-
-	r2, err := parseLineRange("10,15")
-	assert.NoError(err)
-	assert.Equal(LineRange{Start: 10, End: 15}, r2)
-
-	// Test invalid ranges
-	_, err = parseLineRange("5,3")
-	assert.Error(err)
-	assert.Contains(err.Error(), "end line (3) must be >= start line (5)")
-
-	_, err = parseLineRange("0,5")
-	assert.Error(err)
-	assert.Contains(err.Error(), "start line must be >= 1")
-
-	_, err = parseLineRange("a,5")
-	assert.Error(err)
-	assert.Contains(err.Error(), "invalid start line number")
-
-	_, err = parseLineRange("1,b")
-	assert.Error(err)
-	assert.Contains(err.Error(), "invalid end line number")
-
-	_, err = parseLineRange("1-5")
-	assert.Error(err)
-	assert.Contains(err.Error(), "invalid line range format")
-}
-
 func TestCoalesceRanges(t *testing.T) {
 	assert := assert.New(t)
 
@@ -119,4 +85,62 @@ func TestExtractSelectedLines(t *testing.T) {
 	// Test with non-existent file
 	_, err = extractSelectedLines(filepath.Join(tempDir, "nonexistent.txt"), ranges)
 	assert.Error(err)
+}
+
+// TestParseLineRangeFromPath tests the parseLineRangeFromPath function
+func TestParseLineRangeFromPath(t *testing.T) {
+	assert := assert.New(t)
+
+	t.Run("PathWithoutRange", func(t *testing.T) {
+		result, err := ParseFileSelection("path/to/file.go")
+		assert.NoError(err)
+		assert.Equal("path/to/file.go", result.Path)
+		assert.Empty(result.Ranges, "Should have no ranges for path without # marker")
+	})
+
+	t.Run("PathWithValidRange", func(t *testing.T) {
+		result, err := ParseFileSelection("path/to/file.go#10,20")
+		assert.NoError(err)
+		assert.Equal("path/to/file.go", result.Path)
+		assert.Len(result.Ranges, 1, "Should have one range")
+		assert.Equal(10, result.Ranges[0].Start)
+		assert.Equal(20, result.Ranges[0].End)
+	})
+
+	t.Run("PathWithInvalidFormat", func(t *testing.T) {
+		_, err := ParseFileSelection("path/to/file.go#abc,20")
+		assert.Error(err)
+		assert.Contains(err.Error(), "invalid file path format")
+	})
+
+	t.Run("PathWithInvalidEndLine", func(t *testing.T) {
+		// This will now fail at the regex matching stage
+		_, err := ParseFileSelection("path/to/file.go#10,xyz")
+		assert.Error(err)
+		assert.Contains(err.Error(), "invalid file path format")
+	})
+
+	t.Run("PathWithHashButNoRange", func(t *testing.T) {
+		_, err := ParseFileSelection("path/to/file.go#")
+		assert.Error(err)
+		assert.Contains(err.Error(), "invalid file path format")
+	})
+
+	t.Run("PathWithInvalidRangeFormat", func(t *testing.T) {
+		_, err := ParseFileSelection("path/to/file.go#10-20")
+		assert.Error(err)
+		assert.Contains(err.Error(), "invalid file path format")
+	})
+
+	t.Run("PathWithMultipleHashes", func(t *testing.T) {
+		_, err := ParseFileSelection("path/to/file#10#20")
+		assert.Error(err)
+		assert.Contains(err.Error(), "invalid file path format")
+	})
+
+	t.Run("PathWithMissingComma", func(t *testing.T) {
+		_, err := ParseFileSelection("path/to/file.go#1020")
+		assert.Error(err)
+		assert.Contains(err.Error(), "invalid file path format")
+	})
 }

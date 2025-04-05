@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -14,6 +15,48 @@ import (
 type LineRange struct {
 	Start int
 	End   int
+}
+
+// The pattern matches: <filepath>#<start>,<end> where start and end are integers
+var reFileSelection = regexp.MustCompile(`^(.+)#(\d+),(\d+)$`)
+
+// ParseFileSelection parses a path string that may contain a line range specification
+// Format: path#start,end where start and end are line numbers
+// Returns a FileSelection with the path and any line ranges found
+func ParseFileSelection(path string) (FileSelection, error) {
+	// If there's no hash character, just return the path as is
+	if !strings.Contains(path, "#") {
+		return FileSelection{Path: path}, nil
+	}
+
+	// Use a regular expression to validate and parse the path format
+	matches := reFileSelection.FindStringSubmatch(path)
+
+	// If the pattern doesn't match, return an error
+	if matches == nil {
+		return FileSelection{}, fmt.Errorf("invalid file path format: must be in format path#start,end")
+	}
+
+	// Extract the file path and line numbers from the regex matches
+	filePath := matches[1]
+	startLine, err := strconv.Atoi(matches[2])
+	if err != nil {
+		return FileSelection{}, fmt.Errorf("invalid start line number in range: %v", err)
+	}
+
+	endLine, err := strconv.Atoi(matches[3])
+	if err != nil {
+		return FileSelection{}, fmt.Errorf("invalid end line number in range: %v", err)
+	}
+
+	// Create a FileSelection with the path and line range
+	return FileSelection{
+		Path: filePath,
+		Ranges: []LineRange{{
+			Start: startLine,
+			End:   endLine,
+		}},
+	}, nil
 }
 
 // FileSelection represents a file and its selected line ranges
@@ -26,46 +69,6 @@ type FileSelection struct {
 // If Ranges is empty, it returns the entire file content.
 func (fs *FileSelection) ReadString() (string, error) {
 	return extractSelectedLines(fs.Path, fs.Ranges)
-}
-
-// TomlSelect represents a file selection in TOML
-// Used by InstructParser in instruct_parser.go
-type TomlSelect struct {
-	Path string `toml:"path"` // File path with optional line range
-}
-
-// TomlHeader represents the TOML file header
-// Used by InstructParser in instruct_parser.go
-type TomlHeader struct {
-	Files []TomlSelect `toml:"file"`
-}
-
-// parseLineRange parses a line range string like "1,5" or "10,15"
-func parseLineRange(rangeStr string) (LineRange, error) {
-	parts := strings.Split(rangeStr, ",")
-	if len(parts) != 2 {
-		return LineRange{}, fmt.Errorf("invalid line range format: %s, expected start,end", rangeStr)
-	}
-
-	start, err := strconv.Atoi(strings.TrimSpace(parts[0]))
-	if err != nil {
-		return LineRange{}, fmt.Errorf("invalid start line number: %s", parts[0])
-	}
-
-	end, err := strconv.Atoi(strings.TrimSpace(parts[1]))
-	if err != nil {
-		return LineRange{}, fmt.Errorf("invalid end line number: %s", parts[1])
-	}
-
-	if start < 1 {
-		return LineRange{}, fmt.Errorf("start line must be >= 1, got %d", start)
-	}
-
-	if end < start {
-		return LineRange{}, fmt.Errorf("end line (%d) must be >= start line (%d)", end, start)
-	}
-
-	return LineRange{Start: start, End: end}, nil
 }
 
 // coalesceRanges merges overlapping line ranges

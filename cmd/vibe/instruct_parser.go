@@ -146,7 +146,7 @@ func (p *InstructParser) parseTomlHeader(content string) (*InstructHeader, error
 
 // InstructHeader represents the parsed TOML fields
 type InstructHeader struct {
-	Files []TomlSelect `toml:"file"`
+	Files []FileSelection `toml:"file"`
 }
 
 // FileSelections extracts file selections from the header
@@ -156,7 +156,7 @@ func (h *InstructHeader) FileSelections() ([]FileSelection, error) {
 
 	// Process each select entry
 	for _, select_ := range h.Files {
-		fileSelection, err := parseLineRangeFromPath(select_.Path)
+		fileSelection, err := ParseFileSelection(select_.Path)
 		if err != nil {
 			return nil, err
 		}

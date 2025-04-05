@@ -38,7 +38,6 @@ import (
 	"bufio"
 	"fmt"
 	"regexp"
-	"strconv"
 	"strings"
 
 	"github.com/sahilm/fuzzy"
@@ -189,7 +188,7 @@ func ParseMatcher(pattern string) (Matcher, error) {
 		exactPath := pattern[1:] // Remove the leading "="
 
 		// Create a FileSelection using the helper function
-		fileSelection, err := parseLineRangeFromPath(exactPath)
+		fileSelection, err := ParseFileSelection(exactPath)
 		if err != nil {
 			return nil, err
 		}
@@ -251,48 +250,6 @@ func ParseMatcher(pattern string) (Matcher, error) {
 	}, nil
 }
 
-// parseLineRangeFromPath parses a path string that may contain a line range specification
-// Format: path#start,end where start and end are line numbers
-// Returns a FileSelection with the path and any line ranges found
-func parseLineRangeFromPath(path string) (FileSelection, error) {
-	// If there's no hash character, just return the path as is
-	if !strings.Contains(path, "#") {
-		return FileSelection{Path: path}, nil
-	}
-
-	// Use a regular expression to validate and parse the path format
-	// The pattern matches: <filepath>#<start>,<end> where start and end are integers
-	pattern := `^(.+)#(\d+),(\d+)$`
-	reg := regexp.MustCompile(pattern)
-	matches := reg.FindStringSubmatch(path)
-
-	// If the pattern doesn't match, return an error
-	if matches == nil {
-		return FileSelection{}, fmt.Errorf("invalid file path format: must be in format path#start,end")
-	}
-
-	// Extract the file path and line numbers from the regex matches
-	filePath := matches[1]
-	startLine, err := strconv.Atoi(matches[2])
-	if err != nil {
-		return FileSelection{}, fmt.Errorf("invalid start line number in range: %v", err)
-	}
-
-	endLine, err := strconv.Atoi(matches[3])
-	if err != nil {
-		return FileSelection{}, fmt.Errorf("invalid end line number in range: %v", err)
-	}
-
-	// Create a FileSelection with the path and line range
-	return FileSelection{
-		Path: filePath,
-		Ranges: []LineRange{{
-			Start: startLine,
-			End:   endLine,
-		}},
-	}, nil
-}
-
 // selectSinglePattern selects file paths based on a pattern
 func selectSinglePattern(paths []string, pattern string) ([]string, error) {
 	// Empty pattern selects all paths
@@ -314,14 +271,14 @@ func selectSinglePattern(paths []string, pattern string) ([]string, error) {
 // It skips empty lines and comment lines that start with #
 // Example input:
 //
-//   cmd/.go
-//   internal/.go
+//	cmd/.go
+//	internal/.go
 //
-//   # exact path match
-//   =path/to/a.txt
+//	# exact path match
+//	=path/to/a.txt
 //
-//   # exact path match and range
-//   =path/to/b.txt#1,5
+//	# exact path match and range
+//	=path/to/b.txt#1,5
 func ParseMatchersFromString(input string) ([]Matcher, error) {
 	var matchers []Matcher
 	scanner := bufio.NewScanner(strings.NewReader(input))

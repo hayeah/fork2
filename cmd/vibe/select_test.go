@@ -453,64 +453,6 @@ func TestSelectByPatterns(t *testing.T) {
 	})
 }
 
-// TestParseLineRangeFromPath tests the parseLineRangeFromPath function
-func TestParseLineRangeFromPath(t *testing.T) {
-	assert := assert.New(t)
-
-	t.Run("PathWithoutRange", func(t *testing.T) {
-		result, err := parseLineRangeFromPath("path/to/file.go")
-		assert.NoError(err)
-		assert.Equal("path/to/file.go", result.Path)
-		assert.Empty(result.Ranges, "Should have no ranges for path without # marker")
-	})
-
-	t.Run("PathWithValidRange", func(t *testing.T) {
-		result, err := parseLineRangeFromPath("path/to/file.go#10,20")
-		assert.NoError(err)
-		assert.Equal("path/to/file.go", result.Path)
-		assert.Len(result.Ranges, 1, "Should have one range")
-		assert.Equal(10, result.Ranges[0].Start)
-		assert.Equal(20, result.Ranges[0].End)
-	})
-
-	t.Run("PathWithInvalidFormat", func(t *testing.T) {
-		_, err := parseLineRangeFromPath("path/to/file.go#abc,20")
-		assert.Error(err)
-		assert.Contains(err.Error(), "invalid file path format")
-	})
-
-	t.Run("PathWithInvalidEndLine", func(t *testing.T) {
-		// This will now fail at the regex matching stage
-		_, err := parseLineRangeFromPath("path/to/file.go#10,xyz")
-		assert.Error(err)
-		assert.Contains(err.Error(), "invalid file path format")
-	})
-
-	t.Run("PathWithHashButNoRange", func(t *testing.T) {
-		_, err := parseLineRangeFromPath("path/to/file.go#")
-		assert.Error(err)
-		assert.Contains(err.Error(), "invalid file path format")
-	})
-
-	t.Run("PathWithInvalidRangeFormat", func(t *testing.T) {
-		_, err := parseLineRangeFromPath("path/to/file.go#10-20")
-		assert.Error(err)
-		assert.Contains(err.Error(), "invalid file path format")
-	})
-
-	t.Run("PathWithMultipleHashes", func(t *testing.T) {
-		_, err := parseLineRangeFromPath("path/to/file#10#20")
-		assert.Error(err)
-		assert.Contains(err.Error(), "invalid file path format")
-	})
-
-	t.Run("PathWithMissingComma", func(t *testing.T) {
-		_, err := parseLineRangeFromPath("path/to/file.go#1020")
-		assert.Error(err)
-		assert.Contains(err.Error(), "invalid file path format")
-	})
-}
-
 // TestCompoundPatterns tests compound patterns with the | operator
 func TestCompoundPatterns(t *testing.T) {
 	assert := assert.New(t)
