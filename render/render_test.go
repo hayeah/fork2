@@ -5,8 +5,7 @@ import (
 	"testing"
 	"testing/fstest"
 
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
+	"github.com/hayeah/fork2/internal/assert"
 )
 
 // createTestFS creates a test filesystem with the given files
@@ -287,7 +286,7 @@ func TestPartialRendering(t *testing.T) {
 }
 
 func TestRenderer(t *testing.T) {
-	assert := require.New(t)
+	assert := assert.New(t)
 
 	// Create test filesystems
 	systemFS := createTestFS(map[string]string{
@@ -336,15 +335,7 @@ func TestRenderer(t *testing.T) {
 	result, err := renderer.Render("@templates/user.md", "@layouts/main.md", testData)
 	assert.NoError(err, "Render should not return an error")
 
-	assert.Equal(`Coder: Linux
-
-# Tools
-Tool1, Tool2, Tool3
-
-# Directory Listing
-[file1.go file2.md]
-
-# User Instructions
-Hello from the user`, result)
+	// Use EqualToStringFixture to compare the result with a fixture file
+	assert.EqualToStringFixture("rendered_template", result)
 
 }
