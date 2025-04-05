@@ -1,11 +1,19 @@
 package heredoc
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 )
+
+func assertJSONMarshal(assert *assert.Assertions, expected string, actual any) {
+	actualJSON, err := json.Marshal(actual)
+	assert.NoError(err)
+	// Compare the expected JSON string to the actual JSON
+	assert.JSONEq(expected, string(actualJSON))
+}
 
 func TestParseSimpleCommand(t *testing.T) {
 	assert := assert.New(t)
@@ -15,9 +23,15 @@ func TestParseSimpleCommand(t *testing.T) {
 	commands, err := ParseReader(strings.NewReader(input))
 	assert.NoError(err)
 	assert.Len(commands, 1)
-	assert.Equal("command", commands[0].Name)
-	assert.Equal("", commands[0].Payload)
-	assert.Empty(commands[0].Params)
+
+	expectedJSON := `{
+		"Name": "command",
+		"Payload": "",
+		"LineNo": 1,
+		"Params": []
+	}`
+
+	assertJSONMarshal(assert, expectedJSON, commands[0])
 }
 
 // TestSplitCommandParams tests the helper function splitCommandParams directly.
@@ -106,9 +120,15 @@ func TestParseCommandWithInlinePayload(t *testing.T) {
 	commands, err := ParseReader(strings.NewReader(input))
 	assert.NoError(err)
 	assert.Len(commands, 1)
-	assert.Equal("command", commands[0].Name)
-	assert.Equal("this is an inline payload", commands[0].Payload)
-	assert.Empty(commands[0].Params)
+
+	expectedJSON := `{
+		"Name": "command",
+		"Payload": "this is an inline payload",
+		"LineNo": 1,
+		"Params": []
+	}`
+
+	assertJSONMarshal(assert, expectedJSON, commands[0])
 }
 
 func TestParseCommandWithHeredocPayload(t *testing.T) {
@@ -122,9 +142,15 @@ HEREDOC`
 	commands, err := ParseReader(strings.NewReader(input))
 	assert.NoError(err)
 	assert.Len(commands, 1)
-	assert.Equal("command", commands[0].Name)
-	assert.Equal("This is a heredoc payload\nwith multiple lines", commands[0].Payload)
-	assert.Empty(commands[0].Params)
+
+	expectedJSON := `{
+		"Name": "command",
+		"Payload": "This is a heredoc payload\nwith multiple lines",
+		"LineNo": 1,
+		"Params": []
+	}`
+
+	assertJSONMarshal(assert, expectedJSON, commands[0])
 }
 
 func TestParseCommandWithParameters(t *testing.T) {
@@ -150,8 +176,13 @@ HEREDOC`
 	var p Params
 	err = cmd.Scan(&p)
 	assert.NoError(err)
-	assert.Equal("inline payload", p.Param1)
-	assert.Equal("Heredoc payload for param2", p.Param2)
+
+	expectedJSON := `{
+		"param1": "inline payload",
+		"param2": "Heredoc payload for param2"
+	}`
+
+	assertJSONMarshal(assert, expectedJSON, p)
 }
 
 func TestParseMultipleCommands(t *testing.T) {
@@ -170,21 +201,36 @@ HEREDOC`
 
 	commands, err := ParseReader(strings.NewReader(input))
 	assert.NoError(err)
-	assert.Len(commands, 2)
 
-	cmd1 := commands[0]
-	assert.Equal("command1", cmd1.Name)
-	assert.Equal("payload1", cmd1.Payload)
-	assert.Len(cmd1.Params, 1)
-	assert.Equal("param1", cmd1.Params[0].Name)
-	assert.Equal("value1", cmd1.Params[0].Payload)
+	// Raw JSON specifying the expected commands
+	expectedJSON := `[
+	  {
+	    "Name": "command1",
+	    "Payload": "payload1",
+			"LineNo": 1,
+	    "Params": [
+	      {
+	        "Name": "param1",
+	        "Payload": "value1",
+					"LineNo": 2
+	      }
+	    ]
+	  },
+	  {
+	    "Name": "command2",
+	    "Payload": "Payload for command2",
+			"LineNo": 4,
+	    "Params": [
+	      {
+	        "Name": "param2",
+	        "Payload": "Value for param2",
+					"LineNo": 8
+	      }
+	    ]
+	  }
+	]`
 
-	cmd2 := commands[1]
-	assert.Equal("command2", cmd2.Name)
-	assert.Equal("Payload for command2", cmd2.Payload)
-	assert.Len(cmd2.Params, 1)
-	assert.Equal("param2", cmd2.Params[0].Name)
-	assert.Equal("Value for param2", cmd2.Params[0].Payload)
+	assertJSONMarshal(assert, expectedJSON, commands)
 }
 
 func TestParseWithComments(t *testing.T) {
@@ -200,12 +246,20 @@ $param value
 	assert.NoError(err)
 	assert.Len(commands, 1)
 
-	cmd := commands[0]
-	assert.Equal("command", cmd.Name)
-	assert.Equal("payload", cmd.Payload)
-	assert.Len(cmd.Params, 1)
-	assert.Equal("param", cmd.Params[0].Name)
-	assert.Equal("value", cmd.Params[0].Payload)
+	expectedJSON := `{
+		"Name": "command",
+		"Payload": "payload",
+		"LineNo": 2,
+		"Params": [
+			{
+				"Name": "param",
+				"Payload": "value",
+				"LineNo": 4
+			}
+		]
+	}`
+
+	assertJSONMarshal(assert, expectedJSON, commands[0])
 }
 
 func TestParseEmptyLines(t *testing.T) {
@@ -223,12 +277,20 @@ $param value
 	assert.NoError(err)
 	assert.Len(commands, 1)
 
-	cmd := commands[0]
-	assert.Equal("command", cmd.Name)
-	assert.Equal("payload", cmd.Payload)
-	assert.Len(cmd.Params, 1)
-	assert.Equal("param", cmd.Params[0].Name)
-	assert.Equal("value", cmd.Params[0].Payload)
+	expectedJSON := `{
+		"Name": "command",
+		"Payload": "payload",
+		"LineNo": 3,
+		"Params": [
+			{
+				"Name": "param",
+				"Payload": "value",
+				"LineNo": 5
+			}
+		]
+	}`
+
+	assertJSONMarshal(assert, expectedJSON, commands[0])
 }
 
 func TestParseRealWorldExample(t *testing.T) {
@@ -268,28 +330,38 @@ HEREDOC`
 	assert.Len(commands, 2)
 
 	// Check plan command
-	planCmd := commands[0]
-	assert.Equal("plan", planCmd.Name)
-	assert.Equal("Modify cmd/pick/main.go to add support for a second argument that represents user instruction.", planCmd.Payload)
-	assert.Empty(planCmd.Params)
+	expectedPlanJSON := `{
+		"Name": "plan",
+		"Payload": "Modify cmd/pick/main.go to add support for a second argument that represents user instruction.",
+		"LineNo": 1,
+		"Params": []
+	}`
+	assertJSONMarshal(assert, expectedPlanJSON, commands[0])
 
 	// Check modify command
-	modifyCmd := commands[1]
-	assert.Equal("modify", modifyCmd.Name)
-	assert.Equal("cmd/pick/main.go", modifyCmd.Payload)
-	assert.Len(modifyCmd.Params, 3)
-
-	descParam := modifyCmd.GetParam("description")
-	assert.NotNil(descParam)
-	assert.Equal("Update Args struct to add UserInstruction parameter", descParam.Payload)
-
-	searchParam := modifyCmd.GetParam("search")
-	assert.NotNil(searchParam)
-	assert.Equal("// Args defines the command-line arguments\ntype Args struct {\n\tTokenEstimator string\n\tAll            bool\n\tCopy           bool\n}", searchParam.Payload)
-
-	replaceParam := modifyCmd.GetParam("replace")
-	assert.NotNil(replaceParam)
-	assert.Equal("// Args defines the command-line arguments\ntype Args struct {\n\tTokenEstimator  string\n\tAll             bool\n\tCopy            bool\n\tUserInstruction string\n}", replaceParam.Payload)
+	expectedModifyJSON := `{
+		"Name": "modify",
+		"Payload": "cmd/pick/main.go",
+		"LineNo": 5,
+		"Params": [
+			{
+				"Name": "description",
+				"Payload": "Update Args struct to add UserInstruction parameter",
+				"LineNo": 7
+			},
+			{
+				"Name": "search",
+				"Payload": "// Args defines the command-line arguments\ntype Args struct {\n\tTokenEstimator string\n\tAll            bool\n\tCopy           bool\n}",
+				"LineNo": 11
+			},
+			{
+				"Name": "replace",
+				"Payload": "// Args defines the command-line arguments\ntype Args struct {\n\tTokenEstimator  string\n\tAll             bool\n\tCopy            bool\n\tUserInstruction string\n}",
+				"LineNo": 19
+			}
+		]
+	}`
+	assertJSONMarshal(assert, expectedModifyJSON, commands[1])
 }
 
 func TestGetParam(t *testing.T) {
@@ -306,8 +378,12 @@ func TestGetParam(t *testing.T) {
 	// Get existing parameter
 	param1 := cmd.GetParam("param1")
 	assert.NotNil(param1)
-	assert.Equal("param1", param1.Name)
-	assert.Equal("value1", param1.Payload)
+
+	expectedJSON := `{
+		"Name": "param1",
+		"Payload": "value1"
+	}`
+	assertJSONMarshal(assert, expectedJSON, *param1)
 
 	// Get non-existing parameter
 	param3 := cmd.GetParam("param3")
@@ -353,13 +429,33 @@ $param2 value2`
 	assert.NoError(err)
 	assert.Len(commands, 2)
 
-	assert.Equal("outer", commands[0].Name)
-	assert.Len(commands[0].Params, 1)
-	assert.Equal("param1", commands[0].Params[0].Name)
+	expectedJSON1 := `{
+		"Name": "outer",
+		"Payload": "",
+		"LineNo": 1,
+		"Params": [
+			{
+				"Name": "param1",
+				"Payload": "value1",
+				"LineNo": 2
+			}
+		]
+	}`
+	assertJSONMarshal(assert, expectedJSON1, commands[0])
 
-	assert.Equal("inner", commands[1].Name)
-	assert.Len(commands[1].Params, 1)
-	assert.Equal("param2", commands[1].Params[0].Name)
+	expectedJSON2 := `{
+		"Name": "inner",
+		"Payload": "",
+		"LineNo": 3,
+		"Params": [
+			{
+				"Name": "param2",
+				"Payload": "value2",
+				"LineNo": 4
+			}
+		]
+	}`
+	assertJSONMarshal(assert, expectedJSON2, commands[1])
 }
 
 func TestParseCommandIncremental(t *testing.T) {
@@ -385,31 +481,58 @@ $param3 value3`
 	cmd1, err := parser.ParseCommand()
 	assert.NoError(err)
 	assert.NotNil(cmd1)
-	assert.Equal("command1", cmd1.Name)
-	assert.Equal("payload1", cmd1.Payload)
-	assert.Len(cmd1.Params, 1)
-	assert.Equal("param1", cmd1.Params[0].Name)
-	assert.Equal("value1", cmd1.Params[0].Payload)
+
+	expectedJSON1 := `{
+		"Name": "command1",
+		"Payload": "payload1",
+		"LineNo": 1,
+		"Params": [
+			{
+				"Name": "param1",
+				"Payload": "value1",
+				"LineNo": 2
+			}
+		]
+	}`
+	assertJSONMarshal(assert, expectedJSON1, cmd1)
 
 	// Second command
 	cmd2, err := parser.ParseCommand()
 	assert.NoError(err)
 	assert.NotNil(cmd2)
-	assert.Equal("command2", cmd2.Name)
-	assert.Equal("Payload for command2", cmd2.Payload)
-	assert.Len(cmd2.Params, 1)
-	assert.Equal("param2", cmd2.Params[0].Name)
-	assert.Equal("Value for param2", cmd2.Params[0].Payload)
+
+	expectedJSON2 := `{
+		"Name": "command2",
+		"Payload": "Payload for command2",
+		"LineNo": 4,
+		"Params": [
+			{
+				"Name": "param2",
+				"Payload": "Value for param2",
+				"LineNo": 8
+			}
+		]
+	}`
+	assertJSONMarshal(assert, expectedJSON2, cmd2)
 
 	// Third command
 	cmd3, err := parser.ParseCommand()
 	assert.NoError(err)
 	assert.NotNil(cmd3)
-	assert.Equal("command3", cmd3.Name)
-	assert.Equal("", cmd3.Payload)
-	assert.Len(cmd3.Params, 1)
-	assert.Equal("param3", cmd3.Params[0].Name)
-	assert.Equal("value3", cmd3.Params[0].Payload)
+
+	expectedJSON3 := `{
+		"Name": "command3",
+		"Payload": "",
+		"LineNo": 12,
+		"Params": [
+			{
+				"Name": "param3",
+				"Payload": "value3",
+				"LineNo": 13
+			}
+		]
+	}`
+	assertJSONMarshal(assert, expectedJSON3, cmd3)
 
 	// Should be EOF now
 	cmd4, err := parser.ParseCommand()
@@ -433,18 +556,38 @@ $param2 value2`
 	// Parse first command
 	cmd1, err := parser.ParseCommand()
 	assert.NoError(err)
-	assert.Equal("command", cmd1.Name)
-	assert.Len(cmd1.Params, 1)
-	assert.Equal("param1", cmd1.Params[0].Name)
-	assert.Equal("value", cmd1.Params[0].Payload)
+
+	expectedJSON1 := `{
+		"Name": "command",
+		"Payload": "",
+		"LineNo": 2,
+		"Params": [
+			{
+				"Name": "param1",
+				"Payload": "value",
+				"LineNo": 3
+			}
+		]
+	}`
+	assertJSONMarshal(assert, expectedJSON1, cmd1)
 
 	// Parse second command
 	cmd2, err := parser.ParseCommand()
 	assert.NoError(err)
-	assert.Equal("command2", cmd2.Name)
-	assert.Len(cmd2.Params, 1)
-	assert.Equal("param2", cmd2.Params[0].Name)
-	assert.Equal("value2", cmd2.Params[0].Payload)
+
+	expectedJSON2 := `{
+		"Name": "command2",
+		"Payload": "",
+		"LineNo": 5,
+		"Params": [
+			{
+				"Name": "param2",
+				"Payload": "value2",
+				"LineNo": 6
+			}
+		]
+	}`
+	assertJSONMarshal(assert, expectedJSON2, cmd2)
 
 	// Should be EOF now
 	cmd3, err := parser.ParseCommand()
@@ -493,26 +636,28 @@ HEREDOC_2`
 	assert.NoError(err)
 	assert.Len(commands, 1)
 
-	cmd := commands[0]
-	assert.Equal("modify", cmd.Name)
-	assert.Equal("path/heredoc.txt", cmd.Payload)
-	assert.Len(cmd.Params, 3)
+	expectedJSON := `{
+		"Name": "modify",
+		"Payload": "path/heredoc.txt",
+		"LineNo": 1,
+		"Params": [
+			{
+				"Name": "description",
+				"Payload": "make change to a HEREDOC payload",
+				"LineNo": 3
+			},
+			{
+				"Name": "search",
+				"Payload": "$search<HEREDOC\nheredoc payload\nHEREDOC",
+				"LineNo": 7
+			},
+			{
+				"Name": "replace",
+				"Payload": "$search<HEREDOC\nnew heredoc payload\nHEREDOC",
+				"LineNo": 13
+			}
+		]
+	}`
 
-	// Check description param
-	descParam := cmd.GetParam("description")
-	assert.NotNil(descParam)
-	assert.Equal("make change to a HEREDOC payload", descParam.Payload)
-
-	searchParam := cmd.GetParam("search")
-	assert.NotNil(searchParam)
-	assert.Equal(`$search<HEREDOC
-heredoc payload
-HEREDOC`, searchParam.Payload)
-
-	// Check replace param with nested HEREDOC
-	replaceParam := cmd.GetParam("replace")
-	assert.NotNil(replaceParam)
-	assert.Equal(`$search<HEREDOC
-new heredoc payload
-HEREDOC`, replaceParam.Payload)
+	assertJSONMarshal(assert, expectedJSON, commands[0])
 }
