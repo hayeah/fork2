@@ -35,6 +35,7 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"regexp"
 	"strconv"
@@ -307,6 +308,46 @@ func selectSinglePattern(paths []string, pattern string) ([]string, error) {
 
 	// Apply the matcher
 	return matcher.Match(paths)
+}
+
+// ParseMatchersFromString parses a string containing multiple patterns into a slice of Matchers
+// It skips empty lines and comment lines that start with #
+// Example input:
+//
+//   cmd/.go
+//   internal/.go
+//
+//   # exact path match
+//   =path/to/a.txt
+//
+//   # exact path match and range
+//   =path/to/b.txt#1,5
+func ParseMatchersFromString(input string) ([]Matcher, error) {
+	var matchers []Matcher
+	scanner := bufio.NewScanner(strings.NewReader(input))
+
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+
+		// Skip empty lines and comment lines
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		// Parse the pattern into a matcher
+		matcher, err := ParseMatcher(line)
+		if err != nil {
+			return nil, fmt.Errorf("error parsing pattern '%s': %w", line, err)
+		}
+
+		matchers = append(matchers, matcher)
+	}
+
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("error scanning input: %w", err)
+	}
+
+	return matchers, nil
 }
 
 // selectByPatterns collects matches from multiple patterns

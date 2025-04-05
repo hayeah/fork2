@@ -209,6 +209,109 @@ func TestCompoundMatcher(t *testing.T) {
 	})
 }
 
+// TestParseMatchersFromString tests the ParseMatchersFromString function
+func TestParseMatchersFromString(t *testing.T) {
+	assert := assert.New(t)
+
+	t.Run("EmptyInput", func(t *testing.T) {
+		matchers, err := ParseMatchersFromString("")
+		assert.NoError(err)
+		assert.Empty(matchers, "Empty input should return no matchers")
+	})
+
+	t.Run("SinglePattern", func(t *testing.T) {
+		input := "foo"
+		matchers, err := ParseMatchersFromString(input)
+		assert.NoError(err)
+		assert.Len(matchers, 1, "Should return one matcher")
+
+		// Verify it's a FuzzyMatcher
+		fuzzyMatcher, ok := matchers[0].(FuzzyMatcher)
+		assert.True(ok, "Should be a FuzzyMatcher")
+		assert.Equal("foo", fuzzyMatcher.Pattern)
+	})
+
+	t.Run("MultiplePatterns", func(t *testing.T) {
+		input := "foo\nbar"
+		matchers, err := ParseMatchersFromString(input)
+		assert.NoError(err)
+		assert.Len(matchers, 2, "Should return two matchers")
+
+		// Verify they're both FuzzyMatchers with correct patterns
+		fuzzyMatcher1, ok := matchers[0].(FuzzyMatcher)
+		assert.True(ok, "First matcher should be a FuzzyMatcher")
+		assert.Equal("foo", fuzzyMatcher1.Pattern)
+
+		fuzzyMatcher2, ok := matchers[1].(FuzzyMatcher)
+		assert.True(ok, "Second matcher should be a FuzzyMatcher")
+		assert.Equal("bar", fuzzyMatcher2.Pattern)
+	})
+
+	t.Run("SkipEmptyLines", func(t *testing.T) {
+		input := "foo\n\n\nbar"
+		matchers, err := ParseMatchersFromString(input)
+		assert.NoError(err)
+		assert.Len(matchers, 2, "Should return two matchers, skipping empty lines")
+	})
+
+	t.Run("SkipCommentLines", func(t *testing.T) {
+		input := "foo\n# This is a comment\nbar"
+		matchers, err := ParseMatchersFromString(input)
+		assert.NoError(err)
+		assert.Len(matchers, 2, "Should return two matchers, skipping comment lines")
+	})
+
+	t.Run("MixedPatternTypes", func(t *testing.T) {
+		input := `
+			foo
+			/\.go$
+			=exact/path.txt
+			!test
+		`
+		matchers, err := ParseMatchersFromString(input)
+		assert.NoError(err)
+		assert.Len(matchers, 4, "Should return four matchers of different types")
+
+		// Verify first matcher is a FuzzyMatcher
+		_, ok := matchers[0].(FuzzyMatcher)
+		assert.True(ok, "First matcher should be a FuzzyMatcher")
+
+		// Verify second matcher is a RegexMatcher
+		_, ok = matchers[1].(*RegexMatcher)
+		assert.True(ok, "Second matcher should be a RegexMatcher")
+
+		// Verify third matcher is an ExactPathMatcher
+		_, ok = matchers[2].(ExactPathMatcher)
+		assert.True(ok, "Third matcher should be an ExactPathMatcher")
+
+		// Verify fourth matcher is a NegationMatcher
+		_, ok = matchers[3].(NegationMatcher)
+		assert.True(ok, "Fourth matcher should be a NegationMatcher")
+	})
+
+	t.Run("ExactPathWithLineRange", func(t *testing.T) {
+		input := "=path/to/file.txt#10,20"
+		matchers, err := ParseMatchersFromString(input)
+		assert.NoError(err)
+		assert.Len(matchers, 1, "Should return one matcher")
+
+		// Verify it's an ExactPathMatcher with correct line range
+		exactMatcher, ok := matchers[0].(ExactPathMatcher)
+		assert.True(ok, "Should be an ExactPathMatcher")
+		assert.Equal("path/to/file.txt", exactMatcher.FileSelection.Path)
+		assert.Len(exactMatcher.FileSelection.Ranges, 1, "Should have one line range")
+		assert.Equal(10, exactMatcher.FileSelection.Ranges[0].Start)
+		assert.Equal(20, exactMatcher.FileSelection.Ranges[0].End)
+	})
+
+	t.Run("InvalidPattern", func(t *testing.T) {
+		input := "foo\n/[invalid\nbar"
+		_, err := ParseMatchersFromString(input)
+		assert.Error(err, "Should return error for invalid pattern")
+		assert.Contains(err.Error(), "error parsing pattern '/[invalid'")
+	})
+}
+
 // TestParseMatcher tests the ParseMatcher function
 func TestParseMatcher(t *testing.T) {
 	assert := assert.New(t)
