@@ -51,7 +51,7 @@ func (a *Assert) equalFixture(fixturePath string, content string) {
 // EqualToJSONFixture marshals the result to JSON and compares it with the content of a fixture file.
 // If GEN_FIXTURE=true is set, it writes the marshaled result to the fixture file and passes the test.
 // Otherwise, it compares the marshaled result with the fixture content.
-// The fixture path is derived from the test name: fixtures/<a.T.Name()>/<fixtureName>
+// The fixture path is derived from the test name: fixtures/<a.T.Name()>_<fixtureName>.json
 // Note: The .json extension is automatically added to the fixture name
 func (a *Assert) EqualToJSONFixture(fixtureName string, result any) {
 	// Marshal the result to JSON
@@ -72,7 +72,7 @@ func (a *Assert) EqualToJSONFixture(fixtureName string, result any) {
 // EqualToStringFixture compares a string result with the content of a fixture file.
 // If GEN_FIXTURE=true is set, it writes the string result to the fixture file and passes the test.
 // Otherwise, it compares the string result with the fixture content.
-// The fixture path is derived from the test name: fixtures/<a.T.Name()>/<fixtureName>
+// The fixture path is derived from the test name: fixtures/<a.T.Name()>_<fixtureName>.txt
 // Note: The .txt extension is automatically added to the fixture name
 func (a *Assert) EqualToStringFixture(fixtureName string, result string) {
 	// Create fixture path with .txt extension
