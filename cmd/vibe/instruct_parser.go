@@ -209,27 +209,27 @@ func (h *InstructHeader) FileSelectionsWithDirTree(dirTree *DirectoryTree) ([]Fi
 	}
 
 	// Process each file selection from the Files field
-	for _, select_ := range h.Files {
-		fileSelection, err := ParseFileSelection(select_.Path)
-		if err != nil {
-			return nil, err
-		}
+	// for _, select_ := range h.Files {
+	// 	fileSelection, err := ParseFileSelection(select_.Path)
+	// 	if err != nil {
+	// 		return nil, err
+	// 	}
 
-		// Check if we already have a selection for this file
-		if existing, ok := selectionsMap[fileSelection.Path]; ok {
-			// if either range is nil, consider it a full file selection
-			if fileSelection.Ranges == nil || existing.Ranges == nil {
-				// set it to nil to mean selecting the whole file
-				existing.Ranges = nil
-			} else {
-				// collect the ranges
-				existing.Ranges = append(existing.Ranges, fileSelection.Ranges...)
-			}
-		} else {
-			// Create new entry
-			selectionsMap[fileSelection.Path] = &fileSelection
-		}
-	}
+	// 	// Check if we already have a selection for this file
+	// 	if existing, ok := selectionsMap[fileSelection.Path]; ok {
+	// 		// if either range is nil, consider it a full file selection
+	// 		if fileSelection.Ranges == nil || existing.Ranges == nil {
+	// 			// set it to nil to mean selecting the whole file
+	// 			existing.Ranges = nil
+	// 		} else {
+	// 			// collect the ranges
+	// 			existing.Ranges = append(existing.Ranges, fileSelection.Ranges...)
+	// 		}
+	// 	} else {
+	// 		// Create new entry
+	// 		selectionsMap[fileSelection.Path] = &fileSelection
+	// 	}
+	// }
 
 	// Convert map to slice
 	var fileSelections []FileSelection
