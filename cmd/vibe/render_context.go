@@ -114,7 +114,7 @@ func (ctx *VibeContext) RepoPrompts() string {
 // WriteOutput removed in favor of WriteFileSelections
 
 // WriteFileSelections processes the selected files and outputs the result using the renderer
-func (ctx *VibeContext) WriteFileSelections(w io.Writer, userPath string, systemPath string, fileSelections []FileSelection) error {
+func (ctx *VibeContext) WriteFileSelections(w io.Writer, userContent string, layoutPath string, fileSelections []FileSelection) error {
 	ctx.RenderContext.CurrentTemplatePath = "./"
 	defer func() {
 		ctx.RenderContext.CurrentTemplatePath = "./"
@@ -135,7 +135,11 @@ func (ctx *VibeContext) WriteFileSelections(w io.Writer, userPath string, system
 	data["FileMap"] = fileMapBuf.String()
 
 	// Render the output using the template system
-	output, err := ctx.Renderer.Render(userPath, systemPath, data)
+	output, err := ctx.Renderer.Render(render.RenderArgs{
+		Content:    userContent,
+		LayoutPath: layoutPath,
+		Data:       data,
+	})
 	if err != nil {
 		return err
 	}

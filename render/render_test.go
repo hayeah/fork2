@@ -332,7 +332,11 @@ func TestRenderer(t *testing.T) {
 	renderer := NewRenderer(ctx)
 
 	// Render with the layout using path to user content
-	result, err := renderer.Render("@templates/user.md", "@layouts/main.md", testData)
+	result, err := renderer.Render(RenderArgs{
+		ContentPath: "@templates/user.md",
+		LayoutPath:  "@layouts/main.md",
+		Data:        testData,
+	})
 	assert.NoError(err, "Render should not return an error")
 
 	// Use EqualToStringFixture to compare the result with a fixture file

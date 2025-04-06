@@ -93,6 +93,20 @@ func (r *Renderer) loadTemplateContent(templatePath string) (string, error) {
 	return r.ctx.ResolvePartial(templatePath)
 }
 
+// RenderArgs contains all the arguments needed for template rendering.
+type RenderArgs struct {
+	// Content is the direct template content string to render
+	Content string
+	// ContentPath is the path to the template to render
+	ContentPath string
+	// Layout is the direct layout template content string
+	Layout string
+	// LayoutPath is the path to the layout template
+	LayoutPath string
+	// Data is the data to pass to the template during rendering
+	Data any
+}
+
 // RenderPartial renders a template without a layout.
 // It's a convenience method that calls Render with an empty layoutPath.
 //
@@ -107,25 +121,40 @@ func (r *Renderer) loadTemplateContent(templatePath string) (string, error) {
 //   - A string containing the rendered template
 //   - An error if the template could not be loaded or rendered
 func (r *Renderer) RenderPartial(partialPath string, data any) (string, error) {
-	return r.Render(partialPath, "", data)
+	return r.Render(RenderArgs{
+		ContentPath: partialPath,
+		Data:        data,
+	})
 }
 
 // Render renders a template, with optional layout wrapping.
 // If layoutPath is empty, renders contentPath as a standalone template.
 // If layoutPath is provided, renders contentPath within the layout's "main" block.
 // data is the data to pass to the template.
-func (r *Renderer) Render(contentPath string, layoutPath string, data any) (string, error) {
-	// Get the content template
-	contentContent, err := r.loadTemplateContent(contentPath)
-	if err != nil {
-		return "", fmt.Errorf("error loading content template: %w", err)
+func (r *Renderer) Render(args RenderArgs) (string, error) {
+	// Get content either from direct content or from path
+	contentContent := args.Content
+	contentPath := args.ContentPath
+	data := args.Data
+
+	// If content is not provided directly, load it from path
+	if contentContent == "" && contentPath != "" {
+		var err error
+		contentContent, err = r.loadTemplateContent(contentPath)
+		if err != nil {
+			return "", fmt.Errorf("error loading content template: %w", err)
+		}
+	} else if contentContent == "" && contentPath == "" {
+		return "", fmt.Errorf("either Content or ContentPath must be provided")
 	}
 
 	// Store original current template path
 	originalPath := r.ctx.CurrentTemplatePath
-	// Update current template path for local partial resolution
+	// Update current template path for local partial resolution if path is provided
 	defer func() { r.ctx.CurrentTemplatePath = originalPath }()
-	r.ctx.CurrentTemplatePath = contentPath
+	if contentPath != "" {
+		r.ctx.CurrentTemplatePath = contentPath
+	}
 
 	// Create a template set
 	tmpl := template.New("")
@@ -138,16 +167,24 @@ func (r *Renderer) Render(contentPath string, layoutPath string, data any) (stri
 
 	templateTarget := "main"
 
-	if layoutPath != "" {
+	// Handle layout - either from direct content or from path
+	layoutContent := args.Layout
+	layoutPath := args.LayoutPath
+
+	if layoutContent != "" || layoutPath != "" {
 		// Set template target to "layout"
 		templateTarget = "layout"
 
-		// Parse the layout template
-		layoutContent, err := r.loadTemplateContent(layoutPath)
-		if err != nil {
-			return "", fmt.Errorf("error loading layout template: %w", err)
+		// If layout content is not provided directly, load it from path
+		if layoutContent == "" && layoutPath != "" {
+			var err error
+			layoutContent, err = r.loadTemplateContent(layoutPath)
+			if err != nil {
+				return "", fmt.Errorf("error loading layout template: %w", err)
+			}
 		}
 
+		var err error
 		tmpl, err = tmpl.New("layout").Parse(layoutContent)
 		if err != nil {
 			return "", fmt.Errorf("error parsing layout template: %w", err)
@@ -155,6 +192,7 @@ func (r *Renderer) Render(contentPath string, layoutPath string, data any) (stri
 	}
 
 	// Define the main template block with content
+	var err error
 	tmpl, err = tmpl.New("main").Parse(contentContent)
 	if err != nil {
 		return "", fmt.Errorf("error parsing content template: %w", err)
