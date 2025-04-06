@@ -52,7 +52,7 @@ func TestCoalesceRanges(t *testing.T) {
 	}, coalesced4)
 }
 
-func TestExtractSelectedLines(t *testing.T) {
+func TestFileSelectionContent(t *testing.T) {
 	assert := assert.New(t)
 
 	// Create temporary test files
@@ -68,22 +68,45 @@ func TestExtractSelectedLines(t *testing.T) {
 	assert.NoError(err)
 
 	// Test extracting all lines (no ranges)
-	allLines, err := extractSelectedLines(testFile, []LineRange{})
+	fs := FileSelection{Path: testFile, Ranges: []LineRange{}}
+	contents, err := fs.Contents()
 	assert.NoError(err)
-	assert.Equal(content.String(), allLines)
+	assert.Len(contents, 1)
+	assert.Equal(testFile, contents[0].Path)
+	assert.Equal(content.String(), contents[0].Content)
+	assert.Nil(contents[0].Range)
 
 	// Test extracting specific ranges
 	ranges := []LineRange{
 		{Start: 1, End: 3},
 		{Start: 10, End: 12},
 	}
-	expected := "Line 1\nLine 2\nLine 3\nLine 10\nLine 11\nLine 12\n"
-	selectedLines, err := extractSelectedLines(testFile, ranges)
+	fs = FileSelection{Path: testFile, Ranges: ranges}
+	contents, err = fs.Contents()
+	assert.NoError(err)
+	assert.Len(contents, 2)
+
+	// Check first range
+	assert.Equal(testFile, contents[0].Path)
+	assert.Equal("Line 1\nLine 2\nLine 3\n", contents[0].Content)
+	assert.Equal(1, contents[0].Range.Start)
+	assert.Equal(3, contents[0].Range.End)
+
+	// Check second range
+	assert.Equal(testFile, contents[1].Path)
+	assert.Equal("Line 10\nLine 11\nLine 12\n", contents[1].Content)
+	assert.Equal(10, contents[1].Range.Start)
+	assert.Equal(12, contents[1].Range.End)
+
+	// Test ReadString to ensure backward compatibility
+	expected := "--- " + testFile + "#1,3 ---\nLine 1\nLine 2\nLine 3\n--- " + testFile + "#10,12 ---\nLine 10\nLine 11\nLine 12\n"
+	selectedLines, err := fs.ReadString()
 	assert.NoError(err)
 	assert.Equal(expected, selectedLines)
 
 	// Test with non-existent file
-	_, err = extractSelectedLines(filepath.Join(tempDir, "nonexistent.txt"), ranges)
+	fs = FileSelection{Path: filepath.Join(tempDir, "nonexistent.txt"), Ranges: ranges}
+	_, err = fs.Contents()
 	assert.Error(err)
 }
 

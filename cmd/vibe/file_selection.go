@@ -17,6 +17,13 @@ type LineRange struct {
 	End   int
 }
 
+// FileSelectionContent represents the content of a file selection
+type FileSelectionContent struct {
+	Path    string     // File path
+	Content string     // Content of the selection
+	Range   *LineRange // Line range, nil means the whole file content
+}
+
 // The pattern matches: <filepath>#<start>,<end> where start and end are integers
 var reFileSelection = regexp.MustCompile(`^(.+)#(\d+),(\d+)$`)
 
@@ -61,14 +68,108 @@ func ParseFileSelection(path string) (FileSelection, error) {
 
 // FileSelection represents a file and its selected line ranges
 type FileSelection struct {
-	Path   string      // Absolute file path
+	Path   string      // File path
 	Ranges []LineRange // Line ranges to include, empty means all lines
 }
 
 // ReadString reads selected line ranges from the file.
 // If Ranges is empty, it returns the entire file content.
 func (fs *FileSelection) ReadString() (string, error) {
-	return extractSelectedLines(fs.Path, fs.Ranges)
+	contents, err := fs.Contents()
+	if err != nil {
+		return "", err
+	}
+
+	var result strings.Builder
+	for _, content := range contents {
+		if content.Range == nil {
+			fmt.Fprintf(&result, "--- %s ---\n", content.Path)
+		} else {
+			fmt.Fprintf(&result, "--- %s#%d,%d ---\n", content.Path, content.Range.Start, content.Range.End)
+		}
+
+		result.WriteString(content.Content)
+	}
+
+	return result.String(), nil
+}
+
+// Contents reads selected line ranges from the file and returns a slice of FileSelectionContent.
+// If Ranges is empty, it returns the entire file content as a single FileSelectionContent with Range set to nil.
+func (fs *FileSelection) Contents() ([]FileSelectionContent, error) {
+	// Sort and merge ranges if needed
+	sortedRanges := coalesceRanges(fs.Ranges)
+
+	// Extract the content for each range
+	return fs.extractContents(sortedRanges)
+}
+
+// extractContents reads selected line ranges from a file.
+// It assumes that the provided sortedRanges are already sorted and merged.
+// If sortedRanges is empty, it returns the entire file content.
+// Assumes that the ranges are already sorted and merged.
+func (fs *FileSelection) extractContents(sortedRanges []LineRange) ([]FileSelectionContent, error) {
+	// Open the file
+	file, err := os.Open(fs.Path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open file %s: %w", fs.Path, err)
+	}
+	defer file.Close()
+
+	// If no ranges specified, return the entire file content
+	if len(sortedRanges) == 0 {
+		content, err := io.ReadAll(file)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read file %s: %w", fs.Path, err)
+		}
+		return []FileSelectionContent{{
+			Path:    fs.Path,
+			Content: string(content),
+			Range:   nil,
+		}}, nil
+	}
+
+	// Create one strings.Builder per range
+	builders := make([]strings.Builder, len(sortedRanges))
+
+	scanner := bufio.NewScanner(file)
+	lineNum := 1
+	rangeIdx := 0
+
+	for scanner.Scan() {
+		// If current line number is beyond the current range, move to the next range
+		for rangeIdx < len(sortedRanges) && lineNum > sortedRanges[rangeIdx].End {
+			rangeIdx++
+		}
+
+		if rangeIdx >= len(sortedRanges) {
+			break
+		}
+
+		// If lineNum is within the current range, record it
+		rng := sortedRanges[rangeIdx]
+		if lineNum >= rng.Start && lineNum <= rng.End {
+			builders[rangeIdx].WriteString(scanner.Text())
+			builders[rangeIdx].WriteString("\n")
+		}
+		lineNum++
+	}
+
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("error reading file %s: %w", fs.Path, err)
+	}
+
+	// Build final slice of FileSelectionContent
+	results := make([]FileSelectionContent, len(sortedRanges))
+	for i, rng := range sortedRanges {
+		rangeCopy := rng
+		results[i] = FileSelectionContent{
+			Path:    fs.Path,
+			Range:   &rangeCopy,
+			Content: builders[i].String(),
+		}
+	}
+	return results, nil
 }
 
 // coalesceRanges merges overlapping line ranges
@@ -101,81 +202,4 @@ func coalesceRanges(ranges []LineRange) []LineRange {
 	}
 
 	return result
-}
-
-// extractSelectedLines reads selected line ranges from a file.
-// It assumes that the provided sortedRanges are already sorted and merged.
-// If sortedRanges is empty, it returns the entire file content.
-// Returns an error if the ranges are not sorted or merged.
-func extractSelectedLines(filePath string, sortedRanges []LineRange) (string, error) {
-	// Open the file.
-	file, err := os.Open(filePath)
-	if err != nil {
-		return "", fmt.Errorf("failed to open file %s: %w", filePath, err)
-	}
-	defer file.Close()
-
-	// If no ranges specified, return the entire file content.
-	if len(sortedRanges) == 0 {
-		content, err := io.ReadAll(file)
-		if err != nil {
-			return "", fmt.Errorf("failed to read file %s: %w", filePath, err)
-		}
-		return string(content), nil
-	}
-
-	// Validate that sortedRanges is sorted and merged.
-	// For sorted order, each range's Start must be less than or equal to the next's.
-	// For merged ranges, the current range's End+1 must be strictly less than the next's Start.
-	for i := 0; i < len(sortedRanges)-1; i++ {
-		if sortedRanges[i].Start > sortedRanges[i+1].Start {
-			return "", fmt.Errorf("ranges not sorted: range at index %d has start %d greater than range at index %d start %d", i, sortedRanges[i].Start, i+1, sortedRanges[i+1].Start)
-		}
-		if sortedRanges[i].End+1 >= sortedRanges[i+1].Start {
-			return "", fmt.Errorf("ranges not merged: range at index %d and index %d are overlapping or contiguous", i, i+1)
-		}
-	}
-
-	// Scan the file once.
-	scanner := bufio.NewScanner(file)
-	lineNum := 1
-	rangeIdx := 0
-	var result strings.Builder
-
-	lastSeenRange := -1
-
-	for scanner.Scan() {
-		// If we've processed all ranges, break early.
-		if rangeIdx >= len(sortedRanges) {
-			break
-		}
-
-		// Advance the range pointer if the current line number is beyond the current range.
-		for rangeIdx < len(sortedRanges) && lineNum > sortedRanges[rangeIdx].End {
-			rangeIdx++
-		}
-
-		if rangeIdx >= len(sortedRanges) {
-			break
-		}
-
-		// Write the line if it falls within the current range.
-		if lineNum >= sortedRanges[rangeIdx].Start && lineNum <= sortedRanges[rangeIdx].End {
-			if rangeIdx > lastSeenRange {
-				lastSeenRange = rangeIdx
-				fmt.Fprintf(&result, "\n--- %s#%d,%d ---\n", filePath, sortedRanges[rangeIdx].Start, sortedRanges[rangeIdx].End)
-			}
-
-			result.WriteString(scanner.Text())
-			result.WriteString("\n")
-		}
-
-		lineNum++
-	}
-
-	if err := scanner.Err(); err != nil {
-		return "", fmt.Errorf("error reading file %s: %w", filePath, err)
-	}
-
-	return result.String(), nil
 }
