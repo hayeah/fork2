@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"unicode"
 	"unicode/utf8"
 )
@@ -54,7 +53,7 @@ func WriteFileMap(w io.Writer, selections []FileSelection, baseDir string) error
 			continue
 		}
 
-		// Read file content using FileSelection.ReadString()
+		// Read selected file content
 		content, err := selection.ReadString()
 		if err != nil {
 			return fmt.Errorf("failed to read selected content from %s: %w", selection.Path, err)
@@ -65,26 +64,8 @@ func WriteFileMap(w io.Writer, selections []FileSelection, baseDir string) error
 			continue // Skip binary files
 		}
 
-		// Get relative path for display
-		relPath, err := filepath.Rel(baseDir, selection.Path)
-		if err != nil {
-			relPath = selection.Path // Fallback to absolute path
-		}
-		
-		// Write file header
-		fmt.Fprintf(w, "File: %s\n", relPath)
-		fmt.Fprint(w, "```\n")
-
 		// Write file content
 		fmt.Fprint(w, content)
-
-		// Ensure the content ends with a newline
-		if len(content) > 0 && content[len(content)-1] != '\n' {
-			fmt.Fprintln(w)
-		}
-
-		fmt.Fprintln(w, "```")
-		fmt.Fprintln(w)
 	}
 
 	return nil
