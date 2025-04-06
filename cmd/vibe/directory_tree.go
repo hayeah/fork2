@@ -43,8 +43,15 @@ func gatherFiles(rootPath string) ([]item, map[string][]string, error) {
 
 	// Use WalkDirGitIgnore to walk the directory tree while respecting gitignore
 	err = ig.WalkDir(rootPath, func(path string, d os.DirEntry, isDir bool) error {
+
+		// relative path to rootPath
+		relPath, err := filepath.Rel(rootPath, path)
+		if err != nil {
+			return err
+		}
+
 		items = append(items, item{
-			Path:       path,
+			Path:       relPath,
 			IsDir:      isDir,
 			TokenCount: 0,
 		})
@@ -79,7 +86,7 @@ func gatherFiles(rootPath string) ([]item, map[string][]string, error) {
 // GenerateDirectoryTree writes a tree-like directory structure to w based on dt.
 func (dt *DirectoryTree) GenerateDirectoryTree(w io.Writer) error {
 	type treeNode struct {
-		path     string
+		path     string // This is the relative path
 		name     string
 		isDir    bool
 		children []*treeNode
@@ -88,24 +95,28 @@ func (dt *DirectoryTree) GenerateDirectoryTree(w io.Writer) error {
 	// Create a map to store nodes by path
 	nodeMap := make(map[string]*treeNode)
 
-	// Create the root node
-	rootName := filepath.Base(dt.RootPath)
+	// Create the root node (".") for the relative root
 	rootNode := &treeNode{
-		path:     dt.RootPath,
-		name:     rootName,
+		path:     ".", // Root is represented as "." in relative paths
+		name:     filepath.Base(dt.RootPath),
 		isDir:    true,
 		children: []*treeNode{},
 	}
-	nodeMap[dt.RootPath] = rootNode
+	nodeMap["."] = rootNode
 
 	// Process dt.Items to build the tree
 	for _, item := range dt.Items {
-		// Skip the root itself
-		if item.Path == dt.RootPath {
+		// Skip the root itself (which is "" or "." in relative paths)
+		if item.Path == "" || item.Path == "." {
 			continue
 		}
 		name := filepath.Base(item.Path)
 		parent := filepath.Dir(item.Path)
+
+		// Handle empty parent (which means it's directly under root)
+		if parent == "" || parent == "." {
+			parent = "."
+		}
 
 		if _, ok := nodeMap[item.Path]; !ok {
 			nodeMap[item.Path] = &treeNode{
@@ -133,7 +144,7 @@ func (dt *DirectoryTree) GenerateDirectoryTree(w io.Writer) error {
 			}
 			return node.children[i].name < node.children[j].name
 		})
-		if node.path == dt.RootPath {
+		if node.path == "." { // Root node is now represented as "."
 			absPath, err := filepath.Abs(dt.RootPath)
 			if err != nil {
 				absPath = dt.RootPath
@@ -155,7 +166,7 @@ func (dt *DirectoryTree) GenerateDirectoryTree(w io.Writer) error {
 		for i, child := range node.children {
 			isLastChild := i == len(node.children)-1
 			newPrefix := prefix
-			if node.path != dt.RootPath {
+			if node.path != "." {
 				if isLast {
 					newPrefix += "    "
 				} else {

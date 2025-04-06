@@ -150,8 +150,6 @@ type InstructHeader struct {
 	Files  []FileSelection `toml:"file"`
 }
 
-
-
 // FileSelectionsWithDirTree extracts file selections from the header and also processes
 // the Select string if present, using the provided directory tree to match paths
 func (h *InstructHeader) FileSelectionsWithDirTree(dirTree *DirectoryTree) ([]FileSelection, error) {

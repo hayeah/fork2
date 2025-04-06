@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -96,24 +95,14 @@ func TestFileSelectionsWithDirTree_OnlySelect(t *testing.T) {
 
 	tmpDir, err := createTestDirectory(t, files)
 	assert.NoError(err)
-	// No need for defer os.RemoveAll as t.TempDir() handles cleanup
 
-	// Create a list of absolute file paths for verification
-	var testFiles []string
-	for relPath := range files {
-		testFiles = append(testFiles, filepath.Join(tmpDir, relPath))
-	}
-
-	// Load the actual directory tree
 	dirTree, err := LoadDirectoryTree(tmpDir)
 	assert.NoError(err)
 
-	// Test with only Select
 	headerSelectOnly := &InstructHeader{
-		Select: fmt.Sprintf(`
+		Select: `
 /\.go$
-=%s
-`, filepath.Join(tmpDir, "file3.txt")), // file3.txt
+=file3.txt`,
 	}
 
 	selections, err := headerSelectOnly.FileSelectionsWithDirTree(dirTree)
@@ -126,5 +115,10 @@ func TestFileSelectionsWithDirTree_OnlySelect(t *testing.T) {
 		paths[i] = sel.Path
 	}
 
-	assert.ElementsMatch(testFiles, paths)
+	assert.ElementsMatch([]string{
+		"file1.go",
+		"file2.go",
+		"file3.txt",
+		"subdir/file4.go",
+	}, paths)
 }
