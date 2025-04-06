@@ -71,10 +71,10 @@ func TestDirectoryTree_GenerateDirectoryTree(t *testing.T) {
 
 	// Check for the expected directory structure
 	assert.Contains(output, strings.TrimSpace(`
-└── hello
-    ├── world
-    │   └── b.txt
-    └── a.txt
+└── hello/
+    ├── a.txt
+    └── world/
+        └── b.txt
 `))
 
 	// Since LoadDirectoryTree now always deals with relative paths,

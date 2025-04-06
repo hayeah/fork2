@@ -5,46 +5,31 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"sort"
 
 	"github.com/hayeah/fork2/ignore"
 )
 
 // DirectoryTree holds directory listing info.
 type DirectoryTree struct {
-	RootPath    string
-	Items       []item
-	ChildrenMap map[string][]string
+	RootPath string
+	Items    []item
 }
 
 // LoadDirectoryTree constructs a new DirectoryTree by walking rootPath.
 func LoadDirectoryTree(rootPath string) (*DirectoryTree, error) {
-	items, childrenMap, err := gatherFiles(rootPath)
-	if err != nil {
-		return nil, err
-	}
-	return &DirectoryTree{
-		RootPath:    rootPath,
-		Items:       items,
-		ChildrenMap: childrenMap,
-	}, nil
-}
-
-// gatherFiles recursively walks the directory and returns a sorted list of items
-// plus a children map for toggling entire subtrees, respecting .gitignore.
-func gatherFiles(rootPath string) ([]item, map[string][]string, error) {
 	var items []item
-	childrenMap := make(map[string][]string)
 
 	ig, err := ignore.NewIgnore(rootPath)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	// Use WalkDirGitIgnore to walk the directory tree while respecting gitignore
+	// The paths are walked in lexical order (directories first, then files).
 	err = ig.WalkDir(rootPath, func(path string, d os.DirEntry, isDir bool) error {
+		// If rootPath is an absolute path, path is also an absolute path.
 
-		// relative path to rootPath
+		// Convert path to a relative path to rootPath
 		relPath, err := filepath.Rel(rootPath, path)
 		if err != nil {
 			return err
@@ -58,66 +43,79 @@ func gatherFiles(rootPath string) ([]item, map[string][]string, error) {
 		return nil
 	})
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
-	// Sort items by path for consistent listing
-	sort.Slice(items, func(i, j int) bool {
-		return items[i].Path < items[j].Path
-	})
+	return &DirectoryTree{
+		RootPath: rootPath,
+		Items:    items,
+	}, nil
+}
 
-	// Build childrenMap (immediate children only)
-	for _, it := range items {
-		if it.IsDir {
-			parentPath := it.Path
-			var childList []string
-			for _, possibleChild := range items {
-				if filepath.Dir(possibleChild.Path) == parentPath && possibleChild.Path != parentPath {
-					childList = append(childList, possibleChild.Path)
-				}
-			}
-			childrenMap[parentPath] = childList
+// SelectAllFiles returns all non-directory file paths
+func (dt *DirectoryTree) SelectAllFiles() []string {
+	var filePaths []string
+	for _, it := range dt.Items {
+		if !it.IsDir {
+			filePaths = append(filePaths, it.Path)
 		}
 	}
-
-	return items, childrenMap, nil
+	return filePaths
 }
 
 // GenerateDirectoryTree writes a tree-like directory structure to w based on dt.
 func (dt *DirectoryTree) GenerateDirectoryTree(w io.Writer) error {
+	diagram := NewDirectoryTreeDiagram(dt)
+	return diagram.Generate(w)
+}
+
+// DirectoryTreeDiagram handles the generation of tree diagrams from directory items.
+type DirectoryTreeDiagram struct {
+	RootPath string
+	Items    []item
+}
+
+// NewDirectoryTreeDiagram creates a new DirectoryTreeDiagram from a DirectoryTree.
+func NewDirectoryTreeDiagram(dt *DirectoryTree) *DirectoryTreeDiagram {
+	return &DirectoryTreeDiagram{
+		RootPath: dt.RootPath,
+		Items:    dt.Items,
+	}
+}
+
+func (dtd *DirectoryTreeDiagram) Generate(w io.Writer) error {
+	// treeNode represents a node in the directory tree.
 	type treeNode struct {
-		path     string // This is the relative path
+		path     string // Relative path
 		name     string
 		isDir    bool
 		children []*treeNode
 	}
 
-	// Create a map to store nodes by path
+	// Create a map to hold nodes by their relative path.
 	nodeMap := make(map[string]*treeNode)
 
-	// Create the root node (".") for the relative root
+	// Create the root node (represented as ".").
 	rootNode := &treeNode{
-		path:     ".", // Root is represented as "." in relative paths
-		name:     filepath.Base(dt.RootPath),
+		path:     ".",
+		name:     filepath.Base(dtd.RootPath),
 		isDir:    true,
 		children: []*treeNode{},
 	}
 	nodeMap["."] = rootNode
 
-	// Process dt.Items to build the tree
-	for _, item := range dt.Items {
-		// Skip the root itself (which is "" or "." in relative paths)
+	// Build the tree structure from the directory items.
+	for _, item := range dtd.Items {
 		if item.Path == "" || item.Path == "." {
 			continue
 		}
 		name := filepath.Base(item.Path)
 		parent := filepath.Dir(item.Path)
-
-		// Handle empty parent (which means it's directly under root)
 		if parent == "" || parent == "." {
 			parent = "."
 		}
 
+		// Create the node if it doesn't exist.
 		if _, ok := nodeMap[item.Path]; !ok {
 			nodeMap[item.Path] = &treeNode{
 				path:     item.Path,
@@ -126,28 +124,20 @@ func (dt *DirectoryTree) GenerateDirectoryTree(w io.Writer) error {
 				children: []*treeNode{},
 			}
 		}
-		// Add this node to its parent's children
+		// Append the node to its parent's children.
 		if parentNode, ok := nodeMap[parent]; ok {
-			if childNode, ok := nodeMap[item.Path]; ok {
-				parentNode.children = append(parentNode.children, childNode)
-			}
+			parentNode.children = append(parentNode.children, nodeMap[item.Path])
 		}
 	}
 
-	// sort + write
+	// Define the recursive function to write the tree.
 	var writeTreeNode func(node *treeNode, prefix string, isLast bool) error
 	writeTreeNode = func(node *treeNode, prefix string, isLast bool) error {
-		sort.Slice(node.children, func(i, j int) bool {
-			// Directories first, then files
-			if node.children[i].isDir != node.children[j].isDir {
-				return node.children[i].isDir
-			}
-			return node.children[i].name < node.children[j].name
-		})
-		if node.path == "." { // Root node is now represented as "."
-			absPath, err := filepath.Abs(dt.RootPath)
+		// Print the root node with its absolute path.
+		if node.path == "." {
+			absPath, err := filepath.Abs(dtd.RootPath)
 			if err != nil {
-				absPath = dt.RootPath
+				absPath = dtd.RootPath
 			}
 			_, err = fmt.Fprintln(w, absPath)
 			if err != nil {
@@ -158,11 +148,20 @@ func (dt *DirectoryTree) GenerateDirectoryTree(w io.Writer) error {
 			if isLast {
 				connector = "└── "
 			}
-			_, err := fmt.Fprintln(w, prefix+connector+node.name)
+
+			// Add a trailing slash for directories
+			displayName := node.name
+			if node.isDir {
+				displayName += "/"
+			}
+
+			_, err := fmt.Fprintln(w, prefix+connector+displayName)
 			if err != nil {
 				return err
 			}
 		}
+
+		// Recursively print each child.
 		for i, child := range node.children {
 			isLastChild := i == len(node.children)-1
 			newPrefix := prefix
@@ -181,18 +180,4 @@ func (dt *DirectoryTree) GenerateDirectoryTree(w io.Writer) error {
 	}
 
 	return writeTreeNode(rootNode, "", true)
-}
-
-// SelectFn is a function type that selects file paths based on a pattern
-type SelectFn func(paths []string, pattern string) ([]string, error)
-
-// SelectAllFiles returns all non-directory file paths
-func (dt *DirectoryTree) SelectAllFiles() []string {
-	var filePaths []string
-	for _, it := range dt.Items {
-		if !it.IsDir {
-			filePaths = append(filePaths, it.Path)
-		}
-	}
-	return filePaths
 }
