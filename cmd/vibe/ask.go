@@ -117,34 +117,15 @@ func (r *AskRunner) Run() error {
 		return fmt.Errorf("failed to load directory tree: %v", err)
 	}
 
-	// Filter phase: select files either automatically or interactively
-	selectedFiles, fileSelections, err := r.filterFiles()
+	fileSelections, err := r.Instruct.Header.FileSelectionsWithDirTree(r.DirTree)
 	if err != nil {
 		return err
 	}
 
-	// If we have FileSelections from TOML, output partial files directly
-	if fileSelections != nil && len(fileSelections) > 0 {
-		err := r.handleOutput(fileSelections)
-		if err != nil {
-			return err
-		}
-		return nil
-	}
-
 	// If no files were selected (user aborted), return early
-	if len(selectedFiles) == 0 {
+	if len(fileSelections) == 0 {
 		fmt.Println("No files selected. Aborting.")
 		return nil
-	}
-
-	// Convert selectedFiles to FileSelection
-	fileSelections = make([]FileSelection, len(selectedFiles))
-	for i, path := range selectedFiles {
-		fileSelections[i] = FileSelection{
-			Path:   path,
-			Ranges: nil, // selected all lines
-		}
 	}
 
 	// Output phase: generate user instruction and handle output
@@ -162,13 +143,6 @@ func (r *AskRunner) Run() error {
 	// fmt.Fprintf(os.Stderr, "Total tokens: %d\n", totalTokenCount)
 
 	return nil
-}
-
-// filterFiles handles the file selection phase, either automatically or interactively
-// Returns either FileSelections (if using TOML front matter) or a list of file paths
-func (r *AskRunner) filterFiles() ([]string, []FileSelection, error) {
-	fs, err := r.Instruct.Header.FileSelectionsWithDirTree(r.DirTree)
-	return nil, fs, err
 }
 
 // calculateTokenCount calculates the total token count for a list of file paths

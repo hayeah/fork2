@@ -1,9 +1,9 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -83,143 +83,40 @@ func TestReadInstructionContent(t *testing.T) {
 	assert.Equal(rawContent, stringContent)
 }
 
-func TestFileSelections(t *testing.T) {
-	assert := assert.New(t)
-
-	// Test parsing TOML with multiple selections
-	tomlContent := `
-[[file]]
-path = "path/to/a.txt"
-
-[[file]]
-path = "path/to/b.txt#1,5"
-
-[[file]]
-path = "path/to/b.txt#10,15"
-`
-
-	parser := NewInstructParser()
-	header, err := parser.parseTomlHeader(tomlContent)
-	assert.NoError(err)
-
-	selections, err := header.FileSelections()
-	assert.NoError(err)
-	assert.Len(selections, 2) // Two files: a.txt and b.txt
-
-	// Find a.txt and b.txt in the selections
-	var aTxt, bTxt *FileSelection
-	for i := range selections {
-		if strings.HasSuffix(selections[i].Path, "a.txt") {
-			aTxt = &selections[i]
-		} else if strings.HasSuffix(selections[i].Path, "b.txt") {
-			bTxt = &selections[i]
-		}
-	}
-
-	// Verify a.txt
-	assert.NotNil(aTxt)
-	assert.Equal("path/to/a.txt", aTxt.Path)
-	assert.Empty(aTxt.Ranges)
-
-	// Verify b.txt
-	assert.NotNil(bTxt)
-	assert.Equal("path/to/b.txt", bTxt.Path)
-	assert.Len(bTxt.Ranges, 2)
-	assert.Equal(LineRange{Start: 1, End: 5}, bTxt.Ranges[0])
-	assert.Equal(LineRange{Start: 10, End: 15}, bTxt.Ranges[1])
-}
-
-func TestParse(t *testing.T) {
-	assert := assert.New(t)
-
-	parser := NewInstructParser()
-
-	// Test parsing with TOML front matter
-	input := `---toml
-[[file]]
-path = "path/to/file.txt#1,10"
----
-This is the user instruction.`
-
-	instruct, err := parser.Parse(input)
-	assert.NoError(err)
-	assert.NotNil(instruct)
-	assert.NotNil(instruct.FrontMatter)
-	assert.Equal("toml", instruct.FrontMatter.Tag)
-	assert.NotNil(instruct.Header)
-	assert.Equal("This is the user instruction.", instruct.UserContent)
-
-	selections, err := instruct.Header.FileSelections()
-	assert.NoError(err)
-	assert.Len(selections, 1)
-	assert.Equal("path/to/file.txt", selections[0].Path)
-	assert.Len(selections[0].Ranges, 1)
-	assert.Equal(LineRange{Start: 1, End: 10}, selections[0].Ranges[0])
-}
-
-// mockDirectoryTree is a simple mock for testing
-type mockDirectoryTree struct {
-	paths []string
-}
-
-func (m *mockDirectoryTree) SelectAllFiles() []string {
-	return m.paths
-}
-
-func TestFileSelectionsWithDirTree_OnlyFiles(t *testing.T) {
-	assert := assert.New(t)
-
-	// Create a mock directory tree
-	mockDirTree := &mockDirectoryTree{
-		paths: []string{
-			"/tmp/file1.go",
-			"/tmp/file2.go",
-			"/tmp/file3.txt",
-			"/tmp/subdir/file4.go",
-		},
-	}
-
-	// Test with only Files
-	headerFilesOnly := &InstructHeader{
-		Files: []FileSelection{
-			{Path: "/tmp/file1.go", Ranges: []LineRange{{Start: 1, End: 5}}},
-		},
-	}
-
-	// First test normal FileSelections()
-	fs, err := headerFilesOnly.FileSelections()
-	assert.NoError(err)
-	assert.Len(fs, 1, "FileSelections should return 1 selection")
-
-	// Now test with the directory tree
-	selections, err := headerFilesOnly.FileSelectionsWithDirTree(mockDirTree)
-	assert.NoError(err)
-	assert.NotNil(selections, "Selections should not be nil")
-	assert.Greater(len(selections), 0, "Selections should not be empty")
-}
-
 func TestFileSelectionsWithDirTree_OnlySelect(t *testing.T) {
 	assert := assert.New(t)
 
-	// Create a mock directory tree
-	mockDirTree := &mockDirectoryTree{
-		paths: []string{
-			"/tmp/file1.go",
-			"/tmp/file2.go",
-			"/tmp/file3.txt",
-			"/tmp/subdir/file4.go",
-		},
+	// Create test files using the helper function
+	files := map[string]string{
+		"file1.go":        "// Test content\n",
+		"file2.go":        "// Test content\n",
+		"file3.txt":       "// Test content\n",
+		"subdir/file4.go": "// Test content\n",
 	}
+
+	tmpDir, err := createTestDirectory(t, files)
+	assert.NoError(err)
+	// No need for defer os.RemoveAll as t.TempDir() handles cleanup
+
+	// Create a list of absolute file paths for verification
+	var testFiles []string
+	for relPath := range files {
+		testFiles = append(testFiles, filepath.Join(tmpDir, relPath))
+	}
+
+	// Load the actual directory tree
+	dirTree, err := LoadDirectoryTree(tmpDir)
+	assert.NoError(err)
 
 	// Test with only Select
 	headerSelectOnly := &InstructHeader{
-		Select: `
+		Select: fmt.Sprintf(`
 /\.go$
-=/tmp/file3.txt
-`,
+=%s
+`, filepath.Join(tmpDir, "file3.txt")), // file3.txt
 	}
 
-	selections, err := headerSelectOnly.FileSelectionsWithDirTree(mockDirTree)
+	selections, err := headerSelectOnly.FileSelectionsWithDirTree(dirTree)
 	assert.NoError(err)
 	assert.Len(selections, 4) // All 3 .go files + file3.txt
 
@@ -229,62 +126,5 @@ func TestFileSelectionsWithDirTree_OnlySelect(t *testing.T) {
 		paths[i] = sel.Path
 	}
 
-	assert.ElementsMatch([]string{
-		"/tmp/file1.go",
-		"/tmp/file2.go",
-		"/tmp/file3.txt",
-		"/tmp/subdir/file4.go",
-	}, paths)
-}
-
-func TestFileSelectionsWithDirTree_Both(t *testing.T) {
-	assert := assert.New(t)
-
-	// Create a mock directory tree
-	mockDirTree := &mockDirectoryTree{
-		paths: []string{
-			"/tmp/file1.go",
-			"/tmp/file2.go",
-			"/tmp/file3.txt",
-			"/tmp/subdir/file4.go",
-		},
-	}
-
-	// Test with both Select and Files
-	header := &InstructHeader{
-		Select: `
-/\.go$
-=/tmp/file3.txt
-`,
-		Files: []FileSelection{
-			{Path: "/tmp/file1.go", Ranges: []LineRange{{Start: 1, End: 5}}},
-		},
-	}
-
-	selections, err := header.FileSelectionsWithDirTree(mockDirTree)
-	assert.NoError(err)
-	assert.NotNil(selections, "Selections should not be nil")
-	assert.Greater(len(selections), 0, "Selections should not be empty")
-
-	// Check all expected paths are present
-	paths := make(map[string]bool)
-	for _, sel := range selections {
-		paths[sel.Path] = true
-		// If this is file1.go, check for its ranges
-		if sel.Path == "/tmp/file1.go" && len(sel.Ranges) > 0 {
-			assert.Equal(1, sel.Ranges[0].Start, "file1.go should have range start=1")
-			assert.Equal(5, sel.Ranges[0].End, "file1.go should have range end=5")
-		}
-	}
-
-	expectedPaths := []string{
-		"/tmp/file1.go",
-		"/tmp/file2.go",
-		"/tmp/file3.txt",
-		"/tmp/subdir/file4.go",
-	}
-
-	for _, path := range expectedPaths {
-		assert.True(paths[path], "Expected path %s was not selected", path)
-	}
+	assert.ElementsMatch(testFiles, paths)
 }

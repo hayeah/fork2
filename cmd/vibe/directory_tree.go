@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 
 	"github.com/hayeah/fork2/ignore"
 )
@@ -185,35 +184,4 @@ func (dt *DirectoryTree) SelectAllFiles() []string {
 		}
 	}
 	return filePaths
-}
-
-// SelectFilesByPattern returns file paths matching a pattern
-// If pattern is empty, returns all paths
-// If pattern starts with '/', treats it as a regex pattern
-// Otherwise uses fuzzy matching
-func (dt *DirectoryTree) SelectFilesByPattern(pattern string) ([]string, error) {
-	filePaths := dt.SelectAllFiles()
-	return selectSinglePattern(filePaths, pattern)
-}
-
-// SelectByPatterns applies multiple patterns in sequence to filter the directory tree files.
-// It starts with all files, then for each pattern in patterns, we either intersect
-// (for normal patterns) or exclude (for negative patterns) the matches.
-//
-// Negative patterns start with '!' (e.g. "!_test.go"), which means "filter out
-// anything matching _test.go". Otherwise we keep only the matches.
-func (dt *DirectoryTree) SelectByPatterns(patterns []string) ([]string, error) {
-	// Start from all non-directory files
-	allFiles := dt.SelectAllFiles()
-	return selectByPatterns(allFiles, patterns)
-}
-
-// SelectRegexFiles returns file paths matching a regex pattern
-func (dt *DirectoryTree) SelectRegexFiles(pattern string) ([]string, error) {
-	filePaths := dt.SelectAllFiles()
-	// Ensure the pattern starts with '/' for regex
-	if !strings.HasPrefix(pattern, "/") {
-		pattern = "/" + pattern
-	}
-	return selectSinglePattern(filePaths, pattern)
 }

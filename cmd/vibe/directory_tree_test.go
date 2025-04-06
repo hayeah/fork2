@@ -88,54 +88,6 @@ func TestDirectoryTree_SelectAllFiles(t *testing.T) {
 	assert.Contains(all, filepath.Join(tempDir, "subdir", "b.txt"))
 }
 
-func TestDirectoryTree_SelectFuzzyFiles(t *testing.T) {
-	assert := assert.New(t)
-
-	tempDir, err := createTestDirectory(t, map[string]string{
-		"dirA/alpha.go":  "// alpha",
-		"dirB/beta.md":   "beta doc",
-		"dirA/gamma.txt": "gamma data",
-	})
-	assert.NoError(err)
-
-	dt, err := LoadDirectoryTree(tempDir)
-	assert.NoError(err)
-
-	fuzzA, err := dt.SelectFilesByPattern("alp")
-	assert.NoError(err)
-	assert.Len(fuzzA, 1, "Should find only alpha.go with pattern 'alp'")
-	assert.Contains(fuzzA, filepath.Join(tempDir, "dirA", "alpha.go"))
-
-	fuzzAll, err := dt.SelectFilesByPattern(".")
-	assert.NoError(err)
-	assert.GreaterOrEqual(len(fuzzAll), 3, "Should find multiple files with '.'")
-}
-
-func TestDirectoryTree_SelectRegexFiles(t *testing.T) {
-	assert := assert.New(t)
-
-	tempDir, err := createTestDirectory(t, map[string]string{
-		"foo/file1_test.go": "// file1_test",
-		"foo/file2.py":      "# file2",
-		"foo/file3_test.go": "// file3_test",
-	})
-	assert.NoError(err)
-
-	dt, err := LoadDirectoryTree(tempDir)
-	assert.NoError(err)
-
-	testGoFiles, err := dt.SelectRegexFiles("_test.go$")
-	assert.NoError(err)
-	assert.Len(testGoFiles, 2, "Should find 2 files that end in _test.go")
-	assert.Contains(testGoFiles, filepath.Join(tempDir, "foo", "file1_test.go"))
-	assert.Contains(testGoFiles, filepath.Join(tempDir, "foo", "file3_test.go"))
-
-	pyFiles, err := dt.SelectRegexFiles(`\.py$`)
-	assert.NoError(err)
-	assert.Len(pyFiles, 1)
-	assert.Contains(pyFiles, filepath.Join(tempDir, "foo", "file2.py"))
-}
-
 func TestDirectoryTree_GenerateDirectoryTree(t *testing.T) {
 	assert := assert.New(t)
 
