@@ -167,52 +167,8 @@ func (r *AskRunner) Run() error {
 // filterFiles handles the file selection phase, either automatically or interactively
 // Returns either FileSelections (if using TOML front matter) or a list of file paths
 func (r *AskRunner) filterFiles() ([]string, []FileSelection, error) {
-	var selectedFiles []string
-	var err error
-
-	// If we have file selections from the parsed instruction, return them directly
-	if r.Instruct != nil {
-		fs, err := r.Instruct.Header.FileSelectionsWithDirTree(r.DirTree)
-		return nil, fs, err
-	}
-
-	// Process front matter if present
-	if r.Instruct != nil && r.Instruct.FrontMatter != nil && r.Instruct.FrontMatter.Tag != "toml" {
-		// Parse flags from front matter and merge with command args
-		// Note: This is kept for backward compatibility but could be deprecated
-		cmd, err := parseFlags([]byte(r.Instruct.FrontMatter.Content))
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to parse front matter flags: %w", err)
-		}
-		r.Args.Merge(cmd)
-	}
-
-	// Continue with regular file selection
-	if r.Args.All {
-		// Select all files
-		selectedFiles = r.DirTree.SelectAllFiles()
-	} else if len(r.Args.Select) > 0 {
-		// Stepwise narrowing using multiple patterns, with support for negative patterns
-		selectedFiles, err = r.DirTree.SelectByPatterns(r.Args.Select)
-		if err != nil {
-			return nil, nil, fmt.Errorf("error selecting files with patterns %v: %w", r.Args.Select, err)
-		}
-	}
-
-	// else {
-	// 	// Interactive selection
-	// 	selectedFiles, _, err = selectFilesInteractively(r.DirTree, r.TokenEstimator)
-	// 	if err != nil {
-	// 		return nil, nil, err
-	// 	}
-	// 	if selectedFiles == nil {
-	// 		return nil, nil, nil
-	// 	}
-	// }
-	if err != nil {
-		return nil, nil, err
-	}
-	return selectedFiles, nil, nil
+	fs, err := r.Instruct.Header.FileSelectionsWithDirTree(r.DirTree)
+	return nil, fs, err
 }
 
 // calculateTokenCount calculates the total token count for a list of file paths
