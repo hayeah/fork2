@@ -172,7 +172,7 @@ func (r *AskRunner) filterFiles() ([]string, []FileSelection, error) {
 
 	// If we have file selections from the parsed instruction, return them directly
 	if r.Instruct != nil {
-		fs, err := r.Instruct.Header.FileSelections()
+		fs, err := r.Instruct.Header.FileSelectionsWithDirTree(r.DirTree)
 		return nil, fs, err
 	}
 

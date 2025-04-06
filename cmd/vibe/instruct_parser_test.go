@@ -156,3 +156,135 @@ This is the user instruction.`
 	assert.Len(selections[0].Ranges, 1)
 	assert.Equal(LineRange{Start: 1, End: 10}, selections[0].Ranges[0])
 }
+
+// mockDirectoryTree is a simple mock for testing
+type mockDirectoryTree struct {
+	paths []string
+}
+
+func (m *mockDirectoryTree) SelectAllFiles() []string {
+	return m.paths
+}
+
+func TestFileSelectionsWithDirTree_OnlyFiles(t *testing.T) {
+	assert := assert.New(t)
+
+	// Create a mock directory tree
+	mockDirTree := &mockDirectoryTree{
+		paths: []string{
+			"/tmp/file1.go",
+			"/tmp/file2.go",
+			"/tmp/file3.txt",
+			"/tmp/subdir/file4.go",
+		},
+	}
+
+	// Test with only Files
+	headerFilesOnly := &InstructHeader{
+		Files: []FileSelection{
+			{Path: "/tmp/file1.go", Ranges: []LineRange{{Start: 1, End: 5}}},
+		},
+	}
+
+	// First test normal FileSelections()
+	fs, err := headerFilesOnly.FileSelections()
+	assert.NoError(err)
+	assert.Len(fs, 1, "FileSelections should return 1 selection")
+
+	// Now test with the directory tree
+	selections, err := headerFilesOnly.FileSelectionsWithDirTree(mockDirTree)
+	assert.NoError(err)
+	assert.NotNil(selections, "Selections should not be nil")
+	assert.Greater(len(selections), 0, "Selections should not be empty")
+}
+
+func TestFileSelectionsWithDirTree_OnlySelect(t *testing.T) {
+	assert := assert.New(t)
+
+	// Create a mock directory tree
+	mockDirTree := &mockDirectoryTree{
+		paths: []string{
+			"/tmp/file1.go",
+			"/tmp/file2.go",
+			"/tmp/file3.txt",
+			"/tmp/subdir/file4.go",
+		},
+	}
+
+	// Test with only Select
+	headerSelectOnly := &InstructHeader{
+		Select: `
+/\.go$
+=/tmp/file3.txt
+`,
+	}
+
+	selections, err := headerSelectOnly.FileSelectionsWithDirTree(mockDirTree)
+	assert.NoError(err)
+	assert.Len(selections, 4) // All 3 .go files + file3.txt
+
+	// Check that all expected paths are present
+	paths := make([]string, len(selections))
+	for i, sel := range selections {
+		paths[i] = sel.Path
+	}
+
+	assert.ElementsMatch([]string{
+		"/tmp/file1.go",
+		"/tmp/file2.go",
+		"/tmp/file3.txt",
+		"/tmp/subdir/file4.go",
+	}, paths)
+}
+
+func TestFileSelectionsWithDirTree_Both(t *testing.T) {
+	assert := assert.New(t)
+
+	// Create a mock directory tree
+	mockDirTree := &mockDirectoryTree{
+		paths: []string{
+			"/tmp/file1.go",
+			"/tmp/file2.go",
+			"/tmp/file3.txt",
+			"/tmp/subdir/file4.go",
+		},
+	}
+
+	// Test with both Select and Files
+	header := &InstructHeader{
+		Select: `
+/\.go$
+=/tmp/file3.txt
+`,
+		Files: []FileSelection{
+			{Path: "/tmp/file1.go", Ranges: []LineRange{{Start: 1, End: 5}}},
+		},
+	}
+
+	selections, err := header.FileSelectionsWithDirTree(mockDirTree)
+	assert.NoError(err)
+	assert.NotNil(selections, "Selections should not be nil")
+	assert.Greater(len(selections), 0, "Selections should not be empty")
+
+	// Check all expected paths are present
+	paths := make(map[string]bool)
+	for _, sel := range selections {
+		paths[sel.Path] = true
+		// If this is file1.go, check for its ranges
+		if sel.Path == "/tmp/file1.go" && len(sel.Ranges) > 0 {
+			assert.Equal(1, sel.Ranges[0].Start, "file1.go should have range start=1")
+			assert.Equal(5, sel.Ranges[0].End, "file1.go should have range end=5")
+		}
+	}
+
+	expectedPaths := []string{
+		"/tmp/file1.go",
+		"/tmp/file2.go",
+		"/tmp/file3.txt",
+		"/tmp/subdir/file4.go",
+	}
+
+	for _, path := range expectedPaths {
+		assert.True(paths[path], "Expected path %s was not selected", path)
+	}
+}

@@ -146,7 +146,8 @@ func (p *InstructParser) parseTomlHeader(content string) (*InstructHeader, error
 
 // InstructHeader represents the parsed TOML fields
 type InstructHeader struct {
-	Files []FileSelection `toml:"file"`
+	Select string          `toml:"select"`
+	Files  []FileSelection `toml:"file"`
 }
 
 // FileSelections extracts file selections from the header
@@ -188,4 +189,74 @@ func (h *InstructHeader) FileSelections() ([]FileSelection, error) {
 	}
 
 	return fileSelections, nil
+}
+
+// TreePathProvider is an interface for types that can provide file paths
+type TreePathProvider interface {
+	SelectAllFiles() []string
+}
+
+// FileSelectionsWithDirTree extracts file selections from the header and also processes
+// the Select string if present, using the provided directory tree to match paths
+func (h *InstructHeader) FileSelectionsWithDirTree(dirTree TreePathProvider) ([]FileSelection, error) {
+	// First, get all file selections from the Files field
+	fileSelections, err := h.FileSelections()
+	if err != nil {
+		return nil, err
+	}
+
+	// If Select string is empty, just return the file selections
+	if h.Select == "" {
+		return fileSelections, nil
+	}
+
+	// Parse the Select string into matchers
+	matchers, err := ParseMatchersFromString(h.Select)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse select string: %w", err)
+	}
+
+	// Get all file paths from the directory tree
+	allPaths := dirTree.SelectAllFiles()
+
+	// Apply each matcher and convert matched paths to FileSelections
+	selectionsMap := make(map[string]*FileSelection)
+
+	// First add existing file selections to the map
+	for i := range fileSelections {
+		// Create a proper copy to avoid slice reference issues
+		fs := fileSelections[i]
+		selectionsMap[fs.Path] = &fs
+	}
+
+	// Apply each matcher to get paths
+	for _, matcher := range matchers {
+		paths, err := matcher.Match(allPaths)
+		if err != nil {
+			return nil, fmt.Errorf("failed to match paths: %w", err)
+		}
+
+		// Convert each matched path to a FileSelection
+		for _, path := range paths {
+			// If a more specific selection already exists, preserve its ranges
+			if _, exists := selectionsMap[path]; exists {
+				// Keep the existing selection (with its ranges)
+				continue
+			}
+
+			// Create a new file selection for this path
+			selectionsMap[path] = &FileSelection{
+				Path:   path,
+				Ranges: nil, // Select all lines
+			}
+		}
+	}
+
+	// Convert map back to slice
+	result := make([]FileSelection, 0, len(selectionsMap))
+	for _, selection := range selectionsMap {
+		result = append(result, *selection)
+	}
+
+	return result, nil
 }
