@@ -1,6 +1,7 @@
 package merge
 
 import (
+	"fmt"
 	"strings"
 )
 
@@ -14,7 +15,7 @@ type SearchBlock struct {
 // It scans each line; if a line (trimmed) is "..." then it is used as the separator.
 // All lines before the separator are concatenated into Begin.
 // All lines after the separator are concatenated into End.
-func ParseSearchBlock(input string) SearchBlock {
+func ParseSearchBlock(input string) (SearchBlock, error) {
 	lines := strings.Split(input, "\n")
 	var beginLines []string
 	var endLines []string
@@ -30,10 +31,17 @@ func ParseSearchBlock(input string) SearchBlock {
 			endLines = append(endLines, line)
 		}
 	}
-	return SearchBlock{
+	sb := SearchBlock{
 		Begin: strings.Join(beginLines, "\n"),
 		End:   strings.Join(endLines, "\n"),
 	}
+
+	// If sb.End is not empty but sb.Begin is empty, that's invalid
+	if sb.End != "" && sb.Begin == "" {
+		return sb, fmt.Errorf("search block has End but no Begin")
+	}
+
+	return sb, nil
 }
 
 // MatchString finds the matched string in the given content based on Begin and End markers.

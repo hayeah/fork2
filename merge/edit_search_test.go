@@ -15,7 +15,7 @@ func (ctx *VibeContext) RepoDirectoryTree() string {
 }
 `
 
-	sb := ParseSearchBlock(input)
+	sb, _ := ParseSearchBlock(input)
 	expectedBegin := `// RepoDirectoryTree generates the directory tree structure as a string.
 // It memoizes the result so subsequent calls are fast.
 func (ctx *VibeContext) RepoDirectoryTree() string {`
@@ -29,7 +29,7 @@ func TestParseSearchBlockWithoutSeparator(t *testing.T) {
 line2
 line3
 `
-	sb := ParseSearchBlock(input)
+	sb, _ := ParseSearchBlock(input)
 	expectedBegin := `line1
 line2
 line3
@@ -41,7 +41,7 @@ line3
 
 func TestParseSearchBlockEmptyInput(t *testing.T) {
 	input := ""
-	sb := ParseSearchBlock(input)
+	sb, _ := ParseSearchBlock(input)
 	assert.Equal(t, "", sb.Begin)
 	assert.Equal(t, "", sb.End)
 }
@@ -115,7 +115,7 @@ func TestMatchStringFromParsedBlock(t *testing.T) {
 line4
 `
 
-	sb := ParseSearchBlock(searchTemplate)
+	sb, _ := ParseSearchBlock(searchTemplate)
 
 	content := `line0
 line1

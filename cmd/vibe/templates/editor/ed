@@ -79,18 +79,18 @@ $action change
 $search<HEREDOC
 // foo is a function
 function foo() {
-   console.log("hello foo");
+  console.log("hello foo");
 ...
-   return null;
+  return null;
 }
 HEREDOC
 
 :content<HEREDOC
 // bar is a function
 function bar() {
-   printf("hello bar");
-...
-   return null;
+	// this is a new implementation that replaces the search pattern
+  printf("hello bar");
+  return null;
 }
 HEREDOC
 ```

@@ -49,7 +49,14 @@ func (m *Modify) Verify() error {
 		return fmt.Errorf("failed to read file: %w", err)
 	}
 
-	if !strings.Contains(string(content), searchParam.Payload) {
+	sb, err := ParseSearchBlock(searchParam.Payload)
+	if err != nil {
+		return err
+	}
+
+	text := string(content)
+	matched := sb.MatchString(text)
+	if matched == "" {
 		return errors.New("search string not found in file")
 	}
 
@@ -62,8 +69,6 @@ func (m *Modify) Apply() error {
 	}
 
 	file := m.Payload
-	search := m.GetParam("search").Payload
-
 	replaceParam := m.GetParam("replace")
 	if replaceParam == nil {
 		return fmt.Errorf("replace parameter is required for modify command")
@@ -75,8 +80,12 @@ func (m *Modify) Apply() error {
 		return fmt.Errorf("failed to read file: %w", err)
 	}
 
-	newContent := strings.Replace(string(content), search, replace, 1)
-	if newContent == string(content) {
+	search := m.GetParam("search").Payload
+	sb, _ := ParseSearchBlock(search) // Verified above, so ignoring error here
+	text := string(content)
+
+	newContent := sb.Replace(text, replace)
+	if newContent == text {
 		return errors.New("no replacements were made")
 	}
 
