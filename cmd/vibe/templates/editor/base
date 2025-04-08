@@ -13,8 +13,6 @@
 - Can perform partial search/replace modifications.
 - Can delete existing files.
 
-Avoid placeholders like `...` or `// existing code here`. Provide complete lines or code.
-
 ## Format Guidelines
 
 1. **plan**: Begin with a `:plan` block to explain your approach.
