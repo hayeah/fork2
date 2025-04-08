@@ -40,6 +40,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/bmatcuk/doublestar/v4"
 	"github.com/sahilm/fuzzy"
 )
 
@@ -82,6 +83,34 @@ func (m FuzzyMatcher) Match(paths []string) ([]string, error) {
 	fuzzyMatches := fuzzy.Find(m.Pattern, paths)
 	for _, match := range fuzzyMatches {
 		matchesSet.Add(paths[match.Index])
+	}
+
+	return matchesSet.Values(), nil
+}
+
+// GlobMatcher uses standard glob patterns (including '**') to match file paths
+type GlobMatcher struct {
+	Pattern string
+}
+
+func NewGlobMatcher(pattern string) (GlobMatcher, error) {
+	if !doublestar.ValidatePattern(pattern) {
+		return GlobMatcher{}, fmt.Errorf("invalid glob pattern '%s'", pattern)
+	}
+	return GlobMatcher{Pattern: pattern}, nil
+}
+
+func (m GlobMatcher) Match(paths []string) ([]string, error) {
+	matchesSet := NewSet[string]()
+
+	for _, p := range paths {
+		match, err := doublestar.Match(m.Pattern, p)
+		if err != nil {
+			return nil, fmt.Errorf("invalid glob pattern '%s': %v", m.Pattern, err)
+		}
+		if match {
+			matchesSet.Add(p)
+		}
 	}
 
 	return matchesSet.Values(), nil
@@ -244,6 +273,11 @@ func ParseMatcher(pattern string) (Matcher, error) {
 		return matcher, nil
 	}
 
+	// Check if this is a glob pattern
+	if isGlobPattern(pattern) {
+		return NewGlobMatcher(pattern)
+	}
+
 	// Default to fuzzy matching
 	return FuzzyMatcher{
 		Pattern: pattern,
@@ -251,6 +285,12 @@ func ParseMatcher(pattern string) (Matcher, error) {
 }
 
 // selectSinglePattern selects file paths based on a pattern
+func isGlobPattern(pat string) bool {
+	// A simple check for wildcard chars used by globbing
+	// This includes '*', '?', or the '**' sequence
+	return strings.ContainsAny(pat, "*?") || strings.Contains(pat, "**")
+}
+
 func selectSinglePattern(paths []string, pattern string) ([]string, error) {
 	// Empty pattern selects all paths
 	if pattern == "" {

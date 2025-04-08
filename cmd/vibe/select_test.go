@@ -511,3 +511,55 @@ func TestCompoundPatterns(t *testing.T) {
 		}, results)
 	})
 }
+
+func TestGlobMatcher(t *testing.T) {
+	assert := assert.New(t)
+	paths := testPaths // reuse the testPaths from the global var
+
+	t.Run("SingleStar", func(t *testing.T) {
+		matcher := GlobMatcher{Pattern: "src/*.go"}
+		results, err := matcher.Match(paths)
+		assert.NoError(err)
+		assert.ElementsMatch([]string{"src/foo.go", "src/foo_test.go"}, results)
+	})
+
+	t.Run("DoubleStar", func(t *testing.T) {
+		matcher := GlobMatcher{Pattern: "**/*.md"}
+		results, err := matcher.Match(paths)
+		assert.NoError(err)
+		assert.ElementsMatch([]string{"docs/bar.md", "README.md"}, results)
+	})
+
+	t.Run("NoMatches", func(t *testing.T) {
+		matcher := GlobMatcher{Pattern: "*.py"}
+		results, err := matcher.Match(paths)
+		assert.NoError(err)
+		assert.Empty(results)
+	})
+
+	t.Run("InvalidPattern", func(t *testing.T) {
+		matcher := GlobMatcher{Pattern: "["}
+		results, err := matcher.Match(paths)
+		assert.Error(err)
+		assert.Contains(err.Error(), "invalid glob pattern")
+		assert.Nil(results)
+	})
+
+	t.Run("RecursivePattern", func(t *testing.T) {
+		paths2 := []string{
+			"foo/bar/test1_test.go",
+			"foo/test2_test.go",
+			"bar/baz/test3_test.go",
+			"bar/doc.md",
+		}
+		matcher, err := NewGlobMatcher("**/*_test.go")
+		assert.NoError(err)
+		results, err := matcher.Match(paths2)
+		assert.NoError(err)
+		assert.ElementsMatch([]string{
+			"foo/bar/test1_test.go",
+			"foo/test2_test.go",
+			"bar/baz/test3_test.go",
+		}, results)
+	})
+}
