@@ -66,7 +66,12 @@ Below is a simple vibe flow:
    Grab its text from the AI’s output into your clipboard.
 
 6. **Run `vibe merge --paste`**
-   This reads your clipboard for changes. If the tool recognizes valid changes, it applies them to your local repo. If there are unknown commands or verification errors, vibe shows them so you can inspect or fix them.
+   This reads your clipboard for changes and parses them using vibe’s heredoc parser. The tool verifies that each command is valid and that its target exists and matches. If everything checks out, the changes are automatically applied to the relevant files.
+
+   - Unknown commands are printed and skipped.
+   - Verification errors (e.g. mismatched search blocks) are reported and prevent changes from being applied.
+   - Git commit instructions can be skipped via `--skip-commit`.
+   - Use `--dry` for verification without applying changes.
 
 7. **Review, Diff, and Test**
    Look at your Git diff, run tests, keep or revert changes. If needed, refine your prompt file or proceed to your next steps.

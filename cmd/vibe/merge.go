@@ -13,8 +13,9 @@ import (
 
 // MergeCmd contains the arguments for the 'merge' subcommand
 type MergeCmd struct {
-	Paste bool `arg:"--paste" help:"Read input from clipboard"`
-	Dry   bool `arg:"--dry" help:"Dry run (verification only)"`
+	Paste        bool `arg:"--paste" help:"Read input from clipboard"`
+	Dry          bool `arg:"--dry" help:"Dry run (verification only)"`
+	SkipCommit   bool `arg:"--skip-commit" help:"Skip git commit actions"`
 }
 
 // MergeRunner encapsulates the state and behavior for the merge command
@@ -118,6 +119,16 @@ func (r *MergeRunner) verify(commands heredoc.Commands) ([]merge.Action, error) 
 			// Log error for unknown command but continue
 			unknownCommands = append(unknownCommands, fmt.Sprintf("line %d: %s - %s", cmd.LineNo, cmd.Name, err.Error()))
 			continue
+		}
+
+		// Skip git commit actions if --skip-commit flag is set
+		if r.Args.SkipCommit {
+			if execAction, ok := action.(*merge.Exec); ok {
+				if strings.HasPrefix(execAction.Payload, "git commit") {
+					fmt.Printf("[SKIP] %d %s %s (due to --skip-commit)\n", cmd.LineNo, cmd.Name, action.Description())
+					continue
+				}
+			}
 		}
 
 		// Verify the action
