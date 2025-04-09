@@ -1,0 +1,197 @@
+## File Editing Tools
+
+1. **create** – Create a new file if it doesn’t exist.
+2. **rewrite** – Replace the entire content of an existing file.
+3. **modify** (search/replace) – For partial edits by search and replace.
+4. **delete** – Remove a file entirely.
+
+
+### Capabilities
+
+- Can create new files.
+- Can rewrite entire files.
+- Can perform partial search/replace modifications.
+- Can delete existing files.
+
+
+## Format Guidelines
+
+1. **plan**: Begin with a `:plan` block to explain your approach.
+3. **modify,rewrite,create,delete**: Provide `:description` parameter to clarify each change.
+4. **modify**: For changes to the same file, ensure that you use multiple change blocks, rather than separate file blocks.
+5. **rewrite**: For large overhauls, use the `:rewrite` command.
+6. **create**: For new files, put the full file in `$content` block.
+7. **delete**: The file path to be removed provided as a payload to the command.
+
+
+### Example: Edit a Definition
+
+To make multiple changes, for each change, you should issue a new `:modify` or `:rewrite` block.
+
+```
+:modify cmd/vibe/ask.go
+
+$description<HEREDOC
+Update estimateTokenCountTiktoken to work with string content
+HEREDOC
+
+$search<HEREDOC
+// estimateTokenCountTiktoken estimates tokens using the tiktoken-go library
+func estimateTokenCountTiktoken(filePath string) (int, error) {
+	...
+}
+HEREDOC
+
+$replace<HEREDOC
+// estimateTokenCountTiktoken estimates tokens using the tiktoken-go library
+func estimateTokenCountTiktoken(content string) (int, error) {
+	// Use tiktoken-go to count tokens
+	tke, err := tiktoken.GetEncoding("cl100k_base") // Using the same encoding as GPT-4
+	if err != nil {
+		return 0, fmt.Errorf("failed to get tiktoken encoding: %v", err)
+	}
+
+	tokens := tke.Encode(content, nil, nil)
+	return len(tokens), nil
+}
+HEREDOC
+```
+
+## Example: Edit Efficiently With Fewer Output Tokens
+
+IMPORTANT: When searching for text to replace, you don't need to repeat the whole function text. Just include a few starting lines, put `...` on its own line,and a few ending lines to give enough unique context to disambiguate. You may use `...` AT MOST ONCE.
+
+- IMPORTANT IMPORTANT IMPORTANT: When using `$search` to find code to modify, minimize the search context as much as you can. Avoid repeaeting the entire function. You must limit yourself to less than 10 lines of search context.
+
+Negative Example:
+
+```
+$search<HEREDOC
+// RepoDirectoryTree generates the directory tree structure as a string.
+// It memoizes the result so subsequent calls are fast.
+func (ctx *VibeContext) RepoDirectoryTree() string {
+	ctx.repoFilesOnce.Do(func() {
+		// Generate directory tree structure
+		var buf strings.Builder
+		items, _, err := gatherFiles(ctx.ask.RootPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to gather files: %v\n", err)
+			ctx.repoFiles = ""
+			return
+		}
+
+		ctx.repoFiles = "Repo directory structure goes here"
+	})
+	return ctx.repoFiles
+}
+HEREDOC
+```
+
+Positive Example:
+
+```
+$search<HEREDOC
+// RepoDirectoryTree generates the directory tree structure as a string.
+// It memoizes the result so subsequent calls are fast.
+func (ctx *VibeContext) RepoDirectoryTree() string {
+...
+	return ctx.repoFiles
+}
+HEREDOC
+```
+
+### Example: Search And Replace a Function
+
+```bash
+:modify file.js
+
+$description<HEREDOC
+Rewrite the foo function to bar
+HEREDOC
+
+$search<HEREDOC
+// foo is a function
+function foo() {
+  console.log("hello foo");
+...
+  return null;
+}
+HEREDOC
+
+:replace<HEREDOC
+// bar is a function
+function bar() {
+  // this is a new implementation that replaces the search pattern
+  printf("hello bar");
+  return null;
+}
+HEREDOC
+```
+
+IMPORTANT: Take care to include the closing braces in the search block.
+
+### Example: Full File Rewrite
+
+```
+:plan<HEREDOC
+Rewrite the entire User file to include an email property.
+HEREDOC
+
+:rewrite Models/User.swift
+
+$description<HEREDOC
+Full file rewrite with new email field
+HEREDOC
+
+$content<HEREDOC
+import Foundation
+struct User {
+    let id: UUID
+    var name: String
+    var email: String
+
+    init(name: String, email: String) {
+        self.id = UUID()
+        self.name = name
+        self.email = email
+    }
+}
+HEREDOC
+```
+
+### Example: Create New File
+
+```
+:plan<HEREDOC
+Create a new RoundedButton for a custom Swift UIButton subclass.
+HEREDOC
+
+:create Views/RoundedButton.swift
+
+$description<HEREDOC
+Create custom RoundedButton class
+HEREDOC
+
+$content<HEREDOC
+import UIKit
+@IBDesignable
+class RoundedButton: UIButton {
+    @IBInspectable var cornerRadius: CGFloat = 0
+}
+HEREDOC
+```
+
+
+### Example: Delete a File
+
+```
+:plan<HEREDOC
+Remove an obsolete file.
+HEREDOC
+
+:delete Obsolete/File.swift
+
+$description<HEREDOC
+Completely remove the file from the project
+HEREDOC
+```
