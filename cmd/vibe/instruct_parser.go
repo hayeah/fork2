@@ -71,7 +71,7 @@ func (p *InstructParser) parseFrontMatter(data string) (string, string, string, 
 		return "", "", data, nil
 	}
 
-	// Check if the first line begins with "---" or "+++"
+	// Check if the first line begins with "---", "+++", or "```"
 	firstLine := string(lines[0])
 	var delimiter, tag string
 
@@ -82,6 +82,9 @@ func (p *InstructParser) parseFrontMatter(data string) (string, string, string, 
 	case strings.HasPrefix(firstLine, "+++"):
 		delimiter = "+++"
 		tag = strings.TrimPrefix(firstLine, "+++")
+	case strings.HasPrefix(firstLine, "```"):
+		delimiter = "```"
+		tag = strings.TrimPrefix(firstLine, "```")
 	default:
 		// Not front matter at all; just return everything as remainder
 		return "", "", string(data), nil

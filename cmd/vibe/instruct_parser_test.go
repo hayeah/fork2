@@ -25,13 +25,21 @@ User instruction here.`
 	assert.Equal("[[file]]\npath = \"path/to/file.txt\"", frontMatter)
 	assert.Equal("User instruction here.", remainder)
 
-	// Test alternative delimiter
-	// Test TOML front matter
+	// Test alternative delimiter (plus signs)
 	content = `+++toml
 [[file]]
 path = "path/to/file.txt"
 +++
 User instruction here.`
+
+	tag, frontMatter, remainder, err = parser.parseFrontMatter(content)
+	assert.NoError(err)
+	assert.Equal("toml", tag)
+	assert.Equal("[[file]]\npath = \"path/to/file.txt\"", frontMatter)
+	assert.Equal("User instruction here.", remainder)
+
+	// Test backtick delimiter
+	content = "```toml\n[[file]]\npath = \"path/to/file.txt\"\n```\nUser instruction here."
 
 	tag, frontMatter, remainder, err = parser.parseFrontMatter(content)
 	assert.NoError(err)
