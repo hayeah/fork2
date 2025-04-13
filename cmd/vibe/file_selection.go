@@ -83,9 +83,9 @@ func (fs *FileSelection) ReadString() (string, error) {
 	var result strings.Builder
 	for _, content := range contents {
 		if content.Range == nil {
-			fmt.Fprintf(&result, "--- %s ---\n", content.Path)
+			fmt.Fprintf(&result, "\n<!-- Read File: %s -->\n", content.Path)
 		} else {
-			fmt.Fprintf(&result, "--- %s#%d,%d ---\n", content.Path, content.Range.Start, content.Range.End)
+			fmt.Fprintf(&result, "\n<!-- Read File: %s#%d,%d -->\n", content.Path, content.Range.Start, content.Range.End)
 		}
 
 		result.WriteString(content.Content)
