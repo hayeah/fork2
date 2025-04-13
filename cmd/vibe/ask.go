@@ -11,17 +11,18 @@ import (
 	"strings"
 
 	"github.com/atotto/clipboard"
+	"github.com/hayeah/fork2/render"
 	"github.com/pkoukk/tiktoken-go"
 )
 
 // AskCmd contains the arguments for the 'ask' subcommand
 type AskCmd struct {
-	TokenEstimator string   `arg:"--token-estimator" help:"Token count estimator to use: 'simple' (size/4) or 'tiktoken'" default:"simple"`
-	All            bool     `arg:"-a,--all" help:"Select all files and output immediately"`
-	Copy           bool     `arg:"-c,--copy" help:"Copy output to clipboard instead of stdout"`
-	Role           string   `arg:"--role" help:"Role/layout to use for output"`
-	Select         []string `arg:"--select,separate" help:"Select files matching pattern and output immediately (can be specified multiple times). Use fuzzy match by default or regex pattern with a '/' prefix"`
-	Instruction    string   `arg:"positional" help:"User instruction or path to instruction file"`
+	TokenEstimator string `arg:"--token-estimator" help:"Token count estimator to use: 'simple' (size/4) or 'tiktoken'" default:"simple"`
+	All            bool   `arg:"-a,--all" help:"Select all files and output immediately"`
+	Copy           bool   `arg:"-c,--copy" help:"Copy output to clipboard instead of stdout"`
+	Role           string `arg:"--role" help:"Role/layout to use for output"`
+	Select         string `arg:"--select" help:"Select files matching patterns"`
+	Instruction    string `arg:"positional" help:"User instruction or path to instruction file"`
 }
 
 // Merge merges src fields into the current AskCmd instance, with the current instance
@@ -98,12 +99,16 @@ func NewAskRunner(cmdArgs AskCmd, rootPath string) (*AskRunner, error) {
 		TokenEstimator: tokenEstimator,
 	}
 
-	parser := NewInstructParser()
-	instruct, err := parser.Parse(cmdArgs.Instruction)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse instruction: %v", err)
+	if cmdArgs.Instruction != "" {
+		parser := NewInstructParser()
+		instruct, err := parser.Parse(cmdArgs.Instruction)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse instruction: %v", err)
+		}
+		r.Instruct = instruct
+	} else {
+		r.Instruct = nil
 	}
-	r.Instruct = instruct
 
 	return r, nil
 }
@@ -117,7 +122,12 @@ func (r *AskRunner) Run() error {
 		return fmt.Errorf("failed to load directory tree: %v", err)
 	}
 
-	fileSelections, err := r.Instruct.Header.FileSelectionsWithDirTree(r.DirTree)
+	selectString := r.Args.Select
+	if selectString == "" {
+		selectString = r.Instruct.Header.Select
+	}
+
+	fileSelections, err := selectFiles(selectString, r.DirTree)
 	if err != nil {
 		return err
 	}
@@ -175,13 +185,22 @@ func (r *AskRunner) handleOutput(selectedFiles []FileSelection) error {
 		out = &buf
 	}
 
-	role := r.Args.Role
-	if role == "" {
-		role = "coder"
-	}
-	wrappedRole := "<" + role + ">"
+	renderArgs := render.RenderArgs{}
 
-	err = vibeCtx.WriteFileSelections(out, r.Instruct.UserContent, wrappedRole, selectedFiles)
+	if r.Instruct == nil || r.Instruct.UserContent == "" {
+		// If no instruction, render with default args, WriteFileSelections will handle the layout.
+		renderArgs.ContentPath = "<no-instruct>"
+	} else {
+		role := r.Args.Role
+		if role == "" {
+			role = "coder" // Default role
+		}
+		renderArgs.LayoutPath = "<" + role + ">"
+		renderArgs.Content = r.Instruct.UserContent
+	}
+
+	// Pass the prepared renderArgs to WriteFileSelections
+	err = vibeCtx.WriteFileSelections(out, renderArgs, selectedFiles)
 	if err != nil {
 		return err
 	}

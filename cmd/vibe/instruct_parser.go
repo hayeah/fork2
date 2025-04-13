@@ -156,13 +156,17 @@ type InstructHeader struct {
 // FileSelectionsWithDirTree extracts file selections from the header and also processes
 // the Select string if present, using the provided directory tree to match paths
 func (h *InstructHeader) FileSelectionsWithDirTree(dirTree *DirectoryTree) ([]FileSelection, error) {
+	return selectFiles(h.Select, dirTree)
+}
+
+func selectFiles(selectString string, dirTree *DirectoryTree) ([]FileSelection, error) {
 	// Map to store FileSelections by path for easy lookup
 	selectionsMap := make(map[string]*FileSelection)
 
 	// Process Select string if present
-	if h.Select != "" {
+	if selectString != "" {
 		// Parse select string into matchers
-		matchers, err := ParseMatchersFromString(h.Select)
+		matchers, err := ParseMatchersFromString(selectString)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse select string: %w", err)
 		}
@@ -210,29 +214,6 @@ func (h *InstructHeader) FileSelectionsWithDirTree(dirTree *DirectoryTree) ([]Fi
 			}
 		}
 	}
-
-	// Process each file selection from the Files field
-	// for _, select_ := range h.Files {
-	// 	fileSelection, err := ParseFileSelection(select_.Path)
-	// 	if err != nil {
-	// 		return nil, err
-	// 	}
-
-	// 	// Check if we already have a selection for this file
-	// 	if existing, ok := selectionsMap[fileSelection.Path]; ok {
-	// 		// if either range is nil, consider it a full file selection
-	// 		if fileSelection.Ranges == nil || existing.Ranges == nil {
-	// 			// set it to nil to mean selecting the whole file
-	// 			existing.Ranges = nil
-	// 		} else {
-	// 			// collect the ranges
-	// 			existing.Ranges = append(existing.Ranges, fileSelection.Ranges...)
-	// 		}
-	// 	} else {
-	// 		// Create new entry
-	// 		selectionsMap[fileSelection.Path] = &fileSelection
-	// 	}
-	// }
 
 	// Convert map to slice
 	var fileSelections []FileSelection
