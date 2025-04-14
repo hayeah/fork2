@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"sort"
 	"testing"
 
@@ -146,6 +147,62 @@ func TestExactPathMatcher(t *testing.T) {
 		results, err := matcher.Match(testPaths)
 		assert.NoError(err)
 		assert.Equal([]string{"src/foo.go"}, results, "Line range should not affect path matching")
+	})
+
+	// Create a temporary directory for testing directory matching
+	t.Run("DirectoryMatch", func(t *testing.T) {
+		// Skip this test if running in an environment where we can't create directories
+		tmpDir, err := os.MkdirTemp("", "vibe-test-*")
+		if err != nil {
+			t.Skip("Unable to create temporary directory for testing")
+		}
+		defer os.RemoveAll(tmpDir)
+
+		// Create a few test files in the temporary directory
+		testFiles := []string{
+			tmpDir + "/file1.txt",
+			tmpDir + "/file2.go",
+			tmpDir + "/subdir/file3.md",
+		}
+
+		// Create the parent directories if they don't exist
+		os.MkdirAll(tmpDir+"/subdir", 0755)
+
+		// Create the test files
+		for _, file := range testFiles {
+			f, err := os.Create(file)
+			assert.NoError(err)
+			f.Close()
+		}
+
+		// Add some non-matching paths
+		allPaths := append(testFiles, "other/path/file.txt", "/absolute/path/file.go")
+
+		// Test matching with the directory path
+		matcher := ExactPathMatcher{FileSelection{Path: tmpDir}}
+		results, err := matcher.Match(allPaths)
+		assert.NoError(err)
+		assert.ElementsMatch(testFiles, results, "Should match all files in the directory")
+
+		// Test with trailing slash
+		matcher = ExactPathMatcher{FileSelection{Path: tmpDir + "/"}}
+		results, err = matcher.Match(allPaths)
+		assert.NoError(err)
+		assert.ElementsMatch(testFiles, results, "Should match all files in the directory with trailing slash")
+
+		// Test with subdirectory
+		matcher = ExactPathMatcher{FileSelection{Path: tmpDir + "/subdir"}}
+		results, err = matcher.Match(allPaths)
+		assert.NoError(err)
+		assert.ElementsMatch([]string{tmpDir + "/subdir/file3.md"}, results, "Should match files in subdirectory")
+	})
+
+	// Test with a non-existent directory
+	t.Run("NonExistentDirectory", func(t *testing.T) {
+		matcher := ExactPathMatcher{FileSelection{Path: "/path/to/nonexistent/dir"}}
+		results, err := matcher.Match(testPaths)
+		assert.NoError(err)
+		assert.Empty(results, "Non-existent directory should return empty results")
 	})
 }
 

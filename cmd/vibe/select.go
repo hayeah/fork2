@@ -37,6 +37,7 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"os"
 	"regexp"
 	"strings"
 
@@ -50,13 +51,35 @@ type Matcher interface {
 	Match(paths []string) ([]string, error)
 }
 
-// ExactPathMatcher matches exact file paths
+// ExactPathMatcher matches exact file paths or directories
 type ExactPathMatcher struct {
 	FileSelection
 }
 
 // Match implements the Matcher interface for ExactPathMatcher
 func (m ExactPathMatcher) Match(paths []string) ([]string, error) {
+	// Check if the path exists and is a directory
+	fileInfo, err := os.Stat(m.Path)
+	if err == nil && fileInfo.IsDir() {
+		// If it's a directory, select all files within that directory
+		matchesSet := NewSet[string]()
+		pathPrefix := m.Path
+		// Ensure the path ends with a separator
+		if !strings.HasSuffix(pathPrefix, string(os.PathSeparator)) {
+			pathPrefix += string(os.PathSeparator)
+		}
+
+		// Find all paths that start with the directory path
+		for _, path := range paths {
+			if strings.HasPrefix(path, pathPrefix) {
+				matchesSet.Add(path)
+			}
+		}
+
+		return matchesSet.Values(), nil
+	}
+
+	// Otherwise, match exact file path as before
 	for _, path := range paths {
 		if path == m.Path {
 			return []string{path}, nil
