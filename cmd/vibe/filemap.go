@@ -59,11 +59,6 @@ func WriteFileMap(w io.Writer, selections []FileSelection, baseDir string) error
 			return fmt.Errorf("failed to read selected content from %s: %w", selection.Path, err)
 		}
 
-		// Check if content is binary
-		if IsBinaryFile([]byte(content)) {
-			continue // Skip binary files
-		}
-
 		// Write file content
 		fmt.Fprint(w, content)
 	}

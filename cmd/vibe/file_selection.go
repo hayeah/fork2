@@ -116,9 +116,18 @@ func (fs *FileSelection) extractContents(sortedRanges []LineRange) ([]FileSelect
 	}
 	defer file.Close()
 
+	content, err := io.ReadAll(file)
+
+	if IsBinaryFile([]byte(content)) {
+		return []FileSelectionContent{{
+			Path:    fs.Path,
+			Content: string("[binary file omitted]"),
+			Range:   nil,
+		}}, nil
+	}
+
 	// If no ranges specified, return the entire file content
 	if len(sortedRanges) == 0 {
-		content, err := io.ReadAll(file)
 		if err != nil {
 			return nil, fmt.Errorf("failed to read file %s: %w", fs.Path, err)
 		}
