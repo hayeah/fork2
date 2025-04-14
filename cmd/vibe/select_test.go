@@ -512,6 +512,155 @@ func TestCompoundPatterns(t *testing.T) {
 	})
 }
 
+// TestUnionMatcher tests the UnionMatcher implementation
+func TestUnionMatcher(t *testing.T) {
+	assert := assert.New(t)
+
+	// Test paths for union pattern tests
+	testPaths := []string{
+		"src/foo.go",
+		"src/bar.go",
+		"src/baz_test.go",
+		"internal/qux.go",
+		"internal/qux_test.go",
+		"docs/README.md",
+	}
+
+	t.Run("BasicUnion", func(t *testing.T) {
+		// Create two matchers
+		fuzzyMatcher1 := FuzzyMatcher{Pattern: "foo"}
+		fuzzyMatcher2 := FuzzyMatcher{Pattern: "qux"}
+
+		// Combine them in a union matcher (logical OR)
+		unionMatcher := UnionMatcher{
+			Matchers: []Matcher{fuzzyMatcher1, fuzzyMatcher2},
+		}
+
+		results, err := unionMatcher.Match(testPaths)
+		assert.NoError(err)
+		assert.ElementsMatch(
+			[]string{"src/foo.go", "internal/qux.go", "internal/qux_test.go"},
+			results,
+			"Union matcher should match paths that match any of the matchers",
+		)
+	})
+
+	t.Run("UnionWithNegation", func(t *testing.T) {
+		// Create a fuzzy matcher
+		fuzzyMatcher := FuzzyMatcher{Pattern: "src"}
+
+		// Create a negation matcher
+		testFileMatcher, err := NewRegexMatcher("_test\\.go$")
+		assert.NoError(err)
+		negationMatcher := NegationMatcher{Wrapped: testFileMatcher}
+
+		// Combine them in a union matcher
+		unionMatcher := UnionMatcher{
+			Matchers: []Matcher{fuzzyMatcher, negationMatcher},
+		}
+
+		results, err := unionMatcher.Match(testPaths)
+		assert.NoError(err)
+		assert.ElementsMatch(
+			[]string{"src/foo.go", "src/bar.go", "src/baz_test.go", "internal/qux.go", "docs/README.md"},
+			results,
+			"Union matcher should match paths that match any of the matchers",
+		)
+	})
+
+	t.Run("EmptyUnion", func(t *testing.T) {
+		// Empty union matcher should return empty results
+		unionMatcher := UnionMatcher{Matchers: []Matcher{}}
+		results, err := unionMatcher.Match(testPaths)
+		assert.NoError(err)
+		assert.Empty(results, "Empty union matcher should return empty results")
+	})
+}
+
+// TestUnionPatterns tests union patterns with the ; operator
+func TestUnionPatterns(t *testing.T) {
+	assert := assert.New(t)
+
+	// Test paths for union pattern tests
+	testPaths := []string{
+		"src/foo.go",
+		"src/bar.go",
+		"src/baz_test.go",
+		"internal/qux.go",
+		"internal/qux_test.go",
+		"docs/README.md",
+	}
+
+	t.Run("BasicUnionPattern", func(t *testing.T) {
+		// "foo;qux" should match paths containing "foo" OR "qux"
+		results, err := selectSinglePattern(testPaths, "foo;qux")
+		assert.NoError(err)
+		assert.ElementsMatch(
+			[]string{"src/foo.go", "internal/qux.go", "internal/qux_test.go"},
+			results,
+		)
+	})
+
+	t.Run("UnionWithWhitespace", func(t *testing.T) {
+		// " foo ; qux " should match paths containing "foo" OR "qux"
+		// with whitespace being stripped
+		results, err := selectSinglePattern(testPaths, " foo ; qux ")
+		assert.NoError(err)
+		assert.ElementsMatch(
+			[]string{"src/foo.go", "internal/qux.go", "internal/qux_test.go"},
+			results,
+		)
+	})
+
+	t.Run("UnionWithEmptyParts", func(t *testing.T) {
+		// "foo;;qux" should match paths containing "foo" OR "qux"
+		// with empty parts being skipped
+		results, err := selectSinglePattern(testPaths, "foo;;qux")
+		assert.NoError(err)
+		assert.ElementsMatch(
+			[]string{"src/foo.go", "internal/qux.go", "internal/qux_test.go"},
+			results,
+		)
+	})
+
+	t.Run("UnionWithDifferentMatcherTypes", func(t *testing.T) {
+		// "foo;/_test\\.go$/" should match paths containing "foo" OR ending with "_test.go"
+		results, err := selectSinglePattern(testPaths, "foo;/_test\\.go$")
+		assert.NoError(err)
+		assert.ElementsMatch(
+			[]string{"src/foo.go", "src/baz_test.go", "internal/qux_test.go"},
+			results,
+		)
+	})
+
+	t.Run("UnionWithCompound", func(t *testing.T) {
+		// "foo;src|bar" should match paths containing "foo" OR (paths containing both "src" AND "bar")
+		results, err := selectSinglePattern(testPaths, "foo;src|bar")
+		assert.NoError(err)
+		assert.ElementsMatch(
+			[]string{"src/foo.go", "src/bar.go"},
+			results,
+		)
+	})
+
+	t.Run("UnionWithNegation", func(t *testing.T) {
+		// "foo;!test" should match paths containing "foo" OR paths NOT containing "test"
+		results, err := selectSinglePattern(testPaths, "foo;!test")
+		assert.NoError(err)
+		assert.ElementsMatch(
+			[]string{"src/foo.go", "src/bar.go", "internal/qux.go", "docs/README.md"},
+			results,
+		)
+	})
+
+	t.Run("InvalidUnionPattern", func(t *testing.T) {
+		// ";;;" should return an error as it contains no valid patterns
+		_, err := selectSinglePattern(testPaths, ";;;")
+		assert.Error(err)
+		assert.Contains(err.Error(), "union pattern contains no valid patterns")
+	})
+}
+
 func TestGlobMatcher(t *testing.T) {
 	assert := assert.New(t)
 	paths := testPaths // reuse the testPaths from the global var

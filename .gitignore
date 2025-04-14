@@ -2,3 +2,4 @@ cfg.toml
 *.sqlite3
 tmp
 fork2
+.aider*

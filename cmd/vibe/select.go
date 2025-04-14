@@ -201,6 +201,26 @@ func (m CompoundMatcher) Match(paths []string) ([]string, error) {
 	return currentPaths, nil
 }
 
+// UnionMatcher applies multiple matchers and combines their results (logical OR)
+type UnionMatcher struct {
+	Matchers []Matcher
+}
+
+// Match implements the Matcher interface for UnionMatcher
+func (m UnionMatcher) Match(paths []string) ([]string, error) {
+	resultSet := NewSet[string]()
+
+	for _, matcher := range m.Matchers {
+		matches, err := matcher.Match(paths)
+		if err != nil {
+			return nil, err
+		}
+		resultSet.AddValues(matches)
+	}
+
+	return resultSet.Values(), nil
+}
+
 // ParseMatcher parses a single pattern string into a Matcher
 func ParseMatcher(pattern string) (Matcher, error) {
 	pattern = strings.TrimSpace(pattern)
@@ -211,6 +231,38 @@ func ParseMatcher(pattern string) (Matcher, error) {
 
 	// Strip "./" prefix if present
 	pattern = strings.TrimPrefix(pattern, "./")
+
+	// Check if this is a union pattern with ';' operator (logical OR, highest precedence)
+	if strings.Contains(pattern, ";") {
+		// Split by ';' and trim whitespace from each part
+		parts := strings.Split(pattern, ";")
+		subMatchers := make([]Matcher, 0, len(parts))
+
+		for _, part := range parts {
+			// Trim whitespace from each part
+			part = strings.TrimSpace(part)
+			if part == "" {
+				continue // Skip empty parts
+			}
+			matcher, err := ParseMatcher(part)
+			if err != nil {
+				return nil, fmt.Errorf("in union pattern part '%s': %v", part, err)
+			}
+			subMatchers = append(subMatchers, matcher)
+		}
+
+		// If no valid matchers were created, return an error
+		if len(subMatchers) == 0 {
+			return nil, fmt.Errorf("union pattern contains no valid patterns")
+		}
+
+		// If only one matcher, return it directly without wrapping
+		if len(subMatchers) == 1 {
+			return subMatchers[0], nil
+		}
+
+		return UnionMatcher{Matchers: subMatchers}, nil
+	}
 
 	// Check if this is an exact path matcher
 	if strings.HasPrefix(pattern, "=") {
