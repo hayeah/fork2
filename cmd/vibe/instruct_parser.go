@@ -160,8 +160,8 @@ func (h *InstructHeader) FileSelectionsWithDirTree(dirTree *DirectoryTree) ([]Fi
 }
 
 func selectFiles(selectString string, dirTree *DirectoryTree) ([]FileSelection, error) {
-	// Map to store FileSelections by path for easy lookup
-	selectionsMap := make(map[string]*FileSelection)
+	// Create a new FileSelectionSet to store and coalesce selections
+	set := NewFileSelectionSet()
 
 	// Process Select string if present
 	if selectString != "" {
@@ -185,45 +185,33 @@ func selectFiles(selectString string, dirTree *DirectoryTree) ([]FileSelection, 
 			for _, path := range matches {
 				// For ExactPathMatcher, we need to preserve any line ranges
 				if exactMatcher, ok := matcher.(ExactPathMatcher); ok {
-					// Check if we already have a selection for this file
-					if existing, ok := selectionsMap[exactMatcher.Path]; ok {
-						// If either range is nil, consider it a full file selection
-						if exactMatcher.Ranges == nil || existing.Ranges == nil {
-							// set it to nil to mean selecting the whole file
-							existing.Ranges = nil
-						} else {
-							// collect the ranges
-							existing.Ranges = append(existing.Ranges, exactMatcher.Ranges...)
-						}
-					} else {
-						// Create new entry with the same ranges as the matcher
-						selectionsMap[exactMatcher.Path] = &FileSelection{
-							Path:   exactMatcher.Path,
+					// Check if the path is the same as the exact matcher's path
+					if path == exactMatcher.Path {
+						// This is a direct match to the specified path
+						// Add to the set with the matcher's ranges
+						set.Add(FileSelection{
+							Path:   path,
 							Ranges: exactMatcher.Ranges,
-						}
+						})
+					} else {
+						// This is a match from a directory pattern (=dir)
+						// Add to the set without any line ranges
+						set.Add(FileSelection{
+							Path:   path,
+							Ranges: nil, // nil means select the whole file
+						})
 					}
 				} else {
 					// For other matcher types, just select the whole file
-					if _, ok := selectionsMap[path]; !ok {
-						selectionsMap[path] = &FileSelection{
-							Path:   path,
-							Ranges: nil, // nil means select the whole file
-						}
-					}
+					set.Add(FileSelection{
+						Path:   path,
+						Ranges: nil, // nil means select the whole file
+					})
 				}
 			}
 		}
 	}
 
-	// Convert map to slice
-	var fileSelections []FileSelection
-	for _, selection := range selectionsMap {
-		// Coalesce overlapping ranges if any
-		if len(selection.Ranges) > 0 {
-			selection.Ranges = coalesceRanges(selection.Ranges)
-		}
-		fileSelections = append(fileSelections, *selection)
-	}
-
-	return fileSelections, nil
+	// Return the values from the set (already sorted and with coalesced ranges)
+	return set.Values(), nil
 }
