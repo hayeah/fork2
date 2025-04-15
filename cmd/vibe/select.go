@@ -287,18 +287,7 @@ func ParseMatcher(pattern string) (Matcher, error) {
 		return UnionMatcher{Matchers: subMatchers}, nil
 	}
 
-	// Check if this is an exact path matcher
-	if strings.HasPrefix(pattern, "=") {
-		exactPath := pattern[1:] // Remove the leading "="
-
-		// Create a FileSelection using the helper function
-		fileSelection, err := ParseFileSelection(exactPath)
-		if err != nil {
-			return nil, err
-		}
-
-		return ExactPathMatcher{FileSelection: fileSelection}, nil
-	} else if strings.Contains(pattern, "|") {
+	if strings.Contains(pattern, "|") {
 		// Handle compound patterns with '|' operator (logical AND)
 
 		parts := strings.Split(pattern, "|")
@@ -332,6 +321,19 @@ func ParseMatcher(pattern string) (Matcher, error) {
 		return NegationMatcher{
 			Wrapped: matcher,
 		}, nil
+	}
+
+	// Check if this is an exact path matcher
+	if strings.HasPrefix(pattern, "=") {
+		exactPath := pattern[1:] // Remove the leading "="
+
+		// Create a FileSelection using the helper function
+		fileSelection, err := ParseFileSelection(exactPath)
+		if err != nil {
+			return nil, err
+		}
+
+		return ExactPathMatcher{FileSelection: fileSelection}, nil
 	}
 
 	// Check if this is a regex pattern
