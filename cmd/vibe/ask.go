@@ -19,14 +19,11 @@ import (
 type AskCmd struct {
 	TokenEstimator string `arg:"--token-estimator" help:"Token count estimator to use: 'simple' (size/4) or 'tiktoken'" default:"simple"`
 	All            bool   `arg:"-a,--all" help:"Select all files and output immediately"`
-	// Copy defaults to true so that, unless the user explicitly passes
-	// `--no-copy`, the generated prompt is placed on the system clipboard.
-	// This mirrors the typical workflow of piping the prompt straight
-	// into ChatGPT without an extra flag.
-	Copy           bool   `arg:"-c,--copy" help:"Copy output to clipboard instead of stdout" default:"true"`
-	Role           string `arg:"--role" help:"Role/layout to use for output"`
-	Select         string `arg:"--select" help:"Select files matching patterns"`
-	Instruction    string `arg:"positional" help:"User instruction or path to instruction file"`
+	// Output sets the destination for the generated prompt: '-' for stdout, a file path to write the output, or empty to copy to clipboard
+	Output      string `arg:"-o,--output" help:"Output destination: '-' for stdout; file path to write; if not set, copy to clipboard"`
+	Role        string `arg:"--role" help:"Role/layout to use for output"`
+	Select      string `arg:"--select" help:"Select files matching patterns"`
+	Instruction string `arg:"positional" help:"User instruction or path to instruction file"`
 }
 
 // Merge merges src fields into the current AskCmd instance, with the current instance
@@ -44,7 +41,6 @@ func (cmd *AskCmd) Merge(src *AskCmd) {
 	}
 	// Booleans: once set to true, keep them
 	cmd.All = cmd.All || src.All
-	cmd.Copy = cmd.Copy || src.Copy
 
 	// Strings: if empty, overwrite
 	if cmd.Role == "" {
@@ -184,8 +180,21 @@ func (r *AskRunner) handleOutput(selectedFiles []FileSelection) error {
 	}
 
 	var buf bytes.Buffer
-	out := io.Writer(os.Stdout)
-	if r.Args.Copy {
+	var out io.Writer
+	switch {
+	case r.Args.Output == "-":
+		// Write directly to stdout
+		out = os.Stdout
+	case r.Args.Output != "":
+		// Write to specified file
+		file, err := os.Create(r.Args.Output)
+		if err != nil {
+			return fmt.Errorf("failed to create output file %s: %v", r.Args.Output, err)
+		}
+		defer file.Close()
+		out = file
+	default:
+		// Default: write to clipboard
 		out = &buf
 	}
 
@@ -209,7 +218,8 @@ func (r *AskRunner) handleOutput(selectedFiles []FileSelection) error {
 		return err
 	}
 
-	if r.Args.Copy {
+	// If no explicit output destination provided, copy to clipboard
+	if r.Args.Output == "" {
 		if err := clipboard.WriteAll(buf.String()); err != nil {
 			return fmt.Errorf("failed to copy to clipboard: %v", err)
 		}
