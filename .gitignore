@@ -3,3 +3,4 @@ cfg.toml
 tmp
 fork2
 .aider*
+.DS_Store
