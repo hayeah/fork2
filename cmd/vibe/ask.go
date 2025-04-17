@@ -19,7 +19,11 @@ import (
 type AskCmd struct {
 	TokenEstimator string `arg:"--token-estimator" help:"Token count estimator to use: 'simple' (size/4) or 'tiktoken'" default:"simple"`
 	All            bool   `arg:"-a,--all" help:"Select all files and output immediately"`
-	Copy           bool   `arg:"-c,--copy" help:"Copy output to clipboard instead of stdout"`
+	// Copy defaults to true so that, unless the user explicitly passes
+	// `--no-copy`, the generated prompt is placed on the system clipboard.
+	// This mirrors the typical workflow of piping the prompt straight
+	// into ChatGPT without an extra flag.
+	Copy           bool   `arg:"-c,--copy" help:"Copy output to clipboard instead of stdout" default:"true"`
 	Role           string `arg:"--role" help:"Role/layout to use for output"`
 	Select         string `arg:"--select" help:"Select files matching patterns"`
 	Instruction    string `arg:"positional" help:"User instruction or path to instruction file"`
