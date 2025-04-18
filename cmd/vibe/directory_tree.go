@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sync"
 
 	"github.com/hayeah/fork2/ignore"
 )
@@ -12,29 +13,30 @@ import (
 // DirectoryTree holds directory listing info.
 type DirectoryTree struct {
 	RootPath string
-	Items    []item
+	dirItems func() ([]item, error) // Memoized function for walkItems
 }
 
-// LoadDirectoryTree constructs a new DirectoryTree by walking rootPath.
-func LoadDirectoryTree(rootPath string) (*DirectoryTree, error) {
-	var items []item
+// NewDirectoryTree constructs a DirectoryTree for the given rootPath, but does not walk the directory yet.
+func NewDirectoryTree(rootPath string) *DirectoryTree {
+	dt := &DirectoryTree{
+		RootPath: rootPath,
+	}
+	dt.dirItems = sync.OnceValues(dt.dirItemsImpl)
+	return dt
+}
 
-	ig, err := ignore.NewIgnore(rootPath)
+// dirItemsImpl is the actual implementation that walks the directory tree.
+func (dt *DirectoryTree) dirItemsImpl() ([]item, error) {
+	var items []item
+	ig, err := ignore.NewIgnore(dt.RootPath)
 	if err != nil {
 		return nil, err
 	}
-
-	// Use WalkDirGitIgnore to walk the directory tree while respecting gitignore
-	// The paths are walked in lexical order (directories first, then files).
-	err = ig.WalkDir(rootPath, func(path string, d os.DirEntry, isDir bool) error {
-		// If rootPath is an absolute path, path is also an absolute path.
-
-		// Convert path to a relative path to rootPath
-		relPath, err := filepath.Rel(rootPath, path)
+	err = ig.WalkDir(dt.RootPath, func(path string, d os.DirEntry, isDir bool) error {
+		relPath, err := filepath.Rel(dt.RootPath, path)
 		if err != nil {
 			return err
 		}
-
 		items = append(items, item{
 			Path:       relPath,
 			IsDir:      isDir,
@@ -42,20 +44,17 @@ func LoadDirectoryTree(rootPath string) (*DirectoryTree, error) {
 		})
 		return nil
 	})
-	if err != nil {
-		return nil, err
-	}
-
-	return &DirectoryTree{
-		RootPath: rootPath,
-		Items:    items,
-	}, nil
+	return items, err
 }
 
 // SelectAllFiles returns all non-directory file paths
 func (dt *DirectoryTree) SelectAllFiles() []string {
+	items, err := dt.dirItems()
+	if err != nil {
+		return nil
+	}
 	var filePaths []string
-	for _, it := range dt.Items {
+	for _, it := range items {
 		if !it.IsDir {
 			filePaths = append(filePaths, it.Path)
 		}
@@ -63,9 +62,35 @@ func (dt *DirectoryTree) SelectAllFiles() []string {
 	return filePaths
 }
 
+// SelectFiles returns file selections for the given select string (no memoization).
+func (dt *DirectoryTree) SelectFiles(selectString string) ([]FileSelection, error) {
+	set := NewFileSelectionSet()
+	if selectString != "" {
+		matchers, err := ParseMatchersFromString(selectString)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse select string: %w", err)
+		}
+
+		allPaths := dt.SelectAllFiles()
+		for _, matcher := range matchers {
+			matchedPaths, err := matcher.Match(allPaths)
+			if err != nil {
+				return nil, err
+			}
+			for _, path := range matchedPaths {
+				set.Add(FileSelection{Path: path, Ranges: nil})
+			}
+		}
+	}
+	return set.Values(), nil
+}
+
 // GenerateDirectoryTree writes a tree-like directory structure to w based on dt.
 func (dt *DirectoryTree) GenerateDirectoryTree(w io.Writer) error {
-	diagram := NewDirectoryTreeDiagram(dt)
+	diagram, err := NewDirectoryTreeDiagram(dt)
+	if err != nil {
+		return err
+	}
 	return diagram.Generate(w)
 }
 
@@ -76,11 +101,16 @@ type DirectoryTreeDiagram struct {
 }
 
 // NewDirectoryTreeDiagram creates a new DirectoryTreeDiagram from a DirectoryTree.
-func NewDirectoryTreeDiagram(dt *DirectoryTree) *DirectoryTreeDiagram {
+func NewDirectoryTreeDiagram(dt *DirectoryTree) (*DirectoryTreeDiagram, error) {
+	items, err := dt.dirItems()
+	if err != nil {
+		return nil, err
+	}
+
 	return &DirectoryTreeDiagram{
 		RootPath: dt.RootPath,
-		Items:    dt.Items,
-	}
+		Items:    items,
+	}, nil
 }
 
 func (dtd *DirectoryTreeDiagram) Generate(w io.Writer) error {

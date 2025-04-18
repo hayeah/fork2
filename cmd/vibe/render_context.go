@@ -25,6 +25,8 @@ type VibeContext struct {
 	RenderContext *render.RenderContext
 	Renderer      *render.Renderer
 
+	DirTree *DirectoryTree
+
 	// Memoization caches
 	repoRoot        string
 	repoRootOnce    sync.Once
@@ -38,6 +40,7 @@ type VibeContext struct {
 func NewVibeContext(ask *AskRunner) (*VibeContext, error) {
 	ctx := &VibeContext{
 		ask: ask,
+		DirTree: ask.DirTree,
 	}
 
 	systemfs, err := fs.Sub(systemTemplatesFS, "templates")
@@ -45,27 +48,11 @@ func NewVibeContext(ask *AskRunner) (*VibeContext, error) {
 		return nil, fmt.Errorf("failed to create system prompts fs: %v", err)
 	}
 
-	// // list system templates
-	// var buf strings.Builder
-	// _ = fs.WalkDir(systemfs, ".", func(path string, d fs.DirEntry, err error) error {
-	// 	if err != nil {
-	// 		return err
-	// 	}
-	// 	if d.IsDir() {
-	// 		return nil
-	// 	}
-	// 	fmt.Fprintln(&buf, path)
-	// 	return nil
-	// })
-	// fmt.Println("System templates:")
-	// fmt.Println(buf.String())
-
 	ctx.RenderContext = &render.RenderContext{
 		SystemPartials: systemfs,
 		RepoPartials:   os.DirFS(ask.RootPath),
 	}
 
-	// Create renderer
 	ctx.Renderer = render.NewRenderer(ctx.RenderContext)
 
 	return ctx, nil
@@ -114,7 +101,7 @@ func (ctx *VibeContext) RepoPrompts() string {
 // WriteOutput removed in favor of WriteFileSelections
 
 // WriteFileSelections processes the selected files and outputs the result using the renderer
-func (ctx *VibeContext) WriteFileSelections(w io.Writer, args render.RenderArgs, fileSelections []FileSelection) error {
+func (ctx *VibeContext) WriteFileSelections(w io.Writer, args render.RenderArgs) error {
 	ctx.RenderContext.CurrentTemplatePath = "./"
 	defer func() {
 		ctx.RenderContext.CurrentTemplatePath = "./"
@@ -130,9 +117,22 @@ func (ctx *VibeContext) WriteFileSelections(w io.Writer, args render.RenderArgs,
 	data["RepoDirectoryTree"] = ctx.RepoDirectoryTree()
 	data["RepoPrompts"] = ctx.RepoPrompts()
 
+	// Lazily get selected files from DirTree
+	selectString := ""
+	if ctx.ask != nil {
+		selectString = ctx.ask.Args.Select
+		if selectString == "" && ctx.ask.Instruct != nil && ctx.ask.Instruct.Header != nil {
+			selectString = ctx.ask.Instruct.Header.Select
+		}
+	}
+	selected, err := ctx.DirTree.SelectFiles(selectString)
+	if err != nil {
+		return fmt.Errorf("failed to select files: %v", err)
+	}
+
 	// Write the file map of selected files to a string
 	var fileMapBuf strings.Builder
-	err := WriteFileMap(&fileMapBuf, fileSelections, ctx.ask.RootPath)
+	err = WriteFileMap(&fileMapBuf, selected, ctx.ask.RootPath)
 	if err != nil {
 		return fmt.Errorf("failed to write file map: %v", err)
 	}

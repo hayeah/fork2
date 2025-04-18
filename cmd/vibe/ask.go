@@ -117,17 +117,14 @@ func NewAskRunner(cmdArgs AskCmd, rootPath string) (*AskRunner, error) {
 func (r *AskRunner) Run() error {
 	// Gather files/dirs
 	var err error
-	r.DirTree, err = LoadDirectoryTree(r.RootPath)
-	if err != nil {
-		return fmt.Errorf("failed to load directory tree: %v", err)
-	}
+	r.DirTree = NewDirectoryTree(r.RootPath)
 
 	selectString := r.Args.Select
-	if selectString == "" {
+	if selectString == "" && r.Instruct != nil && r.Instruct.Header != nil {
 		selectString = r.Instruct.Header.Select
 	}
 
-	fileSelections, err := selectFiles(selectString, r.DirTree)
+	fileSelections, err := r.DirTree.SelectFiles(selectString)
 	if err != nil {
 		return err
 	}
@@ -139,18 +136,9 @@ func (r *AskRunner) Run() error {
 	}
 
 	// Output phase: generate user instruction and handle output
-	if err := r.handleOutput(fileSelections); err != nil {
+	if err := r.handleOutput(); err != nil {
 		return err
 	}
-
-	// // Calculate and report token count after output is handled
-	// totalTokenCount, err := calculateTokenCount(selectedFiles, r.TokenEstimator)
-	// if err != nil {
-	// 	return fmt.Errorf("error calculating token count: %v", err)
-	// }
-
-	// // Print total token count to stderr
-	// fmt.Fprintf(os.Stderr, "Total tokens: %d\n", totalTokenCount)
 
 	return nil
 }
@@ -172,7 +160,7 @@ func calculateTokenCount(filePaths []string, tokenEstimator TokenEstimator) (int
 }
 
 // handleOutput processes the user instruction and outputs the result
-func (r *AskRunner) handleOutput(selectedFiles []FileSelection) error {
+func (r *AskRunner) handleOutput() error {
 	// Create a new vibe context for rendering
 	vibeCtx, err := NewVibeContext(r)
 	if err != nil {
@@ -194,26 +182,23 @@ func (r *AskRunner) handleOutput(selectedFiles []FileSelection) error {
 		defer file.Close()
 		out = file
 	default:
-		// Default: write to clipboard
+		// Write to buffer for clipboard
 		out = &buf
 	}
 
+	// Prepare render arguments
 	renderArgs := render.RenderArgs{}
-
-	if r.Instruct == nil || r.Instruct.UserContent == "" {
-		// If no instruction, render with default args, WriteFileSelections will handle the layout.
-		renderArgs.ContentPath = "<no-instruct>"
-	} else {
+	if r.Instruct != nil {
+		renderArgs.Content = r.Instruct.UserContent
 		role := r.Args.Role
 		if role == "" {
 			role = "coder" // Default role
 		}
 		renderArgs.LayoutPath = "<" + role + ">"
-		renderArgs.Content = r.Instruct.UserContent
 	}
 
 	// Pass the prepared renderArgs to WriteFileSelections
-	err = vibeCtx.WriteFileSelections(out, renderArgs, selectedFiles)
+	err = vibeCtx.WriteFileSelections(out, renderArgs)
 	if err != nil {
 		return err
 	}

@@ -104,8 +104,8 @@ func TestFileSelectionsWithDirTree_OnlySelect(t *testing.T) {
 	tmpDir, err := createTestDirectory(t, files)
 	assert.NoError(err)
 
-	dirTree, err := LoadDirectoryTree(tmpDir)
-	assert.NoError(err)
+	dirTree := NewDirectoryTree(tmpDir)
+	assert.NotNil(dirTree)
 
 	headerSelectOnly := &InstructHeader{
 		Select: `

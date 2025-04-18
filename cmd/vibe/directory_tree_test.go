@@ -40,8 +40,8 @@ func TestDirectoryTree_SelectAllFiles(t *testing.T) {
 	})
 	assert.NoError(err)
 
-	dt, err := LoadDirectoryTree(tempDir)
-	assert.NoError(err)
+	dt := NewDirectoryTree(tempDir)
+	assert.NotNil(dt)
 
 	all := dt.SelectAllFiles()
 	assert.ElementsMatch([]string{
@@ -59,8 +59,7 @@ func TestDirectoryTree_GenerateDirectoryTree(t *testing.T) {
 	})
 	assert.NoError(err)
 
-	dt, err := LoadDirectoryTree(tempDir)
-	assert.NoError(err)
+	dt := NewDirectoryTree(tempDir)
 	assert.NotNil(dt)
 
 	var buf bytes.Buffer
@@ -89,10 +88,11 @@ func TestDirectoryTree_EmptyDir(t *testing.T) {
 	tempDir, err := createTestDirectory(t, map[string]string{})
 	assert.NoError(err)
 
-	dt, err := LoadDirectoryTree(tempDir)
-	assert.NoError(err)
+	dt := NewDirectoryTree(tempDir)
 	assert.NotNil(dt)
-	assert.Equal(1, len(dt.Items), "Should contain only the root directory itself")
+	items, err := dt.dirItems()
+	assert.NoError(err)
+	assert.Equal(1, len(items), "Should contain only the root directory itself")
 
 	allFiles := dt.SelectAllFiles()
 	assert.Len(allFiles, 0, "No files to select in an empty dir")
