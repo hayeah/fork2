@@ -56,12 +56,6 @@ func (cmd *AskCmd) Merge(src *AskCmd) {
 	}
 }
 
-//go:embed repoprompt-diff.md
-var diffPrompt string
-
-//go:embed diff-heredoc.md
-var diffHeredocPrompt string
-
 // AskRunner encapsulates the state and behavior for the file picker
 type AskRunner struct {
 	Args           AskCmd
@@ -116,24 +110,7 @@ func NewAskRunner(cmdArgs AskCmd, rootPath string) (*AskRunner, error) {
 // Run executes the file picking process
 func (r *AskRunner) Run() error {
 	// Gather files/dirs
-	var err error
 	r.DirTree = NewDirectoryTree(r.RootPath)
-
-	selectString := r.Args.Select
-	if selectString == "" && r.Instruct != nil && r.Instruct.Header != nil {
-		selectString = r.Instruct.Header.Select
-	}
-
-	fileSelections, err := r.DirTree.SelectFiles(selectString)
-	if err != nil {
-		return err
-	}
-
-	// If no files were selected (user aborted), return early
-	if len(fileSelections) == 0 {
-		fmt.Println("No files selected. Aborting.")
-		return nil
-	}
 
 	// Output phase: generate user instruction and handle output
 	if err := r.handleOutput(); err != nil {
