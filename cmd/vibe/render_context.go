@@ -26,20 +26,12 @@ type VibeContext struct {
 	Renderer      *render.Renderer
 
 	DirTree *DirectoryTree
-
-	// Memoization caches
-	repoRoot        string
-	repoRootOnce    sync.Once
-	repoFiles       string
-	repoFilesOnce   sync.Once
-	repoPrompts     string
-	repoPromptsOnce sync.Once
 }
 
 // NewVibeContext creates a new VibeContext instance
 func NewVibeContext(ask *AskRunner) (*VibeContext, error) {
 	ctx := &VibeContext{
-		ask: ask,
+		ask:     ask,
 		DirTree: ask.DirTree,
 	}
 
@@ -58,65 +50,23 @@ func NewVibeContext(ask *AskRunner) (*VibeContext, error) {
 	return ctx, nil
 }
 
-// RepoRoot returns the path to the repository root by looking for a .git directory.
-// It memoizes the result so subsequent calls are fast.
-func (ctx *VibeContext) RepoRoot() (string, error) {
-	var err error
-	ctx.repoRootOnce.Do(func() {
-		ctx.repoRoot, err = findRepoRoot(ctx.ask.RootPath)
-	})
-	return ctx.repoRoot, err
-}
-
 // RepoDirectoryTree generates the directory tree structure as a string.
-// It memoizes the result so subsequent calls are fast.
-func (ctx *VibeContext) RepoDirectoryTree() string {
-	ctx.repoFilesOnce.Do(func() {
-		var buf strings.Builder
-		ask := ctx.ask
-		if ask.DirTree != nil {
-			_ = ask.DirTree.GenerateDirectoryTree(&buf)
-		}
-		ctx.repoFiles = buf.String()
-	})
-	return ctx.repoFiles
+func (ctx *VibeContext) RepoDirectoryTree() (string, error) {
+	var buf strings.Builder
+	err := ctx.DirTree.GenerateDirectoryTree(&buf)
+	if err != nil {
+		return "", err
+	}
+
+	return buf.String(), nil
 }
 
 // RepoPrompts loads .vibe.md files from the current directory up to the repo root.
-// It memoizes the result so subsequent calls are fast.
-func (ctx *VibeContext) RepoPrompts() string {
-	ctx.repoPromptsOnce.Do(func() {
-		content, err := loadVibeFiles(ctx.ask.RootPath)
-		if err != nil {
-			// If there's an error, store an empty string
-			fmt.Fprintf(os.Stderr, "Warning: failed to load .vibe.md files: %v\n", err)
-			ctx.repoPrompts = ""
-			return
-		}
-		ctx.repoPrompts = content
-	})
-	return ctx.repoPrompts
+func (ctx *VibeContext) RepoPrompts() (string, error) {
+	return loadVibeFiles(ctx.ask.RootPath)
 }
 
-// WriteOutput removed in favor of WriteFileSelections
-
-// WriteFileSelections processes the selected files and outputs the result using the renderer
-func (ctx *VibeContext) WriteFileSelections(w io.Writer, args render.RenderArgs) error {
-	ctx.RenderContext.CurrentTemplatePath = "./"
-	defer func() {
-		ctx.RenderContext.CurrentTemplatePath = "./"
-	}()
-
-	data := make(map[string]interface{})
-
-	// Prepare template data
-	if args.Data == nil {
-		args.Data = make(map[string]interface{})
-	}
-
-	data["RepoDirectoryTree"] = ctx.RepoDirectoryTree()
-	data["RepoPrompts"] = ctx.RepoPrompts()
-
+func (ctx *VibeContext) FileMap() (string, error) {
 	// Lazily get selected files from DirTree
 	selectString := ""
 	if ctx.ask != nil {
@@ -127,17 +77,27 @@ func (ctx *VibeContext) WriteFileSelections(w io.Writer, args render.RenderArgs)
 	}
 	selected, err := ctx.DirTree.SelectFiles(selectString)
 	if err != nil {
-		return fmt.Errorf("failed to select files: %v", err)
+		return "", fmt.Errorf("failed to select files: %v", err)
 	}
 
 	// Write the file map of selected files to a string
 	var fileMapBuf strings.Builder
 	err = WriteFileMap(&fileMapBuf, selected, ctx.ask.RootPath)
 	if err != nil {
-		return fmt.Errorf("failed to write file map: %v", err)
+		return "", fmt.Errorf("failed to write file map: %v", err)
 	}
-	data["FileMap"] = fileMapBuf.String()
 
+	return fileMapBuf.String(), nil
+}
+
+// WriteFileSelections processes the selected files and outputs the result using the renderer
+func (ctx *VibeContext) WriteFileSelections(w io.Writer, args render.RenderArgs) error {
+	ctx.RenderContext.CurrentTemplatePath = "./"
+	defer func() {
+		ctx.RenderContext.CurrentTemplatePath = "./"
+	}()
+
+	data := newVibeContextMemoized(ctx)
 	args.Data = data
 
 	// Render the output using the template system
@@ -153,4 +113,37 @@ func (ctx *VibeContext) WriteFileSelections(w io.Writer, args render.RenderArgs)
 	}
 
 	return nil
+}
+
+// newVibeContextMemoized creates a memoized version of the VibeContext.
+//
+// text/template does not auto invoke .Field if it's a function value.
+// But it DOES auto invoke .Method. That's why we need to create all these wrapper
+// methods.
+//
+// See: https://github.com/golang/go/issues/3999
+func newVibeContextMemoized(ctx *VibeContext) *VibeContextMemoized {
+	return &VibeContextMemoized{
+		FileMapOnce:           sync.OnceValues(ctx.FileMap),
+		RepoDirectoryTreeOnce: sync.OnceValues(ctx.RepoDirectoryTree),
+		RepoPromptsOnce:       sync.OnceValues(ctx.RepoPrompts),
+	}
+}
+
+type VibeContextMemoized struct {
+	FileMapOnce           func() (string, error)
+	RepoDirectoryTreeOnce func() (string, error)
+	RepoPromptsOnce       func() (string, error)
+}
+
+func (ctx *VibeContextMemoized) FileMap() (string, error) {
+	return ctx.FileMapOnce()
+}
+
+func (ctx *VibeContextMemoized) RepoDirectoryTree() (string, error) {
+	return ctx.RepoDirectoryTreeOnce()
+}
+
+func (ctx *VibeContextMemoized) RepoPrompts() (string, error) {
+	return ctx.RepoPromptsOnce()
 }
