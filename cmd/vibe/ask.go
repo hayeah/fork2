@@ -24,43 +24,12 @@ type AskCmd struct {
 	Instruction string `arg:"positional" help:"User instruction or path to instruction file"`
 }
 
-// Merge merges src fields into the current AskCmd instance, with the current instance
-// having precedence for any non-empty value or true boolean. So if this.All is already true,
-// it stays true. If this.All is false, we take src's value. Same pattern
-// for the rest.
-func (cmd *AskCmd) Merge(src *AskCmd) {
-	if src == nil {
-		return
-	}
-
-	// If TokenEstimator is empty, overwrite it
-	if cmd.TokenEstimator == "" {
-		cmd.TokenEstimator = src.TokenEstimator
-	}
-	// Booleans: once set to true, keep them
-	cmd.All = cmd.All || src.All
-
-	// Strings: if empty, overwrite
-	if cmd.Layout == "" {
-		cmd.Layout = src.Layout
-	}
-
-	// Strings: if empty, overwrite
-	if len(cmd.Select) == 0 {
-		cmd.Select = src.Select
-	}
-	if cmd.Instruction == "" {
-		cmd.Instruction = src.Instruction
-	}
-}
-
 // AskRunner encapsulates the state and behavior for the file picker
 type AskRunner struct {
 	Args           AskCmd
 	RootPath       string
 	DirTree        *DirectoryTree
 	TokenEstimator TokenEstimator
-	Instruct       *Instruct
 }
 
 // NewAskRunner creates and initializes a new PickRunner
