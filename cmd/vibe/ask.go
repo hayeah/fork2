@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	_ "embed"
 	"fmt"
 	"io"
 	"log"
@@ -11,7 +10,6 @@ import (
 	"strings"
 
 	"github.com/atotto/clipboard"
-	"github.com/hayeah/fork2/render"
 	"github.com/pkoukk/tiktoken-go"
 )
 
@@ -93,17 +91,6 @@ func NewAskRunner(cmdArgs AskCmd, rootPath string) (*AskRunner, error) {
 		TokenEstimator: tokenEstimator,
 	}
 
-	if cmdArgs.Instruction != "" {
-		parser := NewInstructParser()
-		instruct, err := parser.Parse(cmdArgs.Instruction)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse instruction: %v", err)
-		}
-		r.Instruct = instruct
-	} else {
-		r.Instruct = nil
-	}
-
 	return r, nil
 }
 
@@ -163,26 +150,8 @@ func (r *AskRunner) handleOutput() error {
 		out = &buf
 	}
 
-	// Prepare render arguments
-	renderArgs := render.RenderArgs{}
-	if r.Instruct != nil {
-		renderArgs.Content = r.Instruct.UserContent
-	}
-
-	// Choose layout in precedence order: CLI flag → front‑matter → ""
-	layout := r.Args.Layout
-	if layout == "" && r.Instruct != nil && r.Instruct.Header != nil {
-		layout = r.Instruct.Header.Layout
-	}
-
-	if layout == "" {
-		renderArgs.LayoutPath = ""
-	} else {
-		renderArgs.LayoutPath = "<" + layout + ">"
-	}
-
-	// Pass the prepared renderArgs to WriteFileSelections
-	err = vibeCtx.WriteFileSelections(out, renderArgs)
+	// Pass the content and layout to WriteFileSelections
+	err = vibeCtx.WriteFileSelections(out, r.Args.Instruction, r.Args.Layout)
 	if err != nil {
 		return err
 	}

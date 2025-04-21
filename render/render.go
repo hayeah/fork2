@@ -88,23 +88,16 @@ func NewRenderer(ctx *RenderContext) *Renderer {
 	}
 }
 
-// loadTemplateContent loads the content of a template from the given path.
-func (r *Renderer) loadTemplateContent(templatePath string) (string, error) {
-	return r.ctx.ResolvePartial(templatePath)
+// loadTemplate loads a template from the given path.
+func (r *Renderer) loadTemplate(templatePath string) (*Template, error) {
+	return LoadTemplate(r.ctx, templatePath)
 }
 
-// RenderArgs contains all the arguments needed for template rendering.
-type RenderArgs struct {
-	// Content is the direct template content string to render
-	Content string
-	// ContentPath is the path to the template to render
-	ContentPath string
-	// Layout is the direct layout template content string
-	Layout string
-	// LayoutPath is the path to the layout template
-	LayoutPath string
-	// Data is the data to pass to the template during rendering
-	Data Content
+// Content is implemented by any data object that can carry the
+// pre-rendered inner template.
+type Content interface {
+	Content() string   // getter
+	SetContent(string) // setter (mutates receiver)
 }
 
 // RenderPartial renders a template without a layout.
@@ -121,114 +114,103 @@ type RenderArgs struct {
 //   - A string containing the rendered template
 //   - An error if the template could not be loaded or rendered
 func (r *Renderer) RenderPartial(partialPath string, data Content) (string, error) {
-	return r.Render(RenderArgs{
-		ContentPath: partialPath,
-		Data:        data,
-	})
+	// Load the template
+	tmpl, err := LoadTemplate(r.ctx, partialPath)
+	if err != nil {
+		return "", err
+	}
+
+	// Force no layout for partials
+	tmpl.Meta.Layout = ""
+
+	// Render the template
+	return r.RenderTemplate(tmpl, data)
 }
 
 // Render renders a template, with optional layout wrapping.
-// If layoutPath is empty, renders contentPath as a standalone template.
-// If layoutPath is provided, renders contentPath and then passes it as .Content to the layout template.
+// If the template has no layout specified, it's rendered as a standalone template.
+// If the template has a layout, it's rendered and then passed as .Content to the layout template.
 // data is the data to pass to the template.
-// Content is implemented by any data object that can carry the
-// pre-rendered inner template.
-type Content interface {
-	Content() string   // getter
-	SetContent(string) // setter (mutates receiver)
+func (r *Renderer) Render(contentPath string, data Content) (string, error) {
+	// Load the template
+	tmpl, err := LoadTemplate(r.ctx, contentPath)
+	if err != nil {
+		return "", err
+	}
+
+	// Render the template with layouts
+	return r.RenderTemplate(tmpl, data)
 }
 
-func (r *Renderer) Render(args RenderArgs) (string, error) {
-	// Get content either from direct content or from path
-	contentContent := args.Content
-	contentPath := args.ContentPath
-	data := args.Data
+// RenderTemplate renders a template and applies any layouts specified in its metadata
+func (r *Renderer) RenderTemplate(t *Template, data Content) (string, error) {
+	// Track seen layouts to prevent infinite recursion
+	seen := make(map[string]bool)
+	return r.renderTemplateInternal(t, data, seen, 0)
+}
 
-	// If content is not provided directly, load it from path
-	if contentContent == "" && contentPath != "" {
-		var err error
-		contentContent, err = r.loadTemplateContent(contentPath)
-		if err != nil {
-			return "", fmt.Errorf("error loading content template: %w", err)
+// renderTemplateInternal is the internal implementation of renderWithLayouts with cycle detection
+func (r *Renderer) renderTemplateInternal(t *Template, data Content, seen map[string]bool, depth int) (string, error) {
+	// Guard against infinite recursion
+	if depth > 10 {
+		return "", fmt.Errorf("layout nesting too deep (max 10): %s", t.Path)
+	}
+
+	// Check for cycles
+	if t.Meta.Layout != "" {
+		if seen[t.Meta.Layout] {
+			return "", fmt.Errorf("layout cycle detected: %s", t.Meta.Layout)
 		}
-	} else if contentContent == "" && contentPath == "" {
-		return "", fmt.Errorf("either Content or ContentPath must be provided")
+		seen[t.Meta.Layout] = true
 	}
 
 	// Store original current template path
 	originalPath := r.ctx.CurrentTemplatePath
-	// Update current template path for local partial resolution if path is provided
+	// Update current template path for local partial resolution
 	defer func() { r.ctx.CurrentTemplatePath = originalPath }()
-	if contentPath != "" {
-		r.ctx.CurrentTemplatePath = contentPath
-	}
+	r.ctx.CurrentTemplatePath = t.Path
 
 	// Create a template for content
 	contentTmpl := template.New("content")
 	contentTmpl = contentTmpl.Funcs(template.FuncMap{
 		"partial": func(partialPath string) (string, error) {
-			// Use Render recursively with empty layoutPath for partials
+			// Use RenderPartial for partials
 			return r.RenderPartial(partialPath, data)
 		},
 	})
 
 	// Parse the content template
-	contentTmpl, err := contentTmpl.Parse(contentContent)
+	contentTmpl, err := contentTmpl.Parse(t.Body)
 	if err != nil {
-		return "", fmt.Errorf("error parsing content template: %w", err)
+		return "", fmt.Errorf("error parsing template %s: %w", t.Path, err)
 	}
 
-	// Execute the content template first
+	// Execute the content template
 	var contentBuf bytes.Buffer
 	err = contentTmpl.Execute(&contentBuf, data)
 	if err != nil {
-		return "", fmt.Errorf("error executing content template: %w", err)
+		return "", fmt.Errorf("error executing template %s: %w", t.Path, err)
 	}
 
-	contentStr := contentBuf.String()
+	renderedContent := contentBuf.String()
 
 	// If no layout is specified, return the content directly
-	layoutContent := args.Layout
-	layoutPath := args.LayoutPath
-	if layoutContent == "" && layoutPath == "" {
-		return contentStr, nil
+	if t.Meta.Layout == "" {
+		return renderedContent, nil
 	}
 
+	// Load the layout template
+	layoutTmpl, err := LoadTemplate(r.ctx, t.Meta.Layout)
+	if err != nil {
+		return "", fmt.Errorf("error loading layout %s: %w", t.Meta.Layout, err)
+	}
+
+	// Save the original content and set the rendered content
 	prev := data.Content()
-	data.SetContent(contentStr)
+	data.SetContent(renderedContent)
 	// Restore the original content when we're done
 	defer func() { data.SetContent(prev) }()
 
-	// If layout content is not provided directly, load it from path
-	if layoutContent == "" && layoutPath != "" {
-		var err error
-		layoutContent, err = r.loadTemplateContent(layoutPath)
-		if err != nil {
-			return "", fmt.Errorf("error loading layout template: %w", err)
-		}
-	}
-
-	// Create a template for layout
-	layoutTmpl := template.New("layout")
-	layoutTmpl = layoutTmpl.Funcs(template.FuncMap{
-		"partial": func(partialPath string) (string, error) {
-			// Use Render recursively with empty layoutPath for partials
-			return r.RenderPartial(partialPath, data)
-		},
-	})
-
-	// Parse the layout template
-	layoutTmpl, err = layoutTmpl.Parse(layoutContent)
-	if err != nil {
-		return "", fmt.Errorf("error parsing layout template: %w", err)
-	}
-
-	// Execute the layout template with the data (which now has content injected)
-	var layoutBuf bytes.Buffer
-	err = layoutTmpl.Execute(&layoutBuf, data)
-	if err != nil {
-		return "", fmt.Errorf("error executing layout template: %w", err)
-	}
-
-	return layoutBuf.String(), nil
+	// Recursively render with the parent layout
+	return r.renderTemplateInternal(layoutTmpl, data, seen, depth+1)
 }

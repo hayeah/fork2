@@ -26,6 +26,8 @@ type VibeContext struct {
 	RenderContext *render.RenderContext
 	Renderer      *render.Renderer
 
+	Select string
+
 	DirTree *DirectoryTree
 }
 
@@ -68,15 +70,11 @@ func (ctx *VibeContext) RepoPrompts() (string, error) {
 }
 
 func (ctx *VibeContext) FileMap() (string, error) {
-	// Lazily get selected files from DirTree
-	selectString := ""
-	if ctx.ask != nil {
-		selectString = ctx.ask.Args.Select
-		if selectString == "" && ctx.ask.Instruct != nil && ctx.ask.Instruct.Header != nil {
-			selectString = ctx.ask.Instruct.Header.Select
-		}
+	if ctx.Select == "" {
+		return "", nil
 	}
-	selected, err := ctx.DirTree.SelectFiles(selectString)
+
+	selected, err := ctx.DirTree.SelectFiles(ctx.Select)
 	if err != nil {
 		return "", fmt.Errorf("failed to select files: %v", err)
 	}
@@ -92,17 +90,39 @@ func (ctx *VibeContext) FileMap() (string, error) {
 }
 
 // WriteFileSelections processes the selected files and outputs the result using the renderer
-func (ctx *VibeContext) WriteFileSelections(w io.Writer, args render.RenderArgs) error {
+func (ctx *VibeContext) WriteFileSelections(w io.Writer, contentPath string, layoutPath string) error {
 	ctx.RenderContext.CurrentTemplatePath = "./"
 	defer func() {
 		ctx.RenderContext.CurrentTemplatePath = "./"
 	}()
 
-	data := newVibeContextMemoized(ctx)
-	args.Data = data
+	// We can no longer support inline content directly through LoadTemplate
+	// If this is an inline template, we need to handle it differently
+	var tmpl *render.Template
+	var err error
 
+	// Load the content template from path
+	tmpl, err = render.LoadTemplate(ctx.RenderContext, contentPath)
+	if err != nil {
+		return fmt.Errorf("error loading content template: %w", err)
+	}
+
+	// Override the template layout if CLI provided one
+	if layoutPath != "" {
+		tmpl.Meta.Layout = layoutPath
+	}
+
+	selectPattern := tmpl.Meta.Select
+	if selectPattern == "" {
+		selectPattern = ctx.ask.Args.Select
+	}
+	ctx.Select = selectPattern
+
+	fmt.Println("select", selectPattern)
+
+	data := newVibeContextMemoized(ctx)
 	// Render the output using the template system
-	output, err := ctx.Renderer.Render(args)
+	output, err := ctx.Renderer.RenderTemplate(tmpl, data)
 	if err != nil {
 		return err
 	}
