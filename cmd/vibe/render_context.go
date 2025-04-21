@@ -109,7 +109,10 @@ func (ctx *VibeContext) WriteFileSelections(w io.Writer, contentPath string, lay
 	}
 	ctx.Select = selectPattern
 
-	fmt.Println("select", selectPattern)
+	// Set default "files" layout when select pattern is present but no layout is specified
+	if tmpl.Meta.Layout == "" && selectPattern != "" {
+		tmpl.Meta.Layout = "files"
+	}
 
 	data := newVibeContextMemoized(ctx)
 	// Render the output using the template system
