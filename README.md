@@ -1,33 +1,70 @@
 # Vibe: A Simple Prompt Tool for Your Git Workflow
 
-Welcome to **vibe**, a small CLI tool that helps you:
+**vibe** is a small CLI tool that helps you:
 
 1. Gather selected files from your repository into a prompt.
 2. Copy that prompt to your clipboard and paste it into your LLM of choice.
 3. Merge the edits that the LLM suggests back into your local repo automatically.
 
+## Install
 
-## Installation
+```bash
+go install github.com/hayeah/fork2/cmd/vibe@latest
+```
 
-Build from source code.
+## Quick Tutorial
 
-To work on vibe, clone this repo, and then:
+The vibe prompt builder has a flexible pattern matching syntax to
 
-1. **Build**
-   ```
-   go build ./cmd/vibe
-   ```
-2. **Test**
-   ```
-   go test ./cmd/vibe
-   ```
-3. **Install**
-   ```
-   go install ./cmd/vibe
-   ```
+Suppose we have a repo with these files
 
-After installation, the `vibe` command is available in your `$GOPATH/bin` or wherever your Go environment places binaries.
+```
+my‑repo
+├── cmd/
+   ├── main.go
+   ├── helper.go
+   └── helper_test.go
+```
 
+Select all Go files, and copy into the clipboard:
+
+```bash
+vibe ask --select .go
+```
+
+Select all Go files, but filter out the `_test.go` files. What this is doing is to first select all the go files, then negating the pattern `_test.go` by prefixing it with `!`:
+
+```bash
+vibe ask --select '.go|!_test.go'
+```
+
+You can then copy the copied files as context into ChatGPT or Claude.
+
+
+## Render Markdown Files as Prompt Templates
+
+`vibe` can also render markdown files as prompt templates. `explain` is a built-in template, which you can use to generate a prompt for explaining code.
+
+
+```bash
+vibe ask explain --select '.go'
+```
+
+This builds a prompt that copies all the selected files, structured like this:
+
+```
+<directory tree>
+
+<selected file 1>
+
+<selected file 2>
+
+...
+
+# User Task
+
+Give me an overview and walkthrough of the above code.
+```
 
 ## Features
 
