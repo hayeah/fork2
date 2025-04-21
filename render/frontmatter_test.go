@@ -8,57 +8,78 @@ import (
 
 func TestParseFrontMatter(t *testing.T) {
 	assert := assert.New(t)
-
-	// Test TOML front matter
-	content := `---toml
+	tests := []struct {
+		name            string
+		content         string
+		wantTag         string
+		wantFrontMatter string
+		wantRemainder   string
+		wantErr         bool
+		wantErrContains string
+	}{
+		{
+			name: "TOML front matter",
+			content: `---toml
 [[file]]
 path = "path/to/file.txt"
 ---
-User instruction here.`
-
-	tag, frontMatter, remainder, err := ParseFrontMatter(content)
-	assert.NoError(err)
-	assert.Equal("toml", tag)
-	assert.Equal("[[file]]\npath = \"path/to/file.txt\"", frontMatter)
-	assert.Equal("User instruction here.", remainder)
-
-	// Test alternative delimiter (plus signs)
-	content = `+++toml
+User instruction here.`,
+			wantTag: "toml",
+			wantFrontMatter: `[[file]]
+path = "path/to/file.txt"`,
+			wantRemainder: "User instruction here.",
+		},
+		{
+			name: "Plus delimiter",
+			content: `+++toml
 [[file]]
 path = "path/to/file.txt"
 +++
-User instruction here.`
-
-	tag, frontMatter, remainder, err = ParseFrontMatter(content)
-	assert.NoError(err)
-	assert.Equal("toml", tag)
-	assert.Equal("[[file]]\npath = \"path/to/file.txt\"", frontMatter)
-	assert.Equal("User instruction here.", remainder)
-
-	// Test backtick delimiter
-	content = "```toml\n[[file]]\npath = \"path/to/file.txt\"\n```\nUser instruction here."
-
-	tag, frontMatter, remainder, err = ParseFrontMatter(content)
-	assert.NoError(err)
-	assert.Equal("toml", tag)
-	assert.Equal("[[file]]\npath = \"path/to/file.txt\"", frontMatter)
-	assert.Equal("User instruction here.", remainder)
-	// Test no front matter
-	content = `This is just regular content
-without any front matter.`
-
-	tag, frontMatter, remainder, err = ParseFrontMatter(content)
-	assert.NoError(err)
-	assert.Equal("", tag)
-	assert.Equal("", frontMatter)
-	assert.Equal(content, remainder)
-
-	// Test unclosed front matter
-	content = `---
+User instruction here.`,
+			wantTag: "toml",
+			wantFrontMatter: `[[file]]
+path = "path/to/file.txt"`,
+			wantRemainder: "User instruction here.",
+		},
+		{
+			name:    "Backtick delimiter",
+			content: "```toml\n[[file]]\npath = \"path/to/file.txt\"\n```\nUser instruction here.",
+			wantTag: "toml",
+			wantFrontMatter: `[[file]]
+path = "path/to/file.txt"`,
+			wantRemainder: "User instruction here.",
+		},
+		{
+			name: "No front matter",
+			content: `This is just regular content
+without any front matter.`,
+			wantTag:         "",
+			wantFrontMatter: "",
+			wantRemainder: `This is just regular content
+without any front matter.`,
+		},
+		{
+			name: "Unclosed front matter",
+			content: `---
 unclosed front matter
-without closing delimiter`
+without closing delimiter`,
+			wantErr:         true,
+			wantErrContains: "front matter not closed",
+		},
+	}
 
-	_, _, _, err = ParseFrontMatter(content)
-	assert.Error(err)
-	assert.Contains(err.Error(), "front matter not closed")
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			tag, fm, rem, err := ParseFrontMatter(tc.content)
+			if tc.wantErr {
+				assert.Error(err)
+				assert.Contains(err.Error(), tc.wantErrContains)
+				return
+			}
+			assert.NoError(err)
+			assert.Equal(tc.wantTag, tag)
+			assert.Equal(tc.wantFrontMatter, fm)
+			assert.Equal(tc.wantRemainder, rem)
+		})
+	}
 }

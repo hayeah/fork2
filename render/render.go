@@ -11,8 +11,8 @@ import (
 	"text/template"
 )
 
-// RenderContext holds shared data needed by the templating system.
-type RenderContext struct {
+// Resolver lookups available template
+type Resolver struct {
 	// Path of the currently executing template, used for local partial lookups.
 	CurrentTemplatePath string
 
@@ -27,7 +27,7 @@ type RenderContext struct {
 
 // ResolvePartial resolves a partial template path and returns its content.
 // This is a higher-level method that combines path resolution and content loading.
-func (ctx *RenderContext) ResolvePartial(partialPath string) (string, error) {
+func (ctx *Resolver) ResolvePartial(partialPath string) (string, error) {
 	// Resolve the partial path to determine which FS and file to use
 	fsys, filePath, err := ctx.ResolvePartialPath(partialPath)
 	if err != nil {
@@ -42,7 +42,7 @@ func (ctx *RenderContext) ResolvePartial(partialPath string) (string, error) {
 }
 
 // ResolvePartialPath determines which FS and file should be used for a given partial path.
-func (ctx *RenderContext) ResolvePartialPath(partialPath string) (fs.FS, string, error) {
+func (ctx *Resolver) ResolvePartialPath(partialPath string) (fs.FS, string, error) {
 	// Path Types:
 	// 1. System Template <vibe/coder>
 	// 2. Repo Root Template @common/header
@@ -78,11 +78,11 @@ func (ctx *RenderContext) ResolvePartialPath(partialPath string) (fs.FS, string,
 
 // Renderer provides template rendering capabilities.
 type Renderer struct {
-	ctx *RenderContext
+	ctx *Resolver
 }
 
 // NewRenderer creates a new Renderer with the given RenderContext.
-func NewRenderer(ctx *RenderContext) *Renderer {
+func NewRenderer(ctx *Resolver) *Renderer {
 	return &Renderer{
 		ctx: ctx,
 	}

@@ -14,7 +14,7 @@ type Template struct {
 }
 
 // LoadTemplate loads a template from a path
-func LoadTemplate(ctx *RenderContext, path string) (*Template, error) {
+func LoadTemplate(ctx *Resolver, path string) (*Template, error) {
 	var content string
 	var err error
 

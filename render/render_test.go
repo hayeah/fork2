@@ -33,7 +33,7 @@ func TestResolvePartialPath(t *testing.T) {
 	})
 
 	// Create render context with initial path
-	ctx := &RenderContext{
+	ctx := &Resolver{
 		SystemPartials: systemFS,
 		RepoPartials:   repoFS,
 	}
@@ -207,7 +207,7 @@ func TestRelativePathResolution(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			assert := assert.New(t)
 
-			ctx := &RenderContext{
+			ctx := &Resolver{
 				CurrentTemplatePath: tt.currentPath,
 				RepoPartials:        repoFS,
 			}
@@ -240,7 +240,7 @@ func TestPartialRendering(t *testing.T) {
 	})
 
 	// Create render context
-	ctx := &RenderContext{
+	ctx := &Resolver{
 		CurrentTemplatePath: "templates/main.md",
 		SystemPartials:      systemFS,
 		RepoPartials:        repoFS,
@@ -255,7 +255,7 @@ func TestPartialRendering(t *testing.T) {
 		Value string
 	}{
 		testContent: &testContent{},
-		Value: "test value",
+		Value:       "test value",
 	}
 
 	t.Run("simple partial", func(t *testing.T) {
@@ -290,7 +290,7 @@ func TestPartialRendering(t *testing.T) {
 // Helper type that satisfies render.Content interface
 type testContent struct{ content string }
 
-func (t *testContent) Content() string      { return t.content }
+func (t *testContent) Content() string     { return t.content }
 func (t *testContent) SetContent(c string) { t.content = c }
 
 func TestRenderer(t *testing.T) {
@@ -317,7 +317,7 @@ func TestRenderer(t *testing.T) {
 	})
 
 	// Create render context
-	ctx := &RenderContext{
+	ctx := &Resolver{
 		CurrentTemplatePath: "",
 		SystemPartials:      systemFS,
 		RepoPartials:        repoFS,
@@ -325,13 +325,13 @@ func TestRenderer(t *testing.T) {
 
 	// Create test data with embedded Content implementation
 	data := &struct {
-		*testContent            // embeds Content implementation
+		*testContent  // embeds Content implementation
 		System        string
 		ListDirectory []string
 		SelectedFiles []string
 		ToolList      string
 	}{
-		testContent:   &testContent{},          // satisfies Content
+		testContent:   &testContent{}, // satisfies Content
 		System:        "Linux",
 		ListDirectory: []string{"file1.go", "file2.md"},
 		SelectedFiles: []string{"selected1.go"},

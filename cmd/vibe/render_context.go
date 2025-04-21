@@ -23,7 +23,7 @@ var systemTemplatesFS embed.FS
 type VibeContext struct {
 	ask *AskRunner
 
-	RenderContext *render.RenderContext
+	RenderContext *render.Resolver
 	Renderer      *render.Renderer
 
 	Select string
@@ -43,7 +43,7 @@ func NewVibeContext(ask *AskRunner) (*VibeContext, error) {
 		return nil, fmt.Errorf("failed to create system prompts fs: %v", err)
 	}
 
-	ctx.RenderContext = &render.RenderContext{
+	ctx.RenderContext = &render.Resolver{
 		SystemPartials: systemfs,
 		RepoPartials:   os.DirFS(ask.RootPath),
 	}
