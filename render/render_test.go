@@ -33,10 +33,7 @@ func TestResolvePartialPath(t *testing.T) {
 	})
 
 	// Create render context with initial path
-	ctx := &Resolver{
-		SystemPartials: systemFS,
-		RepoPartials:   repoFS,
-	}
+	ctx := NewResolver(repoFS, systemFS)
 
 	tests := []struct {
 		name               string
@@ -115,9 +112,13 @@ func TestResolvePartialPath(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			assert := assert.New(t)
 
-			ctx.CurrentTemplatePath = tt.currentPath
+			// Use empty fs for current template FS in tests
+			var currentFS fs.FS
+			if tt.currentPath != "" {
+				currentFS = repoFS
+			}
 
-			gotFS, gotFile, err := ctx.ResolvePartialPath(tt.partialPath)
+			gotFS, gotFile, err := ctx.ResolvePartialPath(tt.partialPath, tt.currentPath, currentFS)
 
 			if tt.expectedErrMessage != "" {
 				assert.Error(err)
@@ -207,12 +208,14 @@ func TestRelativePathResolution(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			assert := assert.New(t)
 
-			ctx := &Resolver{
-				CurrentTemplatePath: tt.currentPath,
-				RepoPartials:        repoFS,
+			ctx := NewResolver(repoFS)
+			// Use empty fs for current template FS in tests
+			var currentFS fs.FS
+			if tt.currentPath != "" {
+				currentFS = repoFS
 			}
 
-			gotFS, gotFile, err := ctx.ResolvePartialPath(tt.partialPath)
+			gotFS, gotFile, err := ctx.ResolvePartialPath(tt.partialPath, tt.currentPath, currentFS)
 
 			if tt.expectedErrMsg != "" {
 				assert.Error(err)
@@ -240,11 +243,7 @@ func TestPartialRendering(t *testing.T) {
 	})
 
 	// Create render context
-	ctx := &Resolver{
-		CurrentTemplatePath: "templates/main.md",
-		SystemPartials:      systemFS,
-		RepoPartials:        repoFS,
-	}
+	ctx := NewResolver(repoFS, systemFS)
 
 	// Create a renderer with the context
 	renderer := NewRenderer(ctx)
@@ -317,11 +316,10 @@ func TestRenderer(t *testing.T) {
 	})
 
 	// Create render context
-	ctx := &Resolver{
-		CurrentTemplatePath: "",
-		SystemPartials:      systemFS,
-		RepoPartials:        repoFS,
-	}
+	ctx := NewResolver(repoFS, systemFS)
+	// No current template path for this test
+	currentPath := ""
+	var currentFS fs.FS
 
 	// Create test data with embedded Content implementation
 	data := &struct {
@@ -342,7 +340,7 @@ func TestRenderer(t *testing.T) {
 	renderer := NewRenderer(ctx)
 
 	// Create a template with layout in its frontmatter
-	tmpl, err := LoadTemplate(ctx, "@templates/user.md")
+	tmpl, _, err := LoadTemplate(ctx, "@common/header", currentPath, currentFS)
 	assert.NoError(err, "LoadTemplate should not return an error")
 
 	// Set the layout manually for the test

@@ -42,11 +42,7 @@ func NewVibeContext(ask *AskRunner) (*VibeContext, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to create system prompts fs: %v", err)
 	}
-
-	ctx.RenderContext = &render.Resolver{
-		SystemPartials: systemfs,
-		RepoPartials:   os.DirFS(ask.RootPath),
-	}
+	ctx.RenderContext = render.NewResolver(os.DirFS(ask.RootPath), systemfs)
 
 	ctx.Renderer = render.NewRenderer(ctx.RenderContext)
 
@@ -91,18 +87,13 @@ func (ctx *VibeContext) FileMap() (string, error) {
 
 // WriteFileSelections processes the selected files and outputs the result using the renderer
 func (ctx *VibeContext) WriteFileSelections(w io.Writer, contentPath string, layoutPath string) error {
-	ctx.RenderContext.CurrentTemplatePath = "./"
-	defer func() {
-		ctx.RenderContext.CurrentTemplatePath = "./"
-	}()
-
 	// We can no longer support inline content directly through LoadTemplate
 	// If this is an inline template, we need to handle it differently
 	var tmpl *render.Template
 	var err error
 
 	// Load the content template from path
-	tmpl, err = render.LoadTemplate(ctx.RenderContext, contentPath)
+	tmpl, _, err = render.LoadTemplate(ctx.RenderContext, contentPath, "./", ctx.RenderContext.Partials[0])
 	if err != nil {
 		return fmt.Errorf("error loading content template: %w", err)
 	}

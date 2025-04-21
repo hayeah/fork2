@@ -11,74 +11,100 @@ import (
 	"text/template"
 )
 
-// Resolver lookups available template
+// Resolver lookups available template paths across multiple filesystems
 type Resolver struct {
-	// Path of the currently executing template, used for local partial lookups.
-	CurrentTemplatePath string
-
-	// FS containing system-level partials (e.g., <vibe/coder>)
-	SystemPartials fs.FS
-
-	// FS containing repository-level partials (e.g., @vibe/coder)
-	//
-	// Note: os.DirFS("/home/user/myrepo") to prevent relative path escape
-	RepoPartials fs.FS
+	// Search‑order stack of filesystems – first = highest priority, last = builtin defaults
+	Partials []fs.FS
 }
 
-// ResolvePartial resolves a partial template path and returns its content.
+// ResolvePartial resolves a partial template path and returns its content and the filesystem it was found in.
 // This is a higher-level method that combines path resolution and content loading.
-func (ctx *Resolver) ResolvePartial(partialPath string) (string, error) {
+func (ctx *Resolver) ResolvePartial(partialPath string, currentTemplatePath string, currentTemplateFS fs.FS) (string, fs.FS, error) {
 	// Resolve the partial path to determine which FS and file to use
-	fsys, filePath, err := ctx.ResolvePartialPath(partialPath)
+	fsys, filePath, err := ctx.ResolvePartialPath(partialPath, currentTemplatePath, currentTemplateFS)
 	if err != nil {
-		return "", fmt.Errorf("error resolving partial path %q: %w", partialPath, err)
+		return "", nil, fmt.Errorf("error resolving partial path %q: %w", partialPath, err)
 	}
 
 	content, err := fs.ReadFile(fsys, filePath)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
-	return string(content), nil
+	return string(content), fsys, nil
+}
+
+// NewResolver creates a new Resolver with the given filesystem stack.
+func NewResolver(partials ...fs.FS) *Resolver {
+	return &Resolver{Partials: partials}
 }
 
 // ResolvePartialPath determines which FS and file should be used for a given partial path.
-func (ctx *Resolver) ResolvePartialPath(partialPath string) (fs.FS, string, error) {
-	// Path Types:
-	// 1. System Template <vibe/coder>
-	// 2. Repo Root Template @common/header
-	// 3. Local Template ./helpers/buttons
-
+// It uses the following rules:
+// 1. System Template <vibe/coder> - use the last FS in Partials
+// 2. Repo Root Template @common/header - use the first FS in Partials
+// 3. Local Template ./helpers/buttons - use the same FS as the current template
+// 4. Bare path common/header - search all FS in order until found
+func (ctx *Resolver) ResolvePartialPath(partialPath string, currentTemplatePath string, currentTemplateFS fs.FS) (fs.FS, string, error) {
 	switch {
 	case strings.HasPrefix(partialPath, "<") && strings.HasSuffix(partialPath, ">"):
-		// System template
+		// System template - use the last FS in Partials
 		path := strings.TrimPrefix(strings.TrimSuffix(partialPath, ">"), "<")
-		return ctx.SystemPartials, path, nil
+		if len(ctx.Partials) == 0 {
+			return nil, "", fmt.Errorf("no filesystem available for system template")
+		}
+		return ctx.Partials[len(ctx.Partials)-1], path, nil
 
 	case strings.HasPrefix(partialPath, "@"):
-		// Repo root template
+		// Repo root template - use the first FS in Partials
 		path := strings.TrimPrefix(partialPath, "@")
-		return ctx.RepoPartials, path, nil
+		if len(ctx.Partials) == 0 {
+			return nil, "", fmt.Errorf("no filesystem available for repo template")
+		}
+		return ctx.Partials[0], path, nil
 
-	default:
+	case strings.HasPrefix(partialPath, "./") || strings.HasPrefix(partialPath, "../") || partialPath == "." || partialPath == "..":
 		// Local template (relative to current template)
-		if ctx.CurrentTemplatePath == "" {
-			return nil, "", fmt.Errorf("cannot resolve local path without CurrentTemplatePath")
+		if currentTemplatePath == "" {
+			return nil, "", fmt.Errorf("cannot resolve relative path without currentTemplatePath")
+		}
+		if currentTemplateFS == nil {
+			return nil, "", fmt.Errorf("cannot resolve relative path without currentTemplateFS")
 		}
 
 		// Get the directory of the current template
-		currentDir := filepath.Dir(ctx.CurrentTemplatePath)
+		currentDir := filepath.Dir(currentTemplatePath)
 
-		// Join the paths to get the full path relative to the repo root
+		// Resolve the path relative to the current template
 		fullPath := filepath.Join(currentDir, partialPath)
 		fullPath = filepath.Clean(fullPath)
 
-		return ctx.RepoPartials, fullPath, nil
+		return currentTemplateFS, fullPath, nil
+
+	default:
+		// Bare path - search through all filesystems in order
+		if len(ctx.Partials) == 0 {
+			return nil, "", fmt.Errorf("no filesystems available for template lookup")
+		}
+
+		// Try each filesystem in order until we find the file
+		for _, fsys := range ctx.Partials {
+			// Check if the file exists in this filesystem
+			if _, err := fs.Stat(fsys, partialPath); err == nil {
+				return fsys, partialPath, nil
+			}
+		}
+
+		return nil, "", fmt.Errorf("template %q not found in any filesystem", partialPath)
 	}
 }
 
 // Renderer provides template rendering capabilities.
 type Renderer struct {
 	ctx *Resolver
+
+	// Current template context
+	curPath string
+	curFS   fs.FS
 }
 
 // NewRenderer creates a new Renderer with the given RenderContext.
@@ -89,8 +115,8 @@ func NewRenderer(ctx *Resolver) *Renderer {
 }
 
 // loadTemplate loads a template from the given path.
-func (r *Renderer) loadTemplate(templatePath string) (*Template, error) {
-	return LoadTemplate(r.ctx, templatePath)
+func (r *Renderer) loadTemplate(templatePath string) (*Template, fs.FS, error) {
+	return LoadTemplate(r.ctx, templatePath, r.curPath, r.curFS)
 }
 
 // Content is implemented by any data object that can carry the
@@ -107,7 +133,7 @@ type Content interface {
 //   - partialPath: The path to the template to render. Can be in one of three formats:
 //   - System template: <vibe/coder>
 //   - Repo root template: @common/header
-//   - Local template: ./helpers/buttons (relative to CurrentTemplatePath)
+//   - Local template: ./helpers/buttons (relative to current template path)
 //   - data: The data to pass to the template during rendering
 //
 // Returns:
@@ -115,10 +141,21 @@ type Content interface {
 //   - An error if the template could not be loaded or rendered
 func (r *Renderer) RenderPartial(partialPath string, data Content) (string, error) {
 	// Load the template
-	tmpl, err := LoadTemplate(r.ctx, partialPath)
+	tmpl, tmplFS, err := r.loadTemplate(partialPath)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("error loading template %s: %w", partialPath, err)
 	}
+
+	// Save the current context
+	prevPath, prevFS := r.curPath, r.curFS
+
+	// Set the new context for this template
+	r.curPath, r.curFS = tmpl.Path, tmplFS
+
+	// Restore the original context when we're done
+	defer func() {
+		r.curPath, r.curFS = prevPath, prevFS
+	}()
 
 	// Force no layout for partials
 	tmpl.Meta.Layout = ""
@@ -132,13 +169,23 @@ func (r *Renderer) RenderPartial(partialPath string, data Content) (string, erro
 // If the template has a layout, it's rendered and then passed as .Content to the layout template.
 // data is the data to pass to the template.
 func (r *Renderer) Render(contentPath string, data Content) (string, error) {
-	// Load the template
-	tmpl, err := LoadTemplate(r.ctx, contentPath)
+	// Load the content template
+	tmpl, tmplFS, err := r.loadTemplate(contentPath)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("error loading content template %s: %w", contentPath, err)
 	}
 
-	// Render the template with layouts
+	// Save the current context
+	prevPath, prevFS := r.curPath, r.curFS
+
+	// Set the new context for this template
+	r.curPath, r.curFS = tmpl.Path, tmplFS
+
+	// Restore the original context when we're done
+	defer func() {
+		r.curPath, r.curFS = prevPath, prevFS
+	}()
+
 	return r.RenderTemplate(tmpl, data)
 }
 
@@ -151,7 +198,6 @@ func (r *Renderer) RenderTemplate(t *Template, data Content) (string, error) {
 
 // renderTemplateInternal is the internal implementation of renderWithLayouts with cycle detection
 func (r *Renderer) renderTemplateInternal(t *Template, data Content, seen map[string]bool, depth int) (string, error) {
-	// Guard against infinite recursion
 	if depth > 10 {
 		return "", fmt.Errorf("layout nesting too deep (max 10): %s", t.Path)
 	}
@@ -164,11 +210,8 @@ func (r *Renderer) renderTemplateInternal(t *Template, data Content, seen map[st
 		seen[t.Meta.Layout] = true
 	}
 
-	// Store original current template path
-	originalPath := r.ctx.CurrentTemplatePath
-	// Update current template path for local partial resolution
-	defer func() { r.ctx.CurrentTemplatePath = originalPath }()
-	r.ctx.CurrentTemplatePath = t.Path
+	// We're already in the correct context from the caller
+	// The curPath and curFS should be set to t.Path and the FS that provided t
 
 	// Create a template for content
 	contentTmpl := template.New("content")
@@ -194,23 +237,35 @@ func (r *Renderer) renderTemplateInternal(t *Template, data Content, seen map[st
 
 	renderedContent := contentBuf.String()
 
+	// If a layout is specified, load and render it with the content
+	if t.Meta.Layout != "" {
+		// Load the layout template
+		layoutTmpl, layoutFS, err := r.loadTemplate(t.Meta.Layout)
+		if err != nil {
+			return "", fmt.Errorf("error loading layout template %s: %w", t.Meta.Layout, err)
+		}
+
+		// Save the current context
+		prevPath, prevFS := r.curPath, r.curFS
+
+		// Set the new context for the layout template
+		r.curPath, r.curFS = layoutTmpl.Path, layoutFS
+
+		// Restore the original context when we're done with this layout
+		defer func() {
+			r.curPath, r.curFS = prevPath, prevFS
+		}()
+
+		// Save the original content and set the rendered content
+		prev := data.Content()
+		data.SetContent(renderedContent)
+		// Restore the original content when we're done
+		defer func() { data.SetContent(prev) }()
+
+		// Recursively render with the parent layout
+		return r.renderTemplateInternal(layoutTmpl, data, seen, depth+1)
+	}
+
 	// If no layout is specified, return the content directly
-	if t.Meta.Layout == "" {
-		return renderedContent, nil
-	}
-
-	// Load the layout template
-	layoutTmpl, err := LoadTemplate(r.ctx, t.Meta.Layout)
-	if err != nil {
-		return "", fmt.Errorf("error loading layout %s: %w", t.Meta.Layout, err)
-	}
-
-	// Save the original content and set the rendered content
-	prev := data.Content()
-	data.SetContent(renderedContent)
-	// Restore the original content when we're done
-	defer func() { data.SetContent(prev) }()
-
-	// Recursively render with the parent layout
-	return r.renderTemplateInternal(layoutTmpl, data, seen, depth+1)
+	return renderedContent, nil
 }
