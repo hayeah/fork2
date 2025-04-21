@@ -21,7 +21,7 @@ type AskCmd struct {
 	All            bool   `arg:"-a,--all" help:"Select all files and output immediately"`
 	// Output sets the destination for the generated prompt: '-' for stdout, a file path to write the output, or empty to copy to clipboard
 	Output      string `arg:"-o,--output" help:"Output destination: '-' for stdout; file path to write; if not set, copy to clipboard"`
-	Role        string `arg:"--role" help:"Role/layout to use for output"`
+	Role        string `arg:"--role" help:"Role/layout to use for output" default:"coder"`
 	Select      string `arg:"--select" help:"Select files matching patterns"`
 	Instruction string `arg:"positional" help:"User instruction or path to instruction file"`
 }
@@ -167,10 +167,12 @@ func (r *AskRunner) handleOutput() error {
 	renderArgs := render.RenderArgs{}
 	if r.Instruct != nil {
 		renderArgs.Content = r.Instruct.UserContent
-		role := r.Args.Role
-		if role == "" {
-			role = "coder" // Default role
-		}
+	}
+
+	role := r.Args.Role
+	if role == "empty" {
+		renderArgs.LayoutPath = ""
+	} else {
 		renderArgs.LayoutPath = "<" + role + ">"
 	}
 

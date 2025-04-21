@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/atotto/clipboard"
 	"github.com/hayeah/fork2/render"
 )
 
@@ -134,6 +135,11 @@ type VibeContextMemoized struct {
 	FileMapOnce           func() (string, error)
 	RepoDirectoryTreeOnce func() (string, error)
 	RepoPromptsOnce       func() (string, error)
+}
+
+// ClipboardText returns the current clipboard content as a string.
+func (ctx *VibeContextMemoized) ClipboardText() (string, error) {
+	return clipboard.ReadAll()
 }
 
 func (ctx *VibeContextMemoized) FileMap() (string, error) {
