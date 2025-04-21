@@ -93,7 +93,7 @@ func (ctx *VibeContext) WriteFileSelections(w io.Writer, contentPath string, lay
 	var err error
 
 	// Load the content template from path
-	tmpl, _, err = render.LoadTemplate(ctx.RenderContext, contentPath, "./", ctx.RenderContext.Partials[0])
+	tmpl, err = ctx.Renderer.LoadTemplate(contentPath)
 	if err != nil {
 		return fmt.Errorf("error loading content template: %w", err)
 	}

@@ -15,40 +15,7 @@ type Template struct {
 	Path string // repo-relative
 	Body string // content without FM
 	Meta Meta   // parsed FM (empty if none)
+	FS   fs.FS  // filesystem where the template was found
 }
 
-// LoadTemplate loads a template from a path and returns the template along with the filesystem it was loaded from
-func LoadTemplate(ctx *Resolver, path string, currentTemplatePath string, currentTemplateFS fs.FS) (*Template, fs.FS, error) {
-	var content string
-	var fsys fs.FS
-	var err error
 
-	// Resolve the path to get the content
-	content, fsys, err = ctx.ResolvePartial(path, currentTemplatePath, currentTemplateFS)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	// Parse frontmatter
-	_, frontMatterContent, body, err := ParseFrontMatter(content)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	// Create template with empty Meta by default
-	meta := Meta{}
-	if frontMatterContent != "" {
-		if err := ParseToml(frontMatterContent, &meta); err != nil {
-			return nil, nil, err
-		}
-	}
-
-	// Create and return the template with the parsed metadata
-	tmpl := &Template{
-		Path: path,
-		Body: body,
-		Meta: meta,
-	}
-
-	return tmpl, fsys, nil
-}

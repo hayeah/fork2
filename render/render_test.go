@@ -8,230 +8,132 @@ import (
 	"github.com/hayeah/fork2/internal/assert"
 )
 
-// createTestFS creates a test filesystem with the given files
+//--------------------------------- Helper utilities ---------------------------------
+
+// createTestFS builds an in‑memory filesystem for convenient test setup.
 func createTestFS(files map[string]string) fs.FS {
-	fsys := fstest.MapFS{}
+	m := fstest.MapFS{}
 	for path, content := range files {
-		fsys[path] = &fstest.MapFile{
-			Data: []byte(content),
-		}
+		m[path] = &fstest.MapFile{Data: []byte(content)}
 	}
-	return fsys
+	return m
 }
 
+// testContent is a tiny implementation of the Content interface used by the
+// renderer. Keeping it here avoids duplication across individual test cases.
+type testContent struct{ content string }
+
+func (c *testContent) Content() string     { return c.content }
+func (c *testContent) SetContent(s string) { c.content = s }
+
+// templatePtr is a small helper that returns a *Template populated with the
+// supplied path & FS only when the path is non‑empty. It keeps the call sites
+// for ResolvePartialPath compact and readable.
+func templatePtr(p string, fsys fs.FS) *Template {
+	if p == "" {
+		return nil
+	}
+	return &Template{Path: p, FS: fsys}
+}
+
+//--------------------------------- Core tests ---------------------------------
+
 func TestResolvePartialPath(t *testing.T) {
-	// Create test filesystems
+	// Build a pair of filesystems: one "repo" and one "system" to emulate the
+	// search stack that Resolver expects (first = repo, last = system).
 	systemFS := createTestFS(map[string]string{
-		"vibe/coder": "System Coder Template",
+		"vibe/coder": "system coder template",
 	})
-
 	repoFS := createTestFS(map[string]string{
-		"common/header":                 "Repo Header Template",
-		"templates/local/helper":        "Local Helper Template",
-		"templates/subdir/component.md": "Component Template",
-		"components/shared/footer.md":   "Footer Template",
+		"common/header":                 "repo header template",
+		"templates/local/helper":        "local helper template",
+		"templates/subdir/component.md": "component template",
+		"components/shared/footer.md":   "footer template",
 	})
 
-	// Create render context with initial path
 	ctx := NewResolver(repoFS, systemFS)
+	assert := assert.New(t)
 
-	tests := []struct {
-		name               string
-		currentPath        string // Override CurrentTemplatePath if not empty
-		partialPath        string
-		expectedFSType     string // "system", "repo", or "nil"
-		expectedFile       string
-		expectedErrMessage string
+	cases := []struct {
+		name          string
+		currentPath   string // path of the template that is currently rendering
+		partialPath   string // path we are resolving
+		wantFS        fs.FS  // repoFS / systemFS / nil
+		wantFile      string // resolved file path
+		wantErrSubstr string // substring that must appear in error (if non‑empty)
 	}{
-		{
-			name:           "System template",
-			partialPath:    "<vibe/coder>",
-			expectedFSType: "system",
-			expectedFile:   "vibe/coder",
-		},
-		{
-			name:           "Repo root template",
-			currentPath:    "templates/main.md",
-			partialPath:    "@common/header",
-			expectedFSType: "repo",
-			expectedFile:   "common/header",
-		},
-		{
-			name:           "Repo root template from deeper",
-			currentPath:    "templates/foo/bar/main.md",
-			partialPath:    "@common/header",
-			expectedFSType: "repo",
-			expectedFile:   "common/header",
-		},
-		{
-			currentPath:    "templates/main.md",
-			name:           "Local template",
-			partialPath:    "./local/helper",
-			expectedFSType: "repo",
-			expectedFile:   "templates/local/helper",
-		},
-		{
-			name:           "Local template from subfolder",
-			currentPath:    "templates/subdir/page.md",
-			partialPath:    "./component.md",
-			expectedFSType: "repo",
-			expectedFile:   "templates/subdir/component.md",
-		},
-		{
-			name:           "Relative path up one directory",
-			currentPath:    "templates/subdir/page.md",
-			partialPath:    "../local/helper",
-			expectedFSType: "repo",
-			expectedFile:   "templates/local/helper",
-		},
-		{
-			name:           "Relative path up multiple directories",
-			currentPath:    "templates/subdir/nested/page.md",
-			partialPath:    "../../local/helper",
-			expectedFSType: "repo",
-			expectedFile:   "templates/local/helper",
-		},
-		{
-			name:           "Complex relative path traversal",
-			currentPath:    "templates/subdir/page.md",
-			partialPath:    "../../components/shared/footer.md",
-			expectedFSType: "repo",
-			expectedFile:   "components/shared/footer.md",
-		},
-		{
-			name:               "Empty CurrentTemplatePath with local path",
-			currentPath:        "",
-			partialPath:        "./local/helper",
-			expectedFSType:     "nil",
-			expectedFile:       "",
-			expectedErrMessage: "cannot resolve local path without CurrentTemplatePath",
-		},
+		{name: "system template", partialPath: "<vibe/coder>", wantFS: systemFS, wantFile: "vibe/coder"},
+		{name: "repo root template", currentPath: "templates/main.md", partialPath: "@common/header", wantFS: repoFS, wantFile: "common/header"},
+		{name: "local template", currentPath: "templates/main.md", partialPath: "./local/helper", wantFS: repoFS, wantFile: "templates/local/helper"},
+		{name: "relative up one", currentPath: "templates/subdir/page.md", partialPath: "../local/helper", wantFS: repoFS, wantFile: "templates/local/helper"},
+		{name: "relative across tree", currentPath: "templates/subdir/page.md", partialPath: "../../components/shared/footer.md", wantFS: repoFS, wantFile: "components/shared/footer.md"},
+		{name: "missing cur template for relative", currentPath: "", partialPath: "./local/helper", wantErrSubstr: "cannot resolve relative path without currentTemplatePath"},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			assert := assert.New(t)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			gotFS, gotFile, err := ctx.ResolvePartialPath(tc.partialPath, templatePtr(tc.currentPath, repoFS))
 
-			// Use empty fs for current template FS in tests
-			var currentFS fs.FS
-			if tt.currentPath != "" {
-				currentFS = repoFS
-			}
-
-			gotFS, gotFile, err := ctx.ResolvePartialPath(tt.partialPath, tt.currentPath, currentFS)
-
-			if tt.expectedErrMessage != "" {
+			if tc.wantErrSubstr != "" {
 				assert.Error(err)
-				assert.Contains(err.Error(), tt.expectedErrMessage)
-				assert.Equal("", gotFile)
-				assert.Nil(gotFS)
+				assert.Contains(err.Error(), tc.wantErrSubstr)
 				return
 			}
-
 			assert.NoError(err)
-			assert.Equal(tt.expectedFile, gotFile)
-
-			// Check the filesystem type instead of comparing directly
-			switch tt.expectedFSType {
-			case "system":
-				assert.Equal(systemFS, gotFS)
-			case "repo":
-				assert.Equal(repoFS, gotFS)
-			case "nil":
-				assert.Nil(gotFS)
-			}
+			assert.Equal(tc.wantFile, gotFile)
+			assert.Equal(tc.wantFS, gotFS)
 		})
 	}
 }
 
 func TestRelativePathResolution(t *testing.T) {
-	// Create test filesystem with nested directory structure
 	repoFS := createTestFS(map[string]string{
-		"components/button.md":          "Button Component",
-		"components/form/input.md":      "Form Input Component",
-		"templates/page.md":             "Page Template",
-		"templates/blog/post.md":        "Blog Post Template",
-		"templates/blog/list.md":        "Blog List Template",
-		"templates/admin/dashboard.md":  "Admin Dashboard",
-		"templates/admin/users/list.md": "Admin Users List",
-		"templates/shared/header.md":    "Shared Header",
-		"templates/shared/footer.md":    "Shared Footer",
+		"components/button.md":          "button component",
+		"components/form/input.md":      "form input component",
+		"templates/page.md":             "page template",
+		"templates/blog/post.md":        "blog post template",
+		"templates/blog/list.md":        "blog list template",
+		"templates/admin/dashboard.md":  "admin dashboard",
+		"templates/admin/users/list.md": "admin users list",
+		"templates/shared/header.md":    "shared header",
+		"templates/shared/footer.md":    "shared footer",
 	})
 
-	// Table driven tests for different current template paths and relative references
-	tests := []struct {
-		name           string
-		currentPath    string
-		partialPath    string
-		expectedFile   string
-		expectedErrMsg string
+	ctx := NewResolver(repoFS)
+	assert := assert.New(t)
+
+	cases := []struct {
+		name          string
+		currentPath   string
+		partialPath   string
+		wantFile      string
+		wantErrSubstr string
 	}{
-		{
-			name:         "Simple relative path from template",
-			currentPath:  "templates/page.md",
-			partialPath:  "./shared/header.md",
-			expectedFile: "templates/shared/header.md",
-		},
-		{
-			name:         "Relative path from nested template",
-			currentPath:  "templates/blog/post.md",
-			partialPath:  "../shared/footer.md",
-			expectedFile: "templates/shared/footer.md",
-		},
-		{
-			name:         "Relative path to parent directory and different branch",
-			currentPath:  "templates/admin/users/list.md",
-			partialPath:  "../../blog/list.md",
-			expectedFile: "templates/blog/list.md",
-		},
-		{
-			name:         "Relative path going up to root level component",
-			currentPath:  "templates/admin/dashboard.md",
-			partialPath:  "../../components/button.md",
-			expectedFile: "components/button.md",
-		},
-		{
-			name:         "Complex navigation with multiple ups and downs",
-			currentPath:  "templates/blog/list.md",
-			partialPath:  "../admin/users/../dashboard.md",
-			expectedFile: "templates/admin/dashboard.md",
-		},
-		{
-			name:           "Missing CurrentTemplatePath",
-			currentPath:    "",
-			partialPath:    "./shared/header.md",
-			expectedErrMsg: "cannot resolve local path without CurrentTemplatePath",
-		},
+		{name: "simple relative", currentPath: "templates/page.md", partialPath: "./shared/header.md", wantFile: "templates/shared/header.md"},
+		{name: "nested relative", currentPath: "templates/blog/post.md", partialPath: "../shared/footer.md", wantFile: "templates/shared/footer.md"},
+		{name: "parent and branch", currentPath: "templates/admin/users/list.md", partialPath: "../../blog/list.md", wantFile: "templates/blog/list.md"},
+		{name: "root level", currentPath: "templates/admin/dashboard.md", partialPath: "../../components/button.md", wantFile: "components/button.md"},
+		{name: "complex navigation", currentPath: "templates/blog/list.md", partialPath: "../admin/users/../dashboard.md", wantFile: "templates/admin/dashboard.md"},
+		{name: "missing cur template", currentPath: "", partialPath: "./shared/header.md", wantErrSubstr: "cannot resolve relative path without currentTemplatePath"},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			assert := assert.New(t)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			gotFS, gotFile, err := ctx.ResolvePartialPath(tc.partialPath, templatePtr(tc.currentPath, repoFS))
 
-			ctx := NewResolver(repoFS)
-			// Use empty fs for current template FS in tests
-			var currentFS fs.FS
-			if tt.currentPath != "" {
-				currentFS = repoFS
-			}
-
-			gotFS, gotFile, err := ctx.ResolvePartialPath(tt.partialPath, tt.currentPath, currentFS)
-
-			if tt.expectedErrMsg != "" {
+			if tc.wantErrSubstr != "" {
 				assert.Error(err)
-				assert.Contains(err.Error(), tt.expectedErrMsg)
+				assert.Contains(err.Error(), tc.wantErrSubstr)
 				return
 			}
-
 			assert.NoError(err)
-			assert.Equal(tt.expectedFile, gotFile)
 			assert.Equal(repoFS, gotFS)
+			assert.Equal(tc.wantFile, gotFile)
 		})
 	}
 }
 
 func TestPartialRendering(t *testing.T) {
-	// Create test filesystems with nested partials
 	systemFS := createTestFS(map[string]string{
 		"vibe/coder":  "System {{ partial \"<vibe/footer>\" }}",
 		"vibe/footer": "Footer",
@@ -239,17 +141,15 @@ func TestPartialRendering(t *testing.T) {
 
 	repoFS := createTestFS(map[string]string{
 		"common/header":          "Repo Header with {{ .Value }}",
+		"templates/main.md":      "ignored",
 		"templates/local/helper": "Local Helper that uses {{ partial \"@common/header\" }}",
 	})
 
-	// Create render context
 	ctx := NewResolver(repoFS, systemFS)
-
-	// Create a renderer with the context
 	renderer := NewRenderer(ctx)
+	assert := assert.New(t)
 
-	// Test data
-	testData := struct {
+	data := struct {
 		*testContent
 		Value string
 	}{
@@ -258,44 +158,31 @@ func TestPartialRendering(t *testing.T) {
 	}
 
 	t.Run("simple partial", func(t *testing.T) {
-		assert := assert.New(t)
-
-		// Test a simple partial using Render with empty layoutPath
-		result, err := renderer.RenderPartial("@common/header", testData)
-		assert.NoError(err, "Partial rendering should not return an error")
-		assert.Equal("Repo Header with test value", result, "Partial should render with variable interpolation")
+		got, err := renderer.RenderPartial("@common/header", &data)
+		assert.NoError(err)
+		assert.Equal("Repo Header with test value", got)
 	})
 
 	t.Run("nested partial", func(t *testing.T) {
-		assert := assert.New(t)
-
-		// Test a nested partial using Render with empty layoutPath
-		result, err := renderer.RenderPartial("<vibe/coder>", testData)
-		assert.NoError(err, "Nested partial rendering should not return an error")
-		assert.Equal("System Footer", result, "Nested partial should be correctly rendered")
+		got, err := renderer.RenderPartial("<vibe/coder>", &data)
+		assert.NoError(err)
+		assert.Equal("System Footer", got)
 	})
 
-	t.Run("local partial with repo reference", func(t *testing.T) {
-		assert := assert.New(t)
+	t.Run("local relative partial", func(t *testing.T) {
+		// Seed renderer with a current template so that a relative reference
+		// can be resolved correctly.
+		renderer.cur = &Template{Path: "templates/main.md", FS: repoFS}
 
-		// Test a local partial that references a repo partial
-		result, err := renderer.RenderPartial("./local/helper", testData)
-		assert.NoError(err, "Local partial rendering should not return an error")
-		assert.Equal("Local Helper that uses Repo Header with test value",
-			result, "Local partial should correctly include repo partial with variable interpolation")
+		got, err := renderer.RenderPartial("./local/helper", &data)
+		assert.NoError(err)
+		assert.Equal("Local Helper that uses Repo Header with test value", got)
 	})
 }
 
-// Helper type that satisfies render.Content interface
-type testContent struct{ content string }
-
-func (t *testContent) Content() string     { return t.content }
-func (t *testContent) SetContent(c string) { t.content = c }
-
-func TestRenderer(t *testing.T) {
+func TestRendererWithLayout(t *testing.T) {
 	assert := assert.New(t)
 
-	// Create test filesystems
 	systemFS := createTestFS(map[string]string{
 		"vibe/coder": "Coder: {{ .System }}",
 	})
@@ -315,43 +202,81 @@ func TestRenderer(t *testing.T) {
 		"templates/user.md": "Hello from the user",
 	})
 
-	// Create render context
 	ctx := NewResolver(repoFS, systemFS)
-	// No current template path for this test
-	currentPath := ""
-	var currentFS fs.FS
+	renderer := NewRenderer(ctx)
 
-	// Create test data with embedded Content implementation
 	data := &struct {
-		*testContent  // embeds Content implementation
+		*testContent
 		System        string
 		ListDirectory []string
 		SelectedFiles []string
 		ToolList      string
 	}{
-		testContent:   &testContent{}, // satisfies Content
+		testContent:   &testContent{},
 		System:        "Linux",
 		ListDirectory: []string{"file1.go", "file2.md"},
 		SelectedFiles: []string{"selected1.go"},
 		ToolList:      "Tool1, Tool2, Tool3",
 	}
 
-	// Create a renderer with the context
-	renderer := NewRenderer(ctx)
+	// Load the content template, bolt on a layout, and render.
+	tmpl, err := ctx.LoadTemplate("templates/user.md", nil)
+	assert.NoError(err)
+	tmpl.Meta.Layout = "layouts/main.md" // bare path => repo root FS
 
-	// Create a template with layout in its frontmatter
-	tmpl, _, err := LoadTemplate(ctx, "@common/header", currentPath, currentFS)
-	assert.NoError(err, "LoadTemplate should not return an error")
-
-	// Set the layout manually for the test
-	tmpl.Meta.Layout = "@layouts/main.md"
-
-	// Render the template
-	result, err := renderer.RenderTemplate(tmpl, data)
+	out, err := renderer.RenderTemplate(tmpl, data)
 	assert.NoError(err)
 
-	// Quick sanity checks - the layout template is being used
-	assert.Contains(result, "Coder: Linux")
-	assert.Contains(result, "Tool1, Tool2, Tool3")
-	assert.Contains(result, "[file1.go file2.md]")
+	assert.Contains(out, "Coder: Linux")
+	assert.Contains(out, "Tool1, Tool2, Tool3")
+	assert.Contains(out, "[file1.go file2.md]")
+}
+
+func TestLayoutCycleDetection(t *testing.T) {
+	repoFS := createTestFS(map[string]string{
+		"a.md": "---toml\nlayout = \"b.md\"\n---\nA", // a -> b
+		"b.md": "---toml\nlayout = \"a.md\"\n---\nB", // b -> a (cycle)
+	})
+
+	ctx := NewResolver(repoFS)
+	renderer := NewRenderer(ctx)
+	assert := assert.New(t)
+
+	_, err := renderer.Render("a.md", &testContent{})
+	assert.Error(err)
+	assert.Contains(err.Error(), "layout cycle detected")
+}
+
+func TestLayoutDeepNestingLimit(t *testing.T) {
+	// Build 12 templates nested one inside another (index 0 has layout 1, etc.)
+	files := map[string]string{}
+	for i := 0; i < 12; i++ {
+		body := "T" + string(rune('0'+i))
+		if i < 11 { // last template has no layout
+			body = "---toml\nlayout = \"t" + string(rune('0'+i+1)) + ".md\"\n---\n" + body
+		}
+		files["t"+string(rune('0'+i))+".md"] = body
+	}
+
+	repoFS := createTestFS(files)
+	ctx := NewResolver(repoFS)
+	renderer := NewRenderer(ctx)
+	assert := assert.New(t)
+
+	_, err := renderer.Render("t0.md", &testContent{})
+	assert.Error(err)
+	assert.Contains(err.Error(), "layout nesting too deep")
+}
+
+func TestLoadTemplateParsesFrontMatter(t *testing.T) {
+	repoFS := createTestFS(map[string]string{
+		"foo.md":  "---toml\nlayout=\"base.md\"\n---\nHello",
+		"base.md": "Base {{ .Content }}",
+	})
+	ctx := NewResolver(repoFS)
+	assert := assert.New(t)
+
+	tmpl, err := ctx.LoadTemplate("foo.md", nil)
+	assert.NoError(err)
+	assert.Equal("base.md", tmpl.Meta.Layout)
 }
