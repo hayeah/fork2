@@ -149,6 +149,7 @@ func (p *InstructParser) parseTomlHeader(content string) (*InstructHeader, error
 
 // InstructHeader represents the parsed TOML fields
 type InstructHeader struct {
+	Layout string          `toml:"layout"`
 	Select string          `toml:"select"`
 	Files  []FileSelection `toml:"file"`
 }

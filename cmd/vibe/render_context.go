@@ -132,9 +132,21 @@ func newVibeContextMemoized(ctx *VibeContext) *VibeContextMemoized {
 }
 
 type VibeContextMemoized struct {
+	content string
+
 	FileMapOnce           func() (string, error)
 	RepoDirectoryTreeOnce func() (string, error)
 	RepoPromptsOnce       func() (string, error)
+}
+
+// Content returns the current clipboard content as a string.
+func (ctx *VibeContextMemoized) Content() string {
+	return ctx.content
+}
+
+// SetContent sets the current content. (void stub for now)
+func (ctx *VibeContextMemoized) SetContent(content string) {
+	ctx.content = content
 }
 
 // ClipboardText returns the current clipboard content as a string.
