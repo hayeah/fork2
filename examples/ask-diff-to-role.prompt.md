@@ -1096,7 +1096,7 @@ func TestNewAskRunner_FrontMatterParsing(t *testing.T) {
 ## User Task
 
 +++
---select cmd/vibe/askgo 
+--select cmd/vibe/askgo
 --copy
 +++
 

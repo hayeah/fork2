@@ -23,7 +23,7 @@ func TestExec(t *testing.T) {
 
 	// Mock the prompt function for testing
 	promptFn = mockPromptForConfirmation
-	
+
 	assert := assert.New(t)
 
 	// Test with a simple echo command

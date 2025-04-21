@@ -90,9 +90,9 @@ HEREDOC
 
 ## Reminders On Tool Uses
 
-- **modify** Only replace exactly what you need. Avoid including entire functions or files if only a small snippet changes, and ensure the `$search` content is unique and easy to identify. 
+- **modify** Only replace exactly what you need. Avoid including entire functions or files if only a small snippet changes, and ensure the `$search` content is unique and easy to identify.
 - **modify** Use `...` to elide the middle of the function when searching. It is important to minimize your search lines, to achieve better accuracies.
-- **modify**: Respect indentation exactly to ensure the `$search` block matches the original source down to braces, spacing, and any comments. 
+- **modify**: Respect indentation exactly to ensure the `$search` block matches the original source down to braces, spacing, and any comments.
 - **rewrite** Use `rewrite` for major overhauls, and `modify` for smaller, localized edits. Rewrite requires the entire code to be replaced, so use it sparingly.
 - **create** new files and **delete** existing files. Provide full code for create, and empty content for delete. Avoid creating files you know exist already.
 - If a file tree is provided, place your files logically within that structure. Respect the user’s relative or absolute paths.

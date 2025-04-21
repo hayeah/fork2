@@ -157,5 +157,3 @@ See these files for the relevant input and output:
 
 - **Partials**
   If you want to bring in partial templates, you can place lines like `{{ partial "<myRole>" }}` (for system templates) or `{{ partial "@repoRoot/whatever" }}` (for repo‑root partials) or `{{ partial "./someLocalPartial" }}` (for local partials in the same directory).
-
-

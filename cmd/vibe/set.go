@@ -78,24 +78,24 @@ func SortedValues[T comparable](s *Set[T], less func(a, b T) bool) []T {
 // Union returns a new set with all elements from both sets
 func (s *Set[T]) Union(other *Set[T]) *Set[T] {
 	result := NewSet[T]()
-	
+
 	// Add all elements from this set
 	for value := range s.items {
 		result.Add(value)
 	}
-	
+
 	// Add all elements from the other set
 	for value := range other.items {
 		result.Add(value)
 	}
-	
+
 	return result
 }
 
 // Intersection returns a new set with elements that exist in both sets
 func (s *Set[T]) Intersection(other *Set[T]) *Set[T] {
 	result := NewSet[T]()
-	
+
 	// Use the smaller set for iteration to optimize
 	if s.Len() <= other.Len() {
 		for value := range s.items {
@@ -110,19 +110,19 @@ func (s *Set[T]) Intersection(other *Set[T]) *Set[T] {
 			}
 		}
 	}
-	
+
 	return result
 }
 
 // Difference returns a new set with elements in this set that are not in the other set
 func (s *Set[T]) Difference(other *Set[T]) *Set[T] {
 	result := NewSet[T]()
-	
+
 	for value := range s.items {
 		if !other.Contains(value) {
 			result.Add(value)
 		}
 	}
-	
+
 	return result
 }

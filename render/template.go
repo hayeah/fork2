@@ -17,5 +17,3 @@ type Template struct {
 	Meta Meta   // parsed FM (empty if none)
 	FS   fs.FS  // filesystem where the template was found
 }
-
-

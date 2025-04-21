@@ -1,5 +1,5 @@
 +++
---select cmd/vibe/askgo 
+--select cmd/vibe/askgo
 --copy
 +++
 

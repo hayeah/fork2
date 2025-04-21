@@ -86,4 +86,3 @@ The system prompt itself is defined as a layout. Users may create their own layo
 - System templates (`< >`) have highest precedence and do not conflict with repo-root or local paths.
 - Repo-root templates (`@`) explicitly reference the repository root directory.
 - Local templates (`./`) explicitly reference the directory relative to the current template.
-
