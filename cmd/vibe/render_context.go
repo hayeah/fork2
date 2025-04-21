@@ -92,6 +92,10 @@ func (ctx *VibeContext) WriteFileSelections(w io.Writer, contentPath string, lay
 	var tmpl *render.Template
 	var err error
 
+	if contentPath == "" && ctx.ask.Args.Select != "" {
+		contentPath = "files"
+	}
+
 	// Load the content template from path
 	tmpl, err = ctx.Renderer.LoadTemplate(contentPath)
 	if err != nil {

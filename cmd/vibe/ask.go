@@ -20,7 +20,7 @@ type AskCmd struct {
 	// Output sets the destination for the generated prompt: '-' for stdout, a file path to write the output, or empty to copy to clipboard
 	Output      string `arg:"-o,--output" help:"Output destination: '-' for stdout; file path to write; if not set, copy to clipboard"`
 	Layout      string `arg:"--layout" help:"Layout to use for output"`
-	Select      string `arg:"--select" help:"Select files matching patterns"`
+	Select      string `arg:"-s,--select" help:"Select files matching patterns"`
 	Instruction string `arg:"positional" help:"User instruction or path to instruction file"`
 }
 
