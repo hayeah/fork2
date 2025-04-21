@@ -11,9 +11,11 @@ Use the background information provided below to help you accomplish the task.
 
 {{ .FileMap }}
 
+{{- if .RepoPrompts }}
 # Repo Wide Instructions
 
 {{ .RepoPrompts }}
+{{- end }}
 
 ## User Task
 
