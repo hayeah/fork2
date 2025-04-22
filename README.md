@@ -1,10 +1,10 @@
-# Vibe: A Simple Prompt Tool for Your Git Workflow
+# Vibe: A Simple Tool for Building Complex Prompts
 
-**vibe** is a small CLI tool that helps you:
+`vibe` is a CLI that helps you build complex prompts by selecting repo files, and rendering reuseable prompt templates.
 
-1. Gather selected files from your repository into a prompt.
-2. Copy that prompt to your clipboard and paste it into your LLM of choice.
-3. Merge the edits that the LLM suggests back into your local repo automatically.
+- **File selection** – match any subset of your repo with a mini pattern language (e.g. `.go|!_test.go`). Inspired by tools like [repomix](https://github.com/yamadashy/repomix) and [Repo Prompt](https://repoprompt.com/).
+- **Composable templates** – layouts and partials let you wrap prefixes/suffixes, inject roles or tool specs, and branch on env/CLI vars. Think a blog engine like Hugo/Jekyll, but for prompts.
+- **Shareable workflows** – keep prompt recipes in‑repo so the whole team can reuse and version them.
 
 ## Install
 
@@ -12,185 +12,193 @@
 go install github.com/hayeah/fork2/cmd/vibe@latest
 ```
 
-## Quick Tutorial
+## Pattern Matching Tutorial
 
-The vibe prompt builder has a flexible pattern matching syntax to
+vibe uses a tiny pattern language to tell which paths you want and which you don’t.
 
-Suppose we have a repo with these files
+- Basic patterns
+  - Fuzzy matching: `.go` or `util`
+  - Regex: `/test\.go$`
+  - Exact matching: `=./cmd/main.go`
+  - Whole directory: `=./util`, to include all files in that directory
+- **Operators** to combine the basic patterns (order of precedence):
+  - `!` = **NOT** (exclude matches)
+  - `|` = **AND** (all sub‑patterns must match)
+  - `;` = **OR** (whichever pattern matches)
 
-```
-my‑repo
-├── cmd/
-   ├── main.go
-   ├── helper.go
-   └── helper_test.go
-```
+Examples:
 
-Select all Go files, and copy into the clipboard:
+- `.go`
+  Select every file whose path **contains** `.go`.
+
+- `!.md`
+  Exclude markdown files.
+
+- `.go|util`
+  Select `.go` files that also matches `util`
+
+- `.go|!_test.go`
+  Select `.go` files **but not** their tests.
+
+- `.go;.md`
+  All Go files **or** plus all `.md` files.
+
+- `.go|!_test.go;.md`
+  All non test `.go` files, plus `.md` files
+
+#### Worked Examples
+
+Show me every Go file in the repo
 
 ```bash
 vibe ask --select .go
 ```
 
-Select all Go files, but filter out the `_test.go` files. What this is doing is to first select all the go files, then negating the pattern `_test.go` by prefixing it with `!`:
+Study utilities only
+
+```bash
+vibe ask --select '.go|util'
+# Meaning: “choose files that end in .go AND include ‘util’
+```
+
+Show me every Go file in the repo, but leave out any test files
 
 ```bash
 vibe ask --select '.go|!_test.go'
+# similar to using inverted grep to filter:
+# git ls-files '*.go' | grep -v '_test.go'
 ```
 
-You can then copy the copied files as context into ChatGPT or Claude.
+Grab Markdown plus Go code
 
+```bash
+# 4.
+vibe ask --select '.go;.md'
+```
 
-## Render Markdown Files as Prompt Templates
+Let's combine everything. Select all go files that are not test files, plus all markdown files:
 
-`vibe` can also render markdown files as prompt templates. `explain` is a built-in template, which you can use to generate a prompt for explaining code.
+```bash
+vibe ask --select '.go|!_test.go;.md'
+```
 
+Instead of using `;`, you could also put multiple patterns on different lines:
+
+```bash
+vibe ask --select '.go
+!_test.go;.md'
+```
+
+## Prompt Templates
+
+Prompt templates turn vibe into a tiny static‑site generator—except the “pages” it builds are prompts instead of HTML. Each template is just a text or markdown file that contains two distinct parts:
+
+Front‑matter (TOML) – establishes how the template is rendered. The block is enclosed in a fenced code block at the very start of the file.
+
+````md
+```
+layout = "files"
+```
+
+Give me an overview and walkthrough of the above code.
+````
+
+The template body is normal text/markdown that may use Go text/template syntax
+`{{ ... }}` to reference data that vibe makes available at render time.
+
+### How rendering works
+
+When you run
+
+```bash
+vibe ask explain.md --select '.go|!_test.go'
+```
+
+vibe:
+
+1. **Collects source files** that match the pattern.
+2. **Builds a data object** containing things like:
+   - `.RepoDirectoryTree` – a pretty `tree` ‑style listing
+   - `.FileMap` – a collapsed or full listing of the selected files
+   - `.RepoPrompts` – any repo‑wide instructions (`*.prompt.md` in the root)
+   - Environment variables (`.Env`)
+   - CLI variables (`--var key=value` → `.Vars.key`)
+3. **Parses _explain.md_** as a Go template, plugging the data into the placeholders.
+4. **Applies the chosen layout** (see next section) to wrap the result.
+
+Because it is plain Go templating, you can:
+
+- **Branch** on values:
+  ```md
+  {{ if eq .Env.CI "true" -}}
+  _Running inside CI – keep the answer short_
+  {{- end }}
+  ```
+
+### Example Chat Log
+
+1. **Repository in focus** – [LibraDB](https://github.com/amit-davidson/LibraDB), a minimalist key‑value store implemented in roughly **1 k LOC of Go**.
+2. **Prompt generated by `vibe ask`** – see the exact prompt here: <https://gist.github.com/hayeah/82043a1ef35a4cd0b09c58a0a351f2fe>.
+3. **ChatGPT o3 response** – the model’s full answer to that prompt: <https://chatgpt.com/share/6807af90-8208-800e-baac-2b4bc3b4b461>.
+4. **Reference for comparison** – the original LibraDB deep‑dive blog post: <https://medium.com/better-programming/build-a-nosql-database-from-the-scratch-in-1000-lines-of-code-8ed1c15ed924>.
+
+## Layout as Wrapper
+
+Where templates define **what** you want to say, **layouts** define **how** you surround that content. Think of a layout as the `<html><head><body>` of a prompt.
+
+A layout is itself a Go template that _must_ contain a single placeholder named `.Content` where the inner template will be injected:
+
+```md
+<!-- layouts/files.md -->
+
+Use the background information below to help you accomplish the task.
+
+- **Repo Directory Tree**
+- **Selected Files**
+
+## Repo Directory Tree
+
+{{ .RepoDirectoryTree }}
+
+## Selected Files
+
+{{ .FileMap }}
+
+{{- if .RepoPrompts }}
+
+## Repo‑Wide Instructions
+
+{{ .RepoPrompts }}
+{{- end }}
+
+---
+
+## User Task
+
+{{ .Content }}
+
+<!-- Optionally finish with reminders, tools spec, etc. -->
+```
+
+Anything outside `.Content` is a **wrapper** that you can standardise across an organisation. Typical uses:
+
+- **Role instructions** up top (“You are an expert Go reviewer …”).
+- **Context** in the middle (directory tree, diff stats, benchmarks).
+- **Safety rails** at the bottom (response format, length limit, tool usage).
+
+## Prompt Lookup Paths
+
+when finding a template to render, vibe will look through the following paths in order
+
+- current repo
+- VIBE_PROMPTS
+- ~/.vibe
+- builtin system prompts
+
+## Builtin Prompts
+
+The `explain.md` example is already built-in as a system prompt. You can invoke it:
 
 ```bash
 vibe ask explain --select '.go'
 ```
-
-This builds a prompt that copies all the selected files, structured like this:
-
-```
-<directory tree>
-
-<selected file 1>
-
-<selected file 2>
-
-...
-
-# User Task
-
-Give me an overview and walkthrough of the above code.
-```
-
-## Features
-
-- **File Selection UI**
-  An interactive TUI that lists all files in your repo (respecting `.gitignore`). You can search, toggle directories, or select individual files.
-
-- **Lightweight Prompt Templates**
-  Easily embed your selected files into a base layout or a “role” layout (e.g. `<coder>`). The prompt is rendered with a Go‑native templating system, allowing you to embed partials, inject data, and keep it flexible.
-
-- **`.vibe.md` Files for Context**
-  Create `.vibe.md` files in your repo directories. **vibe** picks these up (from the root down to your current directory) and includes them automatically in your prompt. This is handy if you have recurring instructions or explanations to pass on to your LLM.
-
-- **Merging LLM Edits**
-  The `vibe merge` command reads the LLM’s proposed changes back in “heredoc” format. If everything checks out, **vibe** applies those edits locally to the relevant files.
-
-## Copy‑and‑Paste Workflow
-
-Below is a simple vibe flow:
-
-1. **Choose a Prompt File**
-   Prepare a text file with your instructions or discussion context. This file can contain “front matter” (flags or arguments recognized by vibe) at the top if you like.
-
-2. **Pick a Prompt Layout (“role”)**
-   By default, vibe uses the bulitin `<coder>` layout. You can specify something else with `--role base` or `--role plan` or `--role writer`.
-
-3. **Run `vibe ask`**
-   ```
-   vibe ask userPromptFile --copy
-   ```
-   This generates a fully composed prompt (selected files, `.vibe.md` context, etc.) and copies the text to your clipboard.
-
-4. **Paste into Your LLM**
-   Go to your LLM (e.g. Claude, ChatGPT) and paste the entire text. The AI will produce some modifications or suggestions, using a format that can be automatically merged by vibe.
-
-5. **Copy the LLM’s Response**
-   Grab its text from the AI’s output into your clipboard.
-
-6. **Run `vibe merge --paste`**
-   This reads your clipboard for changes. If the tool recognizes valid changes, it applies them to your local repo. If there are unknown commands or verification errors, vibe shows them so you can inspect or fix them.
-
-7. **Review, Diff, and Test**
-   Look at your Git diff, run tests, keep or revert changes. If needed, refine your prompt file or proceed to your next steps.
-
-
-## The UserPrompt Template
-
-Each “prompt file” can have **front matter** at the top enclosed in `+++ ... +++` or `--- ... ---` lines.
-
-Suppose you have a prompt file: `ask-diff-to-role.md`
-
-```
-+++
---select cmd/vibe/ask.go
---copy
-+++
-
-- vibe: change `diff` flag to `role`
-	- remove `--diff`
-	- add the "--role" flag
-		- default to coder
-	- when rendering in handleOutput, wrap the specified role in "<...>"
-- fix tests
-```
-
-- **Front Matter**
-  The lines between the triple plus or triple dash markers can include flags/arguments you’d normally pass on the CLI: `--select`, `--all`, `--role`, etc.
-
-Try running vibe on the commit `d73eaad` to generate a full prompt, and copy to your clipboard:
-
-```
-vibe ask ask-diff-to-role.md
-```
-
-Paste into your LLM, and copy the response. Run merge and paste from your clipboard:
-
-```
-vibe merge --paste
-```
-
-If you are lucky, the changes will apply automatically.
-
-See these files for the relevant input and output:
-
-- examples/ask-diff-to-role.md
-- examples/ask-diff-to-role.prompt.md
-- examples/ask-diff-to-role.response.md
-
-## Pattern Types
-
-- **Fuzzy Matching** (default)
-  Simple text patterns match files using fuzzy search:
-  ```
-  --select foo      # Matches files containing "foo" anywhere in the path
-  ```
-
-- **Regex Patterns**
-  Prefix with `/` to use regular expressions:
-  ```
-  --select "/\.go$"  # Matches files ending with ".go"
-  ```
-
-- **Negation Patterns**
-  Prefix with `!` to exclude matches:
-  ```
-  --select "!_test.go"  # Select files not matching "_test.go"
-  ```
-
-- **Compound Filtering**
-  Use `|` to combine patterns (logical AND):
-  ```
-  --select "cmd|main.go"  # Files containing both "cmd" AND "main.go"
-  ```
-
-- **Relative Paths**
-
-  ```
-  --select "./cmd"  # Same as --select cmd
-  ```
-
-- **Multiple Patterns**
-  Specify multiple `--select` flags to collect together different sets of files:
-  ```
-  --select "/\.go$" --select "/\.md$"  # All Go and Markdown files
-  ```
-
-## Template Partials
-
-- **Partials**
-  If you want to bring in partial templates, you can place lines like `{{ partial "<myRole>" }}` (for system templates) or `{{ partial "@repoRoot/whatever" }}` (for repo‑root partials) or `{{ partial "./someLocalPartial" }}` (for local partials in the same directory).
