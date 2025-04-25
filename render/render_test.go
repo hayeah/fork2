@@ -280,3 +280,69 @@ func TestLoadTemplateParsesFrontMatter(t *testing.T) {
 	assert.NoError(err)
 	assert.Equal("base.md", tmpl.Meta.Layout)
 }
+
+// TestTemplatePrecedenceOrder verifies that when the same template exists in multiple
+// filesystem layers, it's resolved from the highest-priority layer according to the
+// precedence order: repo → VIBE_PROMPTS → ~/.vibe → built-in templates
+func TestTemplatePrecedenceOrder(t *testing.T) {
+	// Create fake FS layers mimicking the different sources
+	repoFS := createTestFS(map[string]string{
+		"common/header.md":  "REPO HEADER",
+		"unique/repo.md":    "REPO UNIQUE",
+	})
+
+	vibePromptsFS := createTestFS(map[string]string{
+		"common/header.md":       "VIBE_PROMPTS HEADER",
+		"common/footer.md":       "VIBE_PROMPTS FOOTER",
+		"unique/vibe_prompts.md": "VIBE_PROMPTS UNIQUE",
+	})
+
+	userVibeFS := createTestFS(map[string]string{
+		"common/header.md":    "USER_VIBE HEADER",
+		"common/footer.md":    "USER_VIBE FOOTER",
+		"common/sidebar.md":   "USER_VIBE SIDEBAR",
+		"unique/user_vibe.md": "USER_VIBE UNIQUE",
+	})
+
+	systemFS := createTestFS(map[string]string{
+		"common/header.md":  "SYSTEM HEADER",
+		"common/footer.md":  "SYSTEM FOOTER",
+		"common/sidebar.md": "SYSTEM SIDEBAR",
+		"common/nav.md":     "SYSTEM NAV",
+		"unique/system.md":  "SYSTEM UNIQUE",
+	})
+
+	// Create resolver with all layers in the correct order
+	ctx := NewResolver(repoFS, vibePromptsFS, userVibeFS, systemFS)
+	renderer := NewRenderer(ctx)
+	assert := assert.New(t)
+
+	// Test cases for templates that exist in multiple layers
+	testCases := []struct {
+		name     string
+		path     string
+		expected string
+	}{
+		{"template in all layers", "common/header.md", "REPO HEADER"},
+		{"template in vibe_prompts, user_vibe, system", "common/footer.md", "VIBE_PROMPTS FOOTER"},
+		{"template in user_vibe and system", "common/sidebar.md", "USER_VIBE SIDEBAR"},
+		{"template only in system", "common/nav.md", "SYSTEM NAV"},
+		{"unique repo template", "unique/repo.md", "REPO UNIQUE"},
+		{"unique vibe_prompts template", "unique/vibe_prompts.md", "VIBE_PROMPTS UNIQUE"},
+		{"unique user_vibe template", "unique/user_vibe.md", "USER_VIBE UNIQUE"},
+		{"unique system template", "unique/system.md", "SYSTEM UNIQUE"},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Load the template and verify it comes from the expected layer
+			tmpl, err := ctx.LoadTemplate(tc.path, nil)
+			assert.NoError(err)
+
+			// Render the template and check the content
+			output, err := renderer.RenderTemplate(tmpl, &testContent{})
+			assert.NoError(err)
+			assert.Equal(tc.expected, output)
+		})
+	}
+}

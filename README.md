@@ -230,12 +230,22 @@ This feature is useful for creating templates that can adapt based on runtime pa
 
 ## Prompt Lookup Paths
 
-when finding a template to render, vibe will look through the following paths in order
+When finding a template to render, `vibe` searches through multiple locations in a specific priority order:
 
-- current repo
-- VIBE_PROMPTS
-- ~/.vibe
-- builtin system prompts
+1. **Current Repository**: Templates in the repository where the command is running have the highest priority. This allows project-specific templates to override any others.
+
+2. **`$VIBE_PROMPTS` Environment Variable**: A colon-separated list of absolute paths (similar to the `PATH` environment variable). For example:
+   ```bash
+   # Add multiple template directories
+   export VIBE_PROMPTS="/path/to/templates:/another/path/to/templates"
+   ```
+   This is useful for sharing templates across multiple projects or teams without modifying each repository.
+
+3. **User's `~/.vibe` Directory**: Personal templates stored in your home directory. This is a good place for templates you use across different projects.
+
+4. **Built-in System Prompts**: Default templates that come with `vibe`. These have the lowest priority and will only be used if no matching template is found in the other locations.
+
+This precedence order allows for flexible template overriding. For example, you could have a base template in the system prompts, customize it in your `~/.vibe` directory, and then further customize it for specific projects or teams.
 
 ## Builtin Prompts
 

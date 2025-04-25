@@ -6,6 +6,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 
@@ -42,12 +43,38 @@ func NewVibeContext(ask *AskRunner) (*VibeContext, error) {
 		Data:    ask.Data,
 	}
 
-	systemfs, err := fs.Sub(systemTemplatesFS, "templates")
+	// 1. repo the command is running inside
+	partials := []fs.FS{os.DirFS(ask.RootPath)}
+
+	// 2. any directory/ies in $VIBE_PROMPTS (PATH-like, ':'-separated)
+	if env := os.Getenv("VIBE_PROMPTS"); env != "" {
+		for _, dir := range strings.Split(env, string(os.PathListSeparator)) {
+			dir = strings.TrimSpace(dir)
+			if dir == "" {
+				continue
+			}
+			if fi, err := os.Stat(dir); err == nil && fi.IsDir() {
+				partials = append(partials, os.DirFS(dir))
+			}
+		}
+	}
+
+	// 3. ~/.vibe (only if it exists and is a dir)
+	if home, err := os.UserHomeDir(); err == nil {
+		userVibe := filepath.Join(home, ".vibe")
+		if fi, err := os.Stat(userVibe); err == nil && fi.IsDir() {
+			partials = append(partials, os.DirFS(userVibe))
+		}
+	}
+
+	// 4. embedded system prompts (unchanged)
+	systemFS, err := fs.Sub(systemTemplatesFS, "templates")
 	if err != nil {
 		return nil, fmt.Errorf("failed to create system prompts fs: %v", err)
 	}
-	ctx.RenderContext = render.NewResolver(os.DirFS(ask.RootPath), systemfs)
+	partials = append(partials, systemFS)
 
+	ctx.RenderContext = render.NewResolver(partials...)
 	ctx.Renderer = render.NewRenderer(ctx.RenderContext)
 
 	return ctx, nil
