@@ -29,11 +29,57 @@ go install github.com/hayeah/fork2/cmd/vibe@latest
 
 vibe uses a tiny pattern language inspired by fzf to tell which paths you want and which you don’t.
 
-- **Basic patterns**
-  - **Fuzzy / substring match**: `.go`, `util`
-  - **Anchors** – `^cmd`, `.go$`, `^README.md$`
-  - **Word-boundaries** – `'select` (word-prefix) · `'select'` (exact word)
-  - **Negation inside a term** – `!_test.go`
+*Every matching query is split on whitespace – each term must match for a path to be
+kept (logical **AND**). Matching is **case-insensitive** and all path
+separators are normalised to “/”.*
+
+### 1. Plain substring (term `foo`)
+* `foo` – keep paths containing “foo” anywhere.
+
+### 2. Anchors (^ and $ in a term)
+* `^foo` – term must appear at **start** of the path.
+* `bar$` – term must appear at **end** of the path.
+* `^foo$` – whole path must equal `foo`.
+
+### 3. Word-boundary operators (leading `'` or wrapping `'...'`)
+* `'foo` – **word-prefix** match. `foo` must start at a word boundary
+  (start of string or after a non-word rune).
+  *Examples:*
+  * ✅ `config/select.go` matches pattern `'select`
+  * ❌ `unselected.go`   does **not** match
+* `'foo'` – **exact-word** match. `foo` must be delimited by word boundaries on
+  both sides.
+  *Examples:*
+  * ✅ `cmd/vibe/select.go` matches pattern `'select'`
+  * ❌ `selector.go` does **not** match
+
+> **Word characters** are defined as Unicode letters, digits, or “_”.
+> Anything else (`/-.\` etc.) is considered a boundary.
+
+### 4. Multiple terms
+
+* `cmd .go` – keeps paths that contain **both** “cmd” *and* “.go”.
+
+
+### Examples
+
+```text
+Pattern           Keeps
+================= ================================================
+""                (all paths – empty query)
+cmd               cmd/vibe/select.go, cmd/vibe/ask.go, …
+cmd .go           all Go files under cmd/
+^README.md$       README.md
+^cmd 'select'     only cmd/vibe/select.go
+'.txt$            docs/intro.txt
+foo               (case-insensitive) matches “foo” or “FOO”
+```
+
+- **Fuzzy / substring match**: `.go`, `util`
+- **Anchors** – `^cmd`, `.go$`, `^README.md$`
+- **Word-boundaries** – `'select` (word-prefix) · `'select'` (exact word)
+- **Negation inside a term** – `!_test.go`
+- **Union** – `.go;.md`
 
 Examples:
 
@@ -81,7 +127,6 @@ vibe ask --select '.go !_test.go'
 Grab Markdown plus Go code
 
 ```bash
-# 4.
 vibe ask --select '.go;.md'
 ```
 

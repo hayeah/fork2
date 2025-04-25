@@ -1,4 +1,3 @@
-```markdown
 # `fzf` Matcher (package `github.com/hayeah/fork2/fzf`)
 
 A **tiny, deterministic path-filter** inspired by the query language of
@@ -32,8 +31,6 @@ hits, _ := m.Match(paths)
 // hits => []string{"cmd/vibe/select.go"}
 ```
 
----
-
 ## Supported query syntax
 
 *Every query is split on whitespace – each term must match for a path to be
@@ -66,15 +63,11 @@ separators are normalised to “/”.*
 ### 4. Multiple terms
 * `cmd .go` – keeps paths that contain **both** “cmd” *and* “.go”.
 
----
-
 ## Similarities with *fzf* query language
 
 * **Whitespace-separated terms = AND** – same mental model.
 * **`^` and `$` anchors** – behave identically for prefix/suffix/whole-string.
 * **Case-insensitive by default** (fzf’s `--ignore-case`).
-
----
 
 ## Key differences from *fzf*
 
@@ -89,7 +82,6 @@ separators are normalised to “/”.*
 * **No escape syntax** – since the grammar is tiny, queries that consist solely
   of meta characters (`'`, `^`, `$`) are rejected with a helpful error.
 
----
 
 ## Examples
 
@@ -104,8 +96,6 @@ cmd .go           all Go files under cmd/
 '.txt$            docs/intro.txt
 foo               (case-insensitive) matches “foo” or “FOO”
 ```
-
----
 
 ## Installation
 
