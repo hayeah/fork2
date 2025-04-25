@@ -61,12 +61,30 @@ func NewResolver(partials ...fs.FS) *Resolver {
 	return &Resolver{Partials: partials}
 }
 
+// resolveTemplateFile checks for an exact match and, only if no
+// extension is present, falls back to the ".md" variant.
+func resolveTemplateFile(fsys fs.FS, base string) (string, error) {
+	// exact path first
+	if _, err := fs.Stat(fsys, base); err == nil {
+		return base, nil
+	}
+	// no extension → try ".md"
+	if filepath.Ext(base) == "" {
+		alt := base + ".md"
+		if _, err := fs.Stat(fsys, alt); err == nil {
+			return alt, nil
+		}
+	}
+	return "", fmt.Errorf("template %q not found (tried %q and %q.md)", base, base, base)
+}
+
 // ResolvePartialPath determines which FS and file should be used for a given partial path.
 // It uses the following rules:
 // 1. System Template <vibe/coder> - use the last FS in Partials
 // 2. Repo Root Template @common/header - use the first FS in Partials
 // 3. Local Template ./helpers/buttons - use the same FS as the current template
 // 4. Bare path common/header - search all FS in order until found
+// Callers may omit the `.md` extension; the resolver will look for both *name* and *name.md*, but only when *name* has no extension.
 func (ctx *Resolver) ResolvePartialPath(partialPath string, cur *Template) (fs.FS, string, error) {
 	// Derive curPath/curFS from cur (if cur == nil, pass empty string / nil)
 	currentTemplatePath := ""
@@ -82,7 +100,12 @@ func (ctx *Resolver) ResolvePartialPath(partialPath string, cur *Template) (fs.F
 		if len(ctx.Partials) == 0 {
 			return nil, "", fmt.Errorf("no filesystem available for system template")
 		}
-		return ctx.Partials[len(ctx.Partials)-1], path, nil
+		fsys := ctx.Partials[len(ctx.Partials)-1]
+		p, err := resolveTemplateFile(fsys, path)
+		if err != nil {
+			return nil, "", err
+		}
+		return fsys, p, nil
 
 	case strings.HasPrefix(partialPath, "@"):
 		// Repo root template - use the first FS in Partials
@@ -90,7 +113,12 @@ func (ctx *Resolver) ResolvePartialPath(partialPath string, cur *Template) (fs.F
 		if len(ctx.Partials) == 0 {
 			return nil, "", fmt.Errorf("no filesystem available for repo template")
 		}
-		return ctx.Partials[0], path, nil
+		fsys := ctx.Partials[0]
+		p, err := resolveTemplateFile(fsys, path)
+		if err != nil {
+			return nil, "", err
+		}
+		return fsys, p, nil
 
 	case strings.HasPrefix(partialPath, "./") || strings.HasPrefix(partialPath, "../") || partialPath == "." || partialPath == "..":
 		// Local template (relative to current template)
@@ -108,7 +136,11 @@ func (ctx *Resolver) ResolvePartialPath(partialPath string, cur *Template) (fs.F
 		fullPath := filepath.Join(currentDir, partialPath)
 		fullPath = filepath.Clean(fullPath)
 
-		return currentTemplateFS, fullPath, nil
+		p, err := resolveTemplateFile(currentTemplateFS, fullPath)
+		if err != nil {
+			return nil, "", err
+		}
+		return currentTemplateFS, p, nil
 
 	default:
 		// Bare path - search through all filesystems in order
@@ -119,8 +151,8 @@ func (ctx *Resolver) ResolvePartialPath(partialPath string, cur *Template) (fs.F
 		// Try each filesystem in order until we find the file
 		for _, fsys := range ctx.Partials {
 			// Check if the file exists in this filesystem
-			if _, err := fs.Stat(fsys, partialPath); err == nil {
-				return fsys, partialPath, nil
+			if fp, err := resolveTemplateFile(fsys, partialPath); err == nil {
+				return fsys, fp, nil
 			}
 		}
 
