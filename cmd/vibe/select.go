@@ -42,7 +42,7 @@ import (
 	"strings"
 
 	"github.com/bmatcuk/doublestar/v4"
-	"github.com/sahilm/fuzzy"
+	"github.com/hayeah/fork2/fzf"
 )
 
 // Matcher is an interface for matching file paths
@@ -91,24 +91,46 @@ func (m ExactPathMatcher) Match(paths []string) ([]string, error) {
 // FuzzyMatcher uses fuzzy matching for file paths
 type FuzzyMatcher struct {
 	Pattern string
+	matcher *fzf.Matcher // Pointer to avoid copying the matcher
+}
+
+// NewFuzzyMatcher creates a new FuzzyMatcher with a pre-parsed pattern
+func NewFuzzyMatcher(pattern string) (FuzzyMatcher, error) {
+	// Empty pattern selects all files
+	if pattern == "" {
+		return FuzzyMatcher{Pattern: pattern}, nil
+	}
+
+	// Create the fzf matcher
+	matcher, err := fzf.NewMatcher(pattern)
+	if err != nil {
+		return FuzzyMatcher{}, fmt.Errorf("invalid fuzzy pattern: %v", err)
+	}
+
+	return FuzzyMatcher{
+		Pattern: pattern,
+		matcher: &matcher,
+	}, nil
 }
 
 // Match implements the Matcher interface for FuzzyMatcher
 func (m FuzzyMatcher) Match(paths []string) ([]string, error) {
-	// Empty pattern selects all files
+	// Empty pattern still selects everything
 	if m.Pattern == "" {
 		return paths, nil
 	}
 
-	matchesSet := NewSet[string]()
-
-	// Fuzzy matching
-	fuzzyMatches := fuzzy.Find(m.Pattern, paths)
-	for _, match := range fuzzyMatches {
-		matchesSet.Add(paths[match.Index])
+	// If we have a pre-parsed matcher, use it
+	if m.matcher != nil {
+		return m.matcher.Match(paths)
 	}
 
-	return matchesSet.Values(), nil
+	// Fallback for backward compatibility with existing code
+	matcher, err := fzf.NewMatcher(m.Pattern)
+	if err != nil {
+		return nil, err
+	}
+	return matcher.Match(paths)
 }
 
 // GlobMatcher uses standard glob patterns (including '**') to match file paths
@@ -356,9 +378,7 @@ func ParseMatcher(pattern string) (Matcher, error) {
 	}
 
 	// Default to fuzzy matching
-	return FuzzyMatcher{
-		Pattern: pattern,
-	}, nil
+	return NewFuzzyMatcher(pattern)
 }
 
 // selectSinglePattern selects file paths based on a pattern

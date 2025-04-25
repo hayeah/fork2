@@ -537,7 +537,7 @@ func TestCompoundPatterns(t *testing.T) {
 	})
 
 	t.Run("WithNegation", func(t *testing.T) {
-		results, err := selectSinglePattern(paths, "cmd.go|!_test.go")
+		results, err := selectSinglePattern(paths, "cmd .go|!_test.go")
 		assert.NoError(err)
 		sort.Strings(results)
 		assert.ElementsMatch([]string{
