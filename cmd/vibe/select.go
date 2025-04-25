@@ -4,29 +4,12 @@
 //
 // The pattern syntax supports several matching strategies:
 //
-// 1. Fuzzy Matching (default):
-//   - Example: "foo" matches any path containing characters that fuzzy match "foo"
-//   - This is the default when no special prefix is used
-//   - Patterns beginning with "/" or containing "* ? **" are treated as plain fuzzy text
+// 1. Fuzzy matching (default): "foo" matches any path containing "foo"
+//   - Negation: "!pattern" excludes paths matching "pattern" (handled by fzf matcher)
 //
-// 2. Exact Path Matching:
-//   - Prefix: "="
-//   - Example: "=path/to/file.go" matches only the exact path "path/to/file.go"
-//   - Can include line ranges: "=path/to/file.go#10,20" selects lines 10-20
-//
-// 3. Negation (exclude matches):
-//   - Prefix: "!"
-//   - Example: "!test" excludes paths that would match the pattern "test"
-//   - Can be used at term level in fuzzy matching: "cmd !_test.go" matches cmd files that aren't tests
-//
-// 4. Compound Patterns (logical AND):
-//   - Separator: "|"
-//   - Example: "cmd|main" matches paths containing both "cmd" and "main"
-//   - Can combine different pattern types: "cmd|=main.go|!test"
-//
-// 5. Union (logical OR):
-//   - Separator: ";"
-//   - Example: "cmd;main" matches paths containing either "cmd" OR "main"
+// 2. Exact path matching: "=path/to/file.txt" matches only that exact path
+// 3. Compound patterns: "foo|bar" matches paths containing both "foo" AND "bar"
+// 4. Union patterns: "foo;bar" matches paths containing either "foo" OR "bar"
 //
 // # Special Cases
 //
@@ -114,48 +97,7 @@ func NewFuzzyMatcher(pattern string) (FuzzyMatcher, error) {
 
 // Match implements the Matcher interface for FuzzyMatcher
 func (m FuzzyMatcher) Match(paths []string) ([]string, error) {
-	// Empty pattern still selects everything
-	if m.Pattern == "" {
-		return paths, nil
-	}
-
-	// If we have a pre-parsed matcher, use it
-	if m.matcher != nil {
-		return m.matcher.Match(paths)
-	}
-
-	// Fallback for backward compatibility with existing code
-	matcher, err := fzf.NewMatcher(m.Pattern)
-	if err != nil {
-		return nil, err
-	}
-	return matcher.Match(paths)
-}
-
-
-
-
-
-// NegationMatcher wraps another matcher and negates its results
-type NegationMatcher struct {
-	Wrapped Matcher
-}
-
-// Match implements the Matcher interface for NegationMatcher
-func (m NegationMatcher) Match(paths []string) ([]string, error) {
-	// Get the matches from the wrapped matcher
-	matches, err := m.Wrapped.Match(paths)
-	if err != nil {
-		return nil, err
-	}
-
-	// Create sets for the input paths and matches
-	pathsSet := NewSetFromSlice(paths)
-	matchesSet := NewSetFromSlice(matches)
-
-	// Return paths that don't match
-	resultSet := pathsSet.Difference(matchesSet)
-	return resultSet.Values(), nil
+	return m.matcher.Match(paths)
 }
 
 // CompoundMatcher applies multiple matchers in sequence (logical AND)
@@ -257,25 +199,6 @@ func ParseMatcher(pattern string) (Matcher, error) {
 		return CompoundMatcher{Matchers: subMatchers}, nil
 	}
 
-	// Check if this is a negation pattern
-	isNegation := strings.HasPrefix(pattern, "!")
-	if isNegation {
-		// Wrap with NegationMatcher if it's a negation pattern
-		pattern = pattern[1:] // Remove the leading "!"
-		// Empty pattern after negation would match everything, which would exclude everything
-		if pattern == "" {
-			return nil, fmt.Errorf("empty negation pattern '!' is not valid")
-		}
-		matcher, err := ParseMatcher(pattern)
-		if err != nil {
-			return nil, err
-		}
-
-		return NegationMatcher{
-			Wrapped: matcher,
-		}, nil
-	}
-
 	// Check if this is an exact path matcher
 	if strings.HasPrefix(pattern, "=") {
 		exactPath := pattern[1:] // Remove the leading "="
@@ -294,8 +217,6 @@ func ParseMatcher(pattern string) (Matcher, error) {
 	// Default to fuzzy matching
 	return NewFuzzyMatcher(pattern)
 }
-
-
 
 func selectSinglePattern(paths []string, pattern string) ([]string, error) {
 	// Empty pattern selects all paths
