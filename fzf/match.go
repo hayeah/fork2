@@ -20,6 +20,7 @@ type advTerm struct {
 	anchorTail bool   // foo$
 	wordPrefix bool   // 'foo
 	wordExact  bool   // 'foo'
+	neg        bool   // !foo
 }
 
 func NewMatcher(pattern string) (Matcher, error) {
@@ -32,6 +33,15 @@ func NewMatcher(pattern string) (Matcher, error) {
 
 	for _, p := range parts {
 		t := advTerm{raw: p}
+
+		// Check for negation prefix
+		if strings.HasPrefix(p, "!") {
+			t.neg = true
+			p = p[1:]
+			if p == "" {
+				return Matcher{}, fmt.Errorf("empty term after negation in %q", t.raw)
+			}
+		}
 
 		// --- word-boundary quote handling first ---------------------------------
 		if strings.HasPrefix(p, "'") {
@@ -81,7 +91,13 @@ NextPath:
 		normal := strings.ToLower(filepath.ToSlash(path))
 
 		for _, term := range m.terms {
-			if !termMatches(term, normal) {
+			matches := termMatches(term, normal)
+			// For negated terms, we want the opposite result
+			if term.neg {
+				matches = !matches
+			}
+
+			if !matches {
 				continue NextPath
 			}
 		}

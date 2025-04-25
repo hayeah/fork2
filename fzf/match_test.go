@@ -82,6 +82,26 @@ func TestAdvancedMatcher(t *testing.T) {
 			pattern: "^",
 			hasErr:  true,
 		},
+		{
+			name:     "negation - exclude select",
+			pattern:  "!select",
+			expected: []string{"cmd/vibe/ask.go", "cmd/vibe/directory_tree.go", "internal/assert/assert.go", "pkg/utils/helper_test.go", "docs/intro.txt", "README.md", "main.go"},
+		},
+		{
+			name:     "negation with multiple terms",
+			pattern:  "cmd !_test.go",
+			expected: []string{"cmd/vibe/select.go", "cmd/vibe/ask.go", "cmd/vibe/directory_tree.go"},
+		},
+		{
+			name:     "negation with word boundary",
+			pattern:  "!'test'",
+			expected: []string{"cmd/vibe/select.go", "cmd/vibe/ask.go", "cmd/vibe/directory_tree.go", "internal/assert/assert.go", "docs/intro.txt", "README.md", "main.go"},
+		},
+		{
+			name:    "ill-formed (empty negation)",
+			pattern: "!",
+			hasErr:  true,
+		},
 	}
 
 	for _, tc := range cases {

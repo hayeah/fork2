@@ -1,4 +1,4 @@
-.PHONY: wire run dev build
+.PHONY: wire run dev build precommit
 
 wire:
 	go run github.com/google/wire/cmd/wire .
@@ -12,3 +12,6 @@ run:
 
 dev:
 	CONFIG_FILE=cfg.toml go run github.com/cortesi/modd/cmd/modd@latest
+
+precommit:
+	uvx pre-commit run --all-files

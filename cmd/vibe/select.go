@@ -7,25 +7,26 @@
 // 1. Fuzzy Matching (default):
 //   - Example: "foo" matches any path containing characters that fuzzy match "foo"
 //   - This is the default when no special prefix is used
+//   - Patterns beginning with "/" or containing "* ? **" are treated as plain fuzzy text
 //
-// 2. Regular Expression Matching:
-//   - Prefix: "/"
-//   - Example: "/\.go$" matches paths ending with ".go"
-//
-// 3. Exact Path Matching:
+// 2. Exact Path Matching:
 //   - Prefix: "="
 //   - Example: "=path/to/file.go" matches only the exact path "path/to/file.go"
 //   - Can include line ranges: "=path/to/file.go#10,20" selects lines 10-20
 //
-// 4. Negation (exclude matches):
+// 3. Negation (exclude matches):
 //   - Prefix: "!"
 //   - Example: "!test" excludes paths that would match the pattern "test"
-//   - Can be combined with other pattern types: "!/\.test\.go$"
+//   - Can be used at term level in fuzzy matching: "cmd !_test.go" matches cmd files that aren't tests
 //
-// 5. Compound Patterns (logical AND):
+// 4. Compound Patterns (logical AND):
 //   - Separator: "|"
 //   - Example: "cmd|main" matches paths containing both "cmd" and "main"
-//   - Can combine different pattern types: "cmd|/\.go$|!test"
+//   - Can combine different pattern types: "cmd|=main.go|!test"
+//
+// 5. Union (logical OR):
+//   - Separator: ";"
+//   - Example: "cmd;main" matches paths containing either "cmd" OR "main"
 //
 // # Special Cases
 //
@@ -38,10 +39,8 @@ import (
 	"bufio"
 	"fmt"
 	"os"
-	"regexp"
 	"strings"
 
-	"github.com/bmatcuk/doublestar/v4"
 	"github.com/hayeah/fork2/fzf"
 )
 
@@ -133,77 +132,9 @@ func (m FuzzyMatcher) Match(paths []string) ([]string, error) {
 	return matcher.Match(paths)
 }
 
-// GlobMatcher uses standard glob patterns (including '**') to match file paths
-type GlobMatcher struct {
-	Pattern string
-}
 
-func NewGlobMatcher(pattern string) (GlobMatcher, error) {
-	if !doublestar.ValidatePattern(pattern) {
-		return GlobMatcher{}, fmt.Errorf("invalid glob pattern '%s'", pattern)
-	}
-	return GlobMatcher{Pattern: pattern}, nil
-}
 
-func (m GlobMatcher) Match(paths []string) ([]string, error) {
-	matchesSet := NewSet[string]()
 
-	for _, p := range paths {
-		match, err := doublestar.Match(m.Pattern, p)
-		if err != nil {
-			return nil, fmt.Errorf("invalid glob pattern '%s': %v", m.Pattern, err)
-		}
-		if match {
-			matchesSet.Add(p)
-		}
-	}
-
-	return matchesSet.Values(), nil
-}
-
-// RegexMatcher uses regular expressions for matching file paths
-type RegexMatcher struct {
-	Pattern string
-	regex   *regexp.Regexp
-}
-
-// NewRegexMatcher creates a new RegexMatcher with a pre-compiled regex pattern
-func NewRegexMatcher(pattern string) (*RegexMatcher, error) {
-	// Empty pattern selects all files
-	if pattern == "" {
-		return &RegexMatcher{Pattern: pattern}, nil
-	}
-
-	// Compile the regex pattern
-	regex, err := regexp.Compile(pattern)
-	if err != nil {
-		return nil, fmt.Errorf("invalid regex pattern: %v", err)
-	}
-
-	return &RegexMatcher{
-		Pattern: pattern,
-		regex:   regex,
-	}, nil
-}
-
-// Match implements the Matcher interface for RegexMatcher
-func (m *RegexMatcher) Match(paths []string) ([]string, error) {
-	// Empty pattern selects all files
-	if m.Pattern == "" {
-		return paths, nil
-	}
-
-	matchesSet := NewSet[string]()
-
-	// Find matches using regex
-	for _, path := range paths {
-		if m.regex.MatchString(path) {
-			matchesSet.Add(path)
-		}
-	}
-
-	return matchesSet.Values(), nil
-}
 
 // NegationMatcher wraps another matcher and negates its results
 type NegationMatcher struct {
@@ -358,35 +289,13 @@ func ParseMatcher(pattern string) (Matcher, error) {
 		return ExactPathMatcher{FileSelection: fileSelection}, nil
 	}
 
-	// Check if this is a regex pattern
-	isRegex := strings.HasPrefix(pattern, "/")
-	if isRegex {
-		pattern = pattern[1:] // Remove the leading '/'
-
-		// Create a new RegexMatcher
-		matcher, err := NewRegexMatcher(pattern)
-		if err != nil {
-			return nil, err
-		}
-
-		return matcher, nil
-	}
-
-	// Check if this is a glob pattern
-	if isGlobPattern(pattern) {
-		return NewGlobMatcher(pattern)
-	}
+	// Note: Patterns beginning with "/" or containing glob characters are now treated as plain fuzzy text
 
 	// Default to fuzzy matching
 	return NewFuzzyMatcher(pattern)
 }
 
-// selectSinglePattern selects file paths based on a pattern
-func isGlobPattern(pat string) bool {
-	// A simple check for wildcard chars used by globbing
-	// This includes '*', '?', or the '**' sequence
-	return strings.ContainsAny(pat, "*?") || strings.Contains(pat, "**")
-}
+
 
 func selectSinglePattern(paths []string, pattern string) ([]string, error) {
 	// Empty pattern selects all paths
