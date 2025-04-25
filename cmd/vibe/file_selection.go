@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"fmt"
 	"io"
 	"os"
@@ -116,25 +115,22 @@ func (fs *FileSelection) extractContents(sortedRanges []LineRange) ([]FileSelect
 	}
 	defer file.Close()
 
+	// Read the entire file content
 	content, err := io.ReadAll(file)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read file %s: %w", fs.Path, err)
 	}
 
-	// Reset the file cursor to the beginning after reading the content
-	if _, err := file.Seek(0, io.SeekStart); err != nil {
-		return nil, fmt.Errorf("failed to reset file cursor for %s: %w", fs.Path, err)
-	}
-
-	if IsBinaryFile([]byte(content)) {
+	// Check if it's a binary file first (early return)
+	if IsBinaryFile(content) {
 		return []FileSelectionContent{{
 			Path:    fs.Path,
-			Content: string("[binary file omitted]"),
+			Content: "[binary file omitted]",
 			Range:   nil,
 		}}, nil
 	}
 
-	// If no ranges specified, return the entire file content
+	// If no ranges specified, return the entire file content (early return)
 	if len(sortedRanges) == 0 {
 		return []FileSelectionContent{{
 			Path:    fs.Path,
@@ -143,46 +139,42 @@ func (fs *FileSelection) extractContents(sortedRanges []LineRange) ([]FileSelect
 		}}, nil
 	}
 
-	// Create one strings.Builder per range
-	builders := make([]strings.Builder, len(sortedRanges))
-
-	scanner := bufio.NewScanner(file)
-	lineNum := 1
-	rangeIdx := 0
-
-	for scanner.Scan() {
-		// If current line number is beyond the current range, move to the next range
-		for rangeIdx < len(sortedRanges) && lineNum > sortedRanges[rangeIdx].End {
-			rangeIdx++
-		}
-
-		if rangeIdx >= len(sortedRanges) {
-			break
-		}
-
-		// If lineNum is within the current range, record it
-		rng := sortedRanges[rangeIdx]
-		if lineNum >= rng.Start && lineNum <= rng.End {
-			builders[rangeIdx].WriteString(scanner.Text())
-			builders[rangeIdx].WriteString("\n")
-		}
-		lineNum++
-	}
-
-	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("error reading file %s: %w", fs.Path, err)
-	}
+	// Split content into lines (using strings for simplicity)
+	contentStr := string(content)
+	lines := strings.Split(contentStr, "\n")
 
 	// Build final slice of FileSelectionContent
 	results := make([]FileSelectionContent, len(sortedRanges))
 	for i, rng := range sortedRanges {
+		var builder strings.Builder
+
+		// Adjust range to be within bounds
+		// Convert 1-based line numbers to 0-based array indices
+		start := rng.Start - 1
+		end := rng.End
+		if start < 0 {
+			start = 0
+		}
+		if end > len(lines) {
+			end = len(lines)
+		}
+
+		// Extract lines for this range
+		for lineIdx := start; lineIdx < end; lineIdx++ {
+			if lineIdx < len(lines) {
+				builder.WriteString(lines[lineIdx])
+				builder.WriteString("\n")
+			}
+		}
+
 		rangeCopy := rng
 		results[i] = FileSelectionContent{
 			Path:    fs.Path,
 			Range:   &rangeCopy,
-			Content: builders[i].String(),
+			Content: builder.String(),
 		}
 	}
+
 	return results, nil
 }
 
