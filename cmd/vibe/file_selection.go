@@ -117,6 +117,14 @@ func (fs *FileSelection) extractContents(sortedRanges []LineRange) ([]FileSelect
 	defer file.Close()
 
 	content, err := io.ReadAll(file)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read file %s: %w", fs.Path, err)
+	}
+
+	// Reset the file cursor to the beginning after reading the content
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		return nil, fmt.Errorf("failed to reset file cursor for %s: %w", fs.Path, err)
+	}
 
 	if IsBinaryFile([]byte(content)) {
 		return []FileSelectionContent{{
@@ -128,9 +136,6 @@ func (fs *FileSelection) extractContents(sortedRanges []LineRange) ([]FileSelect
 
 	// If no ranges specified, return the entire file content
 	if len(sortedRanges) == 0 {
-		if err != nil {
-			return nil, fmt.Errorf("failed to read file %s: %w", fs.Path, err)
-		}
 		return []FileSelectionContent{{
 			Path:    fs.Path,
 			Content: string(content),
