@@ -198,6 +198,36 @@ Anything outside `.Content` is a **wrapper** that you can standardise across an 
 - **Context** in the middle (directory tree, diff stats, benchmarks).
 - **Safety rails** at the bottom (response format, length limit, tool usage).
 
+## Template Data
+
+You can pass key-value pairs to your templates using the `-d/--data` flag. These values are accessible in your templates via the `.Data` map:
+
+```bash
+# Pass individual key-value pairs
+vibe ask -d model=gpt4 -d format=json myPrompt.md
+
+# Or use URL-style query parameters
+vibe ask -d "model=gpt4&format=json" myPrompt.md
+```
+
+In your templates, access these values using the `.Data` map:
+
+```md
+<!-- Use specific instructions based on model -->
+{{- if eq .Data.model "gpt4" }}
+You are using GPT-4. Please provide a detailed analysis.
+{{- else }}
+Please provide a concise summary.
+{{- end }}
+
+<!-- Format output based on user preference -->
+{{- if eq .Data.format "json" }}
+Return your response in JSON format.
+{{- end }}
+```
+
+This feature is useful for creating templates that can adapt based on runtime parameters without modifying the template itself.
+
 ## Prompt Lookup Paths
 
 when finding a template to render, vibe will look through the following paths in order

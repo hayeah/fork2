@@ -29,6 +29,9 @@ type VibeContext struct {
 	Select string
 
 	DirTree *DirectoryTree
+
+	// Data contains key-value pairs passed via --data flags
+	Data map[string]string
 }
 
 // NewVibeContext creates a new VibeContext instance
@@ -36,6 +39,7 @@ func NewVibeContext(ask *AskRunner) (*VibeContext, error) {
 	ctx := &VibeContext{
 		ask:     ask,
 		DirTree: ask.DirTree,
+		Data:    ask.Data,
 	}
 
 	systemfs, err := fs.Sub(systemTemplatesFS, "templates")
@@ -146,6 +150,7 @@ func newVibeContextMemoized(ctx *VibeContext) *VibeContextMemoized {
 		FileMapOnce:           sync.OnceValues(ctx.FileMap),
 		RepoDirectoryTreeOnce: sync.OnceValues(ctx.RepoDirectoryTree),
 		RepoPromptsOnce:       sync.OnceValues(ctx.RepoPrompts),
+		Data:                  ctx.Data,
 	}
 }
 
@@ -155,6 +160,9 @@ type VibeContextMemoized struct {
 	FileMapOnce           func() (string, error)
 	RepoDirectoryTreeOnce func() (string, error)
 	RepoPromptsOnce       func() (string, error)
+
+	// Data contains key-value pairs passed via --data flags
+	Data map[string]string
 }
 
 // Content returns the current clipboard content as a string.

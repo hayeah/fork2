@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,10 +19,11 @@ type AskCmd struct {
 	TokenEstimator string `arg:"--token-estimator" help:"Token count estimator to use: 'simple' (size/4) or 'tiktoken'" default:"simple"`
 	All            bool   `arg:"-a,--all" help:"Select all files and output immediately"`
 	// Output sets the destination for the generated prompt: '-' for stdout, a file path to write the output, or empty to copy to clipboard
-	Output      string `arg:"-o,--output" help:"Output destination: '-' for stdout; file path to write; if not set, copy to clipboard"`
-	Layout      string `arg:"--layout" help:"Layout to use for output"`
-	Select      string `arg:"-s,--select" help:"Select files matching patterns"`
-	Instruction string `arg:"positional" help:"User instruction or path to instruction file"`
+	Output      string   `arg:"-o,--output" help:"Output destination: '-' for stdout; file path to write; if not set, copy to clipboard"`
+	Layout      string   `arg:"--layout" help:"Layout to use for output"`
+	Select      string   `arg:"-s,--select" help:"Select files matching patterns"`
+	Data        []string `arg:"-d,--data,separate" help:"key=value pairs exposed to templates as .Data.* (repeatable)"`
+	Instruction string   `arg:"positional" help:"User instruction or path to instruction file"`
 }
 
 // AskRunner encapsulates the state and behavior for the file picker
@@ -30,6 +32,7 @@ type AskRunner struct {
 	RootPath       string
 	DirTree        *DirectoryTree
 	TokenEstimator TokenEstimator
+	Data           map[string]string
 }
 
 // NewAskRunner creates and initializes a new PickRunner
@@ -54,10 +57,17 @@ func NewAskRunner(cmdArgs AskCmd, rootPath string) (*AskRunner, error) {
 		return nil, fmt.Errorf("unknown token estimator: %s", cmdArgs.TokenEstimator)
 	}
 
+	// Parse data parameters (key=value pairs)
+	data, err := parseDataParams(cmdArgs.Data)
+	if err != nil {
+		return nil, err
+	}
+
 	r := &AskRunner{
 		Args:           cmdArgs,
 		RootPath:       rootPath,
 		TokenEstimator: tokenEstimator,
+		Data:           data,
 	}
 
 	return r, nil
@@ -74,6 +84,28 @@ func (r *AskRunner) Run() error {
 	}
 
 	return nil
+}
+
+// parseDataParams parses data parameters from CLI flags into a map
+// Each parameter can be a single key=value pair or URL-style query parameters (key1=val1&key2=val2)
+// Supports both single "k=v" and "k1=v1&k2=v2" styles.
+func parseDataParams(params []string) (map[string]string, error) {
+	result := make(map[string]string)
+	for _, raw := range params {
+		// ParseQuery handles splitting on '&' and '='
+		vals, err := url.ParseQuery(raw)
+		if err != nil {
+			return nil, fmt.Errorf("invalid data parameter %q: %w", raw, err)
+		}
+
+		for key, arr := range vals {
+			// Take only the first value if there are duplicates
+			if len(arr) > 0 {
+				result[key] = arr[0]
+			}
+		}
+	}
+	return result, nil
 }
 
 // calculateTokenCount calculates the total token count for a list of file paths
