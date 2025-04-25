@@ -63,19 +63,22 @@ func NewResolver(partials ...fs.FS) *Resolver {
 
 // resolveTemplateFile checks for an exact match and, only if no
 // extension is present, falls back to the ".md" variant.
-func resolveTemplateFile(fsys fs.FS, base string) (string, error) {
-	// exact path first
-	if _, err := fs.Stat(fsys, base); err == nil {
-		return base, nil
-	}
-	// no extension → try ".md"
-	if filepath.Ext(base) == "" {
-		alt := base + ".md"
-		if _, err := fs.Stat(fsys, alt); err == nil {
-			return alt, nil
+// It searches through all provided filesystems in order.
+func resolveTemplateFile(base string, filesystems ...fs.FS) (fs.FS, string, error) {
+	for _, fsys := range filesystems {
+		// exact path first
+		if _, err := fs.Stat(fsys, base); err == nil {
+			return fsys, base, nil
+		}
+		// no extension → try ".md"
+		if filepath.Ext(base) == "" {
+			alt := base + ".md"
+			if _, err := fs.Stat(fsys, alt); err == nil {
+				return fsys, alt, nil
+			}
 		}
 	}
-	return "", fmt.Errorf("template %q not found (tried %q and %q.md)", base, base, base)
+	return nil, "", fmt.Errorf("template %q not found in any filesystem", base)
 }
 
 // ResolvePartialPath determines which FS and file should be used for a given partial path.
@@ -93,32 +96,25 @@ func (ctx *Resolver) ResolvePartialPath(partialPath string, cur *Template) (fs.F
 		currentTemplatePath = cur.Path
 		currentTemplateFS = cur.FS
 	}
+
 	switch {
 	case strings.HasPrefix(partialPath, "<") && strings.HasSuffix(partialPath, ">"):
 		// System template - use the last FS in Partials
-		path := strings.TrimPrefix(strings.TrimSuffix(partialPath, ">"), "<")
 		if len(ctx.Partials) == 0 {
 			return nil, "", fmt.Errorf("no filesystem available for system template")
 		}
+		path := strings.TrimPrefix(strings.TrimSuffix(partialPath, ">"), "<")
 		fsys := ctx.Partials[len(ctx.Partials)-1]
-		p, err := resolveTemplateFile(fsys, path)
-		if err != nil {
-			return nil, "", err
-		}
-		return fsys, p, nil
+		return resolveTemplateFile(path, fsys)
 
 	case strings.HasPrefix(partialPath, "@"):
 		// Repo root template - use the first FS in Partials
-		path := strings.TrimPrefix(partialPath, "@")
 		if len(ctx.Partials) == 0 {
 			return nil, "", fmt.Errorf("no filesystem available for repo template")
 		}
+		path := strings.TrimPrefix(partialPath, "@")
 		fsys := ctx.Partials[0]
-		p, err := resolveTemplateFile(fsys, path)
-		if err != nil {
-			return nil, "", err
-		}
-		return fsys, p, nil
+		return resolveTemplateFile(path, fsys)
 
 	case strings.HasPrefix(partialPath, "./") || strings.HasPrefix(partialPath, "../") || partialPath == "." || partialPath == "..":
 		// Local template (relative to current template)
@@ -135,12 +131,7 @@ func (ctx *Resolver) ResolvePartialPath(partialPath string, cur *Template) (fs.F
 		// Resolve the path relative to the current template
 		fullPath := filepath.Join(currentDir, partialPath)
 		fullPath = filepath.Clean(fullPath)
-
-		p, err := resolveTemplateFile(currentTemplateFS, fullPath)
-		if err != nil {
-			return nil, "", err
-		}
-		return currentTemplateFS, p, nil
+		return resolveTemplateFile(fullPath, currentTemplateFS)
 
 	default:
 		// Bare path - search through all filesystems in order
@@ -148,15 +139,8 @@ func (ctx *Resolver) ResolvePartialPath(partialPath string, cur *Template) (fs.F
 			return nil, "", fmt.Errorf("no filesystems available for template lookup")
 		}
 
-		// Try each filesystem in order until we find the file
-		for _, fsys := range ctx.Partials {
-			// Check if the file exists in this filesystem
-			if fp, err := resolveTemplateFile(fsys, partialPath); err == nil {
-				return fsys, fp, nil
-			}
-		}
-
-		return nil, "", fmt.Errorf("template %q not found in any filesystem", partialPath)
+		// Search through all filesystems
+		return resolveTemplateFile(partialPath, ctx.Partials...)
 	}
 }
 
