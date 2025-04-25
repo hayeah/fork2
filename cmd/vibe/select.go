@@ -4,12 +4,9 @@
 //
 // The pattern syntax supports several matching strategies:
 //
-// 1. Fuzzy matching (default): "foo" matches any path containing "foo"
-//   - Negation: "!pattern" excludes paths matching "pattern" (handled by fzf matcher)
-//
-// 2. Exact path matching: "=path/to/file.txt" matches only that exact path
-// 3. Compound patterns: "foo|bar" matches paths containing both "foo" AND "bar"
-// 4. Union patterns: "foo;bar" matches paths containing either "foo" OR "bar"
+// 1. Fuzzy matching: "foo" matches any path containing "foo"
+// 2. Compound patterns: "foo|bar" matches paths containing both "foo" AND "bar"
+// 3. Union patterns: "foo;bar" matches paths containing either "foo" OR "bar"
 //
 // # Special Cases
 //
@@ -21,7 +18,6 @@ package main
 import (
 	"bufio"
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/hayeah/fork2/fzf"
@@ -31,43 +27,6 @@ import (
 type Matcher interface {
 	// Match takes a slice of paths and returns the matched paths
 	Match(paths []string) ([]string, error)
-}
-
-// ExactPathMatcher matches exact file paths or directories
-type ExactPathMatcher struct {
-	FileSelection
-}
-
-// Match implements the Matcher interface for ExactPathMatcher
-func (m ExactPathMatcher) Match(paths []string) ([]string, error) {
-	// Check if the path exists and is a directory
-	fileInfo, err := os.Stat(m.Path)
-	if err == nil && fileInfo.IsDir() {
-		// If it's a directory, select all files within that directory
-		matchesSet := NewSet[string]()
-		pathPrefix := m.Path
-		// Ensure the path ends with a separator
-		if !strings.HasSuffix(pathPrefix, string(os.PathSeparator)) {
-			pathPrefix += string(os.PathSeparator)
-		}
-
-		// Find all paths that start with the directory path
-		for _, path := range paths {
-			if strings.HasPrefix(path, pathPrefix) {
-				matchesSet.Add(path)
-			}
-		}
-
-		return matchesSet.Values(), nil
-	}
-
-	// Otherwise, match exact file path as before
-	for _, path := range paths {
-		if path == m.Path {
-			return []string{path}, nil
-		}
-	}
-	return []string{}, nil
 }
 
 // FuzzyMatcher uses fuzzy matching for file paths
@@ -182,37 +141,22 @@ func ParseMatcher(pattern string) (Matcher, error) {
 		return UnionMatcher{Matchers: subMatchers}, nil
 	}
 
-	if strings.Contains(pattern, "|") {
-		// Handle compound patterns with '|' operator (logical AND)
+	// if strings.Contains(pattern, "|") {
+	// 	// Handle compound patterns with '|' operator (logical AND)
 
-		parts := strings.Split(pattern, "|")
-		subMatchers := make([]Matcher, 0, len(parts))
+	// 	parts := strings.Split(pattern, "|")
+	// 	subMatchers := make([]Matcher, 0, len(parts))
 
-		for _, part := range parts {
-			matcher, err := ParseMatcher(part)
-			if err != nil {
-				return nil, fmt.Errorf("in pattern part '%s': %v", part, err)
-			}
-			subMatchers = append(subMatchers, matcher)
-		}
+	// 	for _, part := range parts {
+	// 		matcher, err := ParseMatcher(part)
+	// 		if err != nil {
+	// 			return nil, fmt.Errorf("in pattern part '%s': %v", part, err)
+	// 		}
+	// 		subMatchers = append(subMatchers, matcher)
+	// 	}
 
-		return CompoundMatcher{Matchers: subMatchers}, nil
-	}
-
-	// Check if this is an exact path matcher
-	if strings.HasPrefix(pattern, "=") {
-		exactPath := pattern[1:] // Remove the leading "="
-
-		// Create a FileSelection using the helper function
-		fileSelection, err := ParseFileSelection(exactPath)
-		if err != nil {
-			return nil, err
-		}
-
-		return ExactPathMatcher{FileSelection: fileSelection}, nil
-	}
-
-	// Note: Patterns beginning with "/" or containing glob characters are now treated as plain fuzzy text
+	// 	return CompoundMatcher{Matchers: subMatchers}, nil
+	// }
 
 	// Default to fuzzy matching
 	return NewFuzzyMatcher(pattern)
