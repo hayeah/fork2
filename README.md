@@ -5,6 +5,7 @@
   - [Basic patterns](#basic-patterns)
   - [Operators](#operators)
   - [Worked Examples](#worked-examples)
+- [List Matched Files](#list-matched-files)
 - [Prompt Templates](#prompt-templates)
   - [How rendering works](#how-rendering-works)
   - [Example Chat Log](#example-chat-log)
@@ -100,6 +101,20 @@ Instead of using `;`, you could also put multiple patterns on different lines:
 vibe ask --select '.go
 !_test.go;.md'
 ```
+
+## List Matched Files
+
+The `ls` command allows you to list files that match a pattern without generating a prompt. This is useful for inspecting which files would be included in a prompt before running the `ask` command.
+
+```bash
+# List all Go files
+vibe ls --select '.go'
+
+# List files from a template's select pattern
+vibe ls templates/my_prompt.md
+```
+
+When using a template file, the `ls` command will use the `select` pattern defined in the template's front-matter.
 
 ## Prompt Templates
 
