@@ -15,7 +15,7 @@
 
 `vibe` is a CLI that helps you build complex prompts by selecting repo files, and rendering reuseable prompt templates.
 
-- **File selection** – match any subset of your repo with a mini pattern language (e.g. `.go|!_test.go`). Inspired by tools like [repomix](https://github.com/yamadashy/repomix) and [Repo Prompt](https://repoprompt.com/).
+- **File selection** – match any subset of your repo with a mini pattern language (e.g. `.go !_test`). Inspired by tools like [repomix](https://github.com/yamadashy/repomix) and [Repo Prompt](https://repoprompt.com/).
 - **Composable templates** – layouts and partials let you wrap prefixes/suffixes, inject roles or tool specs, and branch on env/CLI vars. Think a blog engine like Hugo/Jekyll, but for prompts.
 - **Shareable workflows** – keep prompt recipes in‑repo so the whole team can reuse and version them.
 
@@ -27,17 +27,13 @@ go install github.com/hayeah/fork2/cmd/vibe@latest
 
 ## Pattern Matching Tutorial
 
-vibe uses a tiny pattern language to tell which paths you want and which you don’t.
+vibe uses a tiny pattern language inspired by fzf to tell which paths you want and which you don’t.
 
-- Basic patterns
-  - Fuzzy matching: `.go` or `util`
-  - Regex: `/test\.go$`
-  - Exact matching: `=./cmd/main.go`
-  - Whole directory: `=./util`, to include all files in that directory
-- **Operators** to combine the basic patterns (order of precedence):
-  - `!` = **NOT** (exclude matches)
-  - `|` = **AND** (all sub‑patterns must match)
-  - `;` = **OR** (whichever pattern matches)
+- **Basic patterns**
+  - **Fuzzy / substring match**: `.go`, `util`
+  - **Anchors** – `^cmd`, `.go$`, `^README.md$`
+  - **Word-boundaries** – `'select` (word-prefix) · `'select'` (exact word)
+  - **Negation inside a term** – `!_test.go`
 
 Examples:
 
@@ -47,16 +43,16 @@ Examples:
 - `!.md`
   Exclude markdown files.
 
-- `.go|util`
+- `.go util`
   Select `.go` files that also matches `util`
 
-- `.go|!_test.go`
+- `.go !_test.go`
   Select `.go` files **but not** their tests.
 
 - `.go;.md`
   All Go files **or** plus all `.md` files.
 
-- `.go|!_test.go;.md`
+- `.go !_test.go;.md`
   All non test `.go` files, plus `.md` files
 
 #### Worked Examples
@@ -70,14 +66,14 @@ vibe ask --select .go
 Study utilities only
 
 ```bash
-vibe ask --select '.go|util'
+vibe ask --select '.go util'
 # Meaning: “choose files that end in .go AND include ‘util’
 ```
 
 Show me every Go file in the repo, but leave out any test files
 
 ```bash
-vibe ask --select '.go|!_test.go'
+vibe ask --select '.go !_test.go'
 # similar to using inverted grep to filter:
 # git ls-files '*.go' | grep -v '_test.go'
 ```
@@ -92,7 +88,7 @@ vibe ask --select '.go;.md'
 Let's combine everything. Select all go files that are not test files, plus all markdown files:
 
 ```bash
-vibe ask --select '.go|!_test.go;.md'
+vibe ask --select '.go !_test.go;.md'
 ```
 
 Instead of using `;`, you could also put multiple patterns on different lines:
@@ -138,7 +134,7 @@ The template body is normal text/markdown that may use Go text/template syntax
 When you run
 
 ```bash
-vibe ask explain.md --select '.go|!_test.go'
+vibe ask explain.md --select '.go !_test.go'
 ```
 
 vibe:
