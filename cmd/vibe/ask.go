@@ -183,9 +183,9 @@ func (r *AskRunner) handleOutput() error {
 		fmt.Fprintln(os.Stderr, "Output copied to clipboard")
 	}
 
-	// Wait for all metrics processing to complete
+	// Wait for token counting & print chart
 	r.Metrics.Wait()
-	fmt.Fprintln(os.Stderr, metrics.HumanSummary(r.Metrics))
+	PrintTokenBreakdown(r.Metrics, 30, '█')
 
 	return nil
 }

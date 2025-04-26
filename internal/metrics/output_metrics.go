@@ -3,7 +3,6 @@ package metrics
 import (
 	"encoding/json"
 	"fmt"
-	"strings"
 	"sync"
 )
 
@@ -99,8 +98,21 @@ func (m *OutputMetrics) Add(typ, key string, content []byte) {
 }
 
 // Wait waits for all pending jobs to complete
+// It is idempotent and can be called multiple times safely
 func (m *OutputMetrics) Wait() {
-	close(m.jobs)
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	// Use a flag in the struct to track if we've already closed
+	// This is a safer approach than trying to detect if a channel is closed
+	if m.jobs != nil {
+		// Safe to close only once
+		close(m.jobs)
+		// Set to nil to mark as closed
+		m.jobs = nil
+	}
+
+	// Always wait, which is also idempotent
 	m.wg.Wait()
 }
 
@@ -135,53 +147,4 @@ func (m *OutputMetrics) MarshalJSON() ([]byte, error) {
 	}
 
 	return json.Marshal(result)
-}
-
-// HumanSummary returns a human-readable summary of the metrics
-func HumanSummary(m *OutputMetrics) string {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	var sb strings.Builder
-
-	// Final output
-	if final, ok := m.Items[MetricKey{Type: "final", Key: ""}]; ok {
-		sb.WriteString(fmt.Sprintf(
-			"Final output: %d tokens, %d bytes, %d lines\n",
-			final.Tokens, final.Bytes, final.Lines))
-	}
-
-	// Files
-	fileSum := m.sumByLocked("file")
-	if fileSum.Tokens > 0 {
-		sb.WriteString(fmt.Sprintf(
-			"Files: %d tokens, %d bytes, %d lines\n",
-			fileSum.Tokens, fileSum.Bytes, fileSum.Lines))
-
-		fileCount := 0
-		for k := range m.Items {
-			if k.Type == "file" {
-				fileCount++
-			}
-		}
-		sb.WriteString(fmt.Sprintf("  (%d files processed)\n", fileCount))
-	}
-
-	// Templates
-	templateSum := m.sumByLocked("template")
-	if templateSum.Tokens > 0 {
-		sb.WriteString(fmt.Sprintf(
-			"Templates: %d tokens, %d bytes, %d lines\n",
-			templateSum.Tokens, templateSum.Bytes, templateSum.Lines))
-	}
-
-	// User input
-	userSum := m.sumByLocked("user")
-	if userSum.Tokens > 0 {
-		sb.WriteString(fmt.Sprintf(
-			"User input: %d tokens, %d bytes, %d lines\n",
-			userSum.Tokens, userSum.Bytes, userSum.Lines))
-	}
-
-	return sb.String()
 }
