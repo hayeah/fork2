@@ -22,16 +22,23 @@ func trimMiddle(s string, max int) string {
 // PrintTokenBreakdown prints a visualization of token contribution by each metric item.
 // Bars are normalized to the largest bucket, not to 100% of the total.
 func PrintTokenBreakdown(m *metrics.OutputMetrics, barW int, fill rune) {
+	// Fixed width for the tokens column, enough for "100000"
+	const tokensW = 6
+
 	// Wait to ensure all workers are done
 	m.Wait()
 
 	// Calculate total tokens and find maximum token count
 	var totalTokens int
 	var maxTokens int
-	for _, item := range m.Items {
+	var fileCount int
+	for k, item := range m.Items {
 		totalTokens += item.Tokens
 		if item.Tokens > maxTokens {
 			maxTokens = item.Tokens
+		}
+		if k.Type == "file" {
+			fileCount++
 		}
 	}
 
@@ -70,7 +77,14 @@ func PrintTokenBreakdown(m *metrics.OutputMetrics, barW int, fill rune) {
 			barLen = 1 // always show a dot for non-zero buckets
 		}
 		bar := strings.Repeat(string(fill), barLen)
-		key := trimMiddle(e.key.String(), 40) // fixed key width
-		fmt.Printf("%-*s  %5.1f%%  %s\n", barW, bar, e.pct, key)
+		key := trimMiddle(e.key.String(), 34) // shortened key width to accommodate tokens column
+		fmt.Printf("%-*s  %5.1f%%  %*d  %s\n", barW, bar, e.pct, tokensW, e.tokens, key)
 	}
+
+	// Print a totals row
+	sep := strings.Repeat("─", barW)
+	fmt.Printf("%-*s  %5.1f%%  %*d  TOTAL\n", barW, sep, 100.0, tokensW, totalTokens)
+
+	// Print a summary line
+	fmt.Printf("\nSummary: %d files, %d tokens\n", fileCount, totalTokens)
 }
