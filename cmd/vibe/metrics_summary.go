@@ -19,33 +19,40 @@ func trimMiddle(s string, max int) string {
 	return s[:half] + "…" + s[len(s)-half:]
 }
 
-// PrintTokenBreakdown prints a visualization of token contribution by each metric item
+// PrintTokenBreakdown prints a visualization of token contribution by each metric item.
+// Bars are normalized to the largest bucket, not to 100% of the total.
 func PrintTokenBreakdown(m *metrics.OutputMetrics, barW int, fill rune) {
 	// Wait to ensure all workers are done
 	m.Wait()
 
-	// Calculate total tokens
+	// Calculate total tokens and find maximum token count
 	var totalTokens int
+	var maxTokens int
 	for _, item := range m.Items {
 		totalTokens += item.Tokens
+		if item.Tokens > maxTokens {
+			maxTokens = item.Tokens
+		}
 	}
 
-	if totalTokens == 0 {
+	if totalTokens == 0 || maxTokens == 0 {
 		fmt.Println("No tokens recorded")
 		return
 	}
 
 	// Copy items into a slice for sorting
 	type entry struct {
-		key metrics.MetricKey
-		pct float64
+		key    metrics.MetricKey
+		tokens int
+		pct    float64
 	}
 	entries := make([]entry, 0, len(m.Items))
 	for k, item := range m.Items {
 		pct := float64(item.Tokens) * 100 / float64(totalTokens)
 		entries = append(entries, entry{
-			key: k,
-			pct: pct,
+			key:    k,
+			tokens: item.Tokens,
+			pct:    pct,
 		})
 	}
 
@@ -56,7 +63,13 @@ func PrintTokenBreakdown(m *metrics.OutputMetrics, barW int, fill rune) {
 
 	// Print the bar chart
 	for _, e := range entries {
-		bar := strings.Repeat(string(fill), int(e.pct/100*float64(barW)+0.5))
+		// Scale bar length relative to the largest bucket
+		ratio := float64(e.tokens) / float64(maxTokens)
+		barLen := int(ratio*float64(barW) + 0.5)
+		if barLen == 0 && e.tokens > 0 {
+			barLen = 1 // always show a dot for non-zero buckets
+		}
+		bar := strings.Repeat(string(fill), barLen)
 		key := trimMiddle(e.key.String(), 40) // fixed key width
 		fmt.Printf("%-*s  %5.1f%%  %s\n", barW, bar, e.pct, key)
 	}
