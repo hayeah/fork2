@@ -42,8 +42,9 @@ func TestWriteFileMapDirectory(t *testing.T) {
 	// Create a buffer to write to
 	var buf strings.Builder
 
-	// Test WriteFileMap
-	err = WriteFileMap(&buf, selections, tempDir, nil)
+	// Test FileMapWriter
+	fileMapWriter := NewWriteFileMap(tempDir, nil)
+	err = fileMapWriter.Output(&buf, selections)
 	assert.NoError(err)
 
 	// Check output - should only contain the text file

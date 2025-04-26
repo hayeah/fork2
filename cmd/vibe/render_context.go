@@ -113,7 +113,9 @@ func (ctx *VibeContext) FileMap() (string, error) {
 
 	// Write the file map of selected files to a string
 	var fileMapBuf strings.Builder
-	err = WriteFileMap(&fileMapBuf, selected, ctx.ask.RootPath, ctx.ask.Metrics)
+
+	fileMapWriter := NewWriteFileMap(ctx.ask.RootPath, ctx.ask.Metrics)
+	err = fileMapWriter.Output(&fileMapBuf, selected)
 	if err != nil {
 		return "", fmt.Errorf("failed to write file map: %v", err)
 	}

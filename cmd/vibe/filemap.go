@@ -15,6 +15,12 @@ type FileMap struct {
 	Files map[string]string
 }
 
+// FileMapWriter handles writing file selections with optional metrics tracking
+type FileMapWriter struct {
+	baseDir string
+	metrics  *metrics.OutputMetrics
+}
+
 // IsBinaryFile checks if content is likely binary by sampling the first 100 runes
 // and checking if they are printable Unicode characters
 func IsBinaryFile(content []byte) bool {
@@ -43,8 +49,16 @@ func IsBinaryFile(content []byte) bool {
 	return float64(nonPrintable)/float64(totalRunes) > threshold
 }
 
-// WriteFileMap writes a filemap to the provided writer for the given file selections
-func WriteFileMap(w io.Writer, selections []FileSelection, baseDir string, m *metrics.OutputMetrics) error {
+// NewWriteFileMap creates a new FileMapWriter with the given base directory and metrics
+func NewWriteFileMap(baseDir string, m *metrics.OutputMetrics) *FileMapWriter {
+	return &FileMapWriter{
+		baseDir: baseDir,
+		metrics:  m,
+	}
+}
+
+// Output writes file selections to the provided writer
+func (w *FileMapWriter) Output(out io.Writer, selections []FileSelection) error {
 	for _, selection := range selections {
 		// Skip directories
 		fileInfo, err := os.Stat(selection.Path)
@@ -62,11 +76,11 @@ func WriteFileMap(w io.Writer, selections []FileSelection, baseDir string, m *me
 		}
 
 		// Write file content
-		fmt.Fprint(w, content)
+		fmt.Fprint(out, content)
 
 		// Add metrics for file content
-		if m != nil {
-			m.Add("file", selection.Path, []byte(content))
+		if w.metrics != nil {
+			w.metrics.Add("file", selection.Path, []byte(content))
 		}
 	}
 

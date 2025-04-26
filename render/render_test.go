@@ -150,7 +150,7 @@ func TestPartialRendering(t *testing.T) {
 	})
 
 	ctx := NewResolver(repoFS, systemFS)
-	renderer := NewRenderer(ctx)
+	renderer := NewRenderer(ctx, nil)
 	assert := assert.New(t)
 
 	data := struct {
@@ -207,7 +207,7 @@ func TestRendererWithLayout(t *testing.T) {
 	})
 
 	ctx := NewResolver(repoFS, systemFS)
-	renderer := NewRenderer(ctx)
+	renderer := NewRenderer(ctx, nil)
 
 	data := &struct {
 		*testContent
@@ -243,7 +243,7 @@ func TestLayoutCycleDetection(t *testing.T) {
 	})
 
 	ctx := NewResolver(repoFS)
-	renderer := NewRenderer(ctx)
+	renderer := NewRenderer(ctx, nil)
 	assert := assert.New(t)
 
 	_, err := renderer.Render("a.md", &testContent{})
@@ -264,7 +264,7 @@ func TestLayoutDeepNestingLimit(t *testing.T) {
 
 	repoFS := createTestFS(files)
 	ctx := NewResolver(repoFS)
-	renderer := NewRenderer(ctx)
+	renderer := NewRenderer(ctx, nil)
 	assert := assert.New(t)
 
 	_, err := renderer.Render("t0.md", &testContent{})
@@ -318,7 +318,7 @@ func TestTemplatePrecedenceOrder(t *testing.T) {
 
 	// Create resolver with all layers in the correct order
 	ctx := NewResolver(repoFS, vibePromptsFS, userVibeFS, systemFS)
-	renderer := NewRenderer(ctx)
+	renderer := NewRenderer(ctx, nil)
 	assert := assert.New(t)
 
 	// Test cases for templates that exist in multiple layers
