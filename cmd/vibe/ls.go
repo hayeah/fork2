@@ -39,7 +39,7 @@ func (r *LsRunner) Run() error {
 	pattern := r.Args.Select
 	if pattern == "" { // derive from template front-matter
 		resolver := render.NewResolver(os.DirFS(r.RootPath))
-		templ, err := render.NewRenderer(resolver).LoadTemplate(r.Args.Template)
+		templ, err := render.NewRenderer(resolver, nil).LoadTemplate(r.Args.Template)
 		if err != nil {
 			return err
 		}

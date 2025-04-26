@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"text/template"
+
+	"github.com/hayeah/fork2/internal/metrics"
 )
 
 // Resolver lookups available template paths across multiple filesystems
@@ -150,12 +152,16 @@ type Renderer struct {
 
 	// Current template context
 	cur *Template // replaces curPath / curFS
+
+	// Metrics for tracking template usage
+	metrics *metrics.OutputMetrics
 }
 
-// NewRenderer creates a new Renderer with the given RenderContext.
-func NewRenderer(ctx *Resolver) *Renderer {
+// NewRenderer creates a new Renderer with the given RenderContext and metrics.
+func NewRenderer(ctx *Resolver, m *metrics.OutputMetrics) *Renderer {
 	return &Renderer{
 		ctx: ctx,
+		metrics: m,
 	}
 }
 
@@ -312,5 +318,11 @@ func (r *Renderer) renderTemplateInternal(t *Template, data Content, seen map[st
 	}
 
 	// If no layout is specified, return the content directly
+
+	// Add metrics for template rendering
+	if r.metrics != nil {
+		r.metrics.Add("template", t.Path, []byte(t.Body))
+	}
+
 	return renderedContent, nil
 }

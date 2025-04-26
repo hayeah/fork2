@@ -6,6 +6,8 @@ import (
 	"os"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/hayeah/fork2/internal/metrics"
 )
 
 // FileMap represents a mapping of file paths to their contents
@@ -42,7 +44,7 @@ func IsBinaryFile(content []byte) bool {
 }
 
 // WriteFileMap writes a filemap to the provided writer for the given file selections
-func WriteFileMap(w io.Writer, selections []FileSelection, baseDir string) error {
+func WriteFileMap(w io.Writer, selections []FileSelection, baseDir string, m *metrics.OutputMetrics) error {
 	for _, selection := range selections {
 		// Skip directories
 		fileInfo, err := os.Stat(selection.Path)
@@ -61,6 +63,11 @@ func WriteFileMap(w io.Writer, selections []FileSelection, baseDir string) error
 
 		// Write file content
 		fmt.Fprint(w, content)
+
+		// Add metrics for file content
+		if m != nil {
+			m.Add("file", selection.Path, []byte(content))
+		}
 	}
 
 	return nil

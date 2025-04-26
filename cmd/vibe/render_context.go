@@ -11,6 +11,7 @@ import (
 	"sync"
 
 	"github.com/atotto/clipboard"
+	"github.com/hayeah/fork2/internal/metrics"
 	"github.com/hayeah/fork2/render"
 )
 
@@ -33,6 +34,9 @@ type VibeContext struct {
 
 	// Data contains key-value pairs passed via --data flags
 	Data map[string]string
+
+	// Metrics for tracking output
+	Metrics *metrics.OutputMetrics
 }
 
 // NewVibeContext creates a new VibeContext instance
@@ -75,7 +79,8 @@ func NewVibeContext(ask *AskRunner) (*VibeContext, error) {
 	partials = append(partials, systemFS)
 
 	ctx.RenderContext = render.NewResolver(partials...)
-	ctx.Renderer = render.NewRenderer(ctx.RenderContext)
+	ctx.Metrics = ask.Metrics
+	ctx.Renderer = render.NewRenderer(ctx.RenderContext, ctx.Metrics)
 
 	return ctx, nil
 }
@@ -108,7 +113,7 @@ func (ctx *VibeContext) FileMap() (string, error) {
 
 	// Write the file map of selected files to a string
 	var fileMapBuf strings.Builder
-	err = WriteFileMap(&fileMapBuf, selected, ctx.ask.RootPath)
+	err = WriteFileMap(&fileMapBuf, selected, ctx.ask.RootPath, ctx.ask.Metrics)
 	if err != nil {
 		return "", fmt.Errorf("failed to write file map: %v", err)
 	}

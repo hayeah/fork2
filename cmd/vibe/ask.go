@@ -8,9 +8,11 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/atotto/clipboard"
+	"github.com/hayeah/fork2/internal/metrics"
 	"github.com/pkoukk/tiktoken-go"
 )
 
@@ -23,6 +25,7 @@ type AskCmd struct {
 	Layout      string   `arg:"--layout" help:"Layout to use for output"`
 	Select      string   `arg:"-s,--select" help:"Select files matching patterns"`
 	Data        []string `arg:"-d,--data,separate" help:"key=value pairs exposed to templates as .Data.* (repeatable)"`
+	Metrics     string   `arg:"-m,--metrics" help:"Write metrics JSON ('-' = stdout)"`
 	Instruction string   `arg:"positional" help:"User instruction or path to instruction file"`
 }
 
@@ -33,6 +36,7 @@ type AskRunner struct {
 	DirTree        *DirectoryTree
 	TokenEstimator TokenEstimator
 	Data           map[string]string
+	Metrics        *metrics.OutputMetrics
 }
 
 // NewAskRunner creates and initializes a new PickRunner
@@ -63,11 +67,25 @@ func NewAskRunner(cmdArgs AskCmd, rootPath string) (*AskRunner, error) {
 		return nil, err
 	}
 
+	// Initialize metrics counter based on token estimator
+	var counter metrics.Counter
+	switch cmdArgs.TokenEstimator {
+	case "tiktoken":
+		counter, err = metrics.NewTiktokenCounter("gpt-3.5-turbo")
+		if err != nil {
+			// Fall back to simple counter on error
+			counter = &metrics.SimpleCounter{}
+		}
+	default:
+		counter = &metrics.SimpleCounter{}
+	}
+
 	r := &AskRunner{
 		Args:           cmdArgs,
 		RootPath:       rootPath,
 		TokenEstimator: tokenEstimator,
 		Data:           data,
+		Metrics:        metrics.NewOutputMetrics(counter, runtime.NumCPU()),
 	}
 
 	return r, nil
@@ -164,6 +182,10 @@ func (r *AskRunner) handleOutput() error {
 		}
 		fmt.Fprintln(os.Stderr, "Output copied to clipboard")
 	}
+
+	// Wait for all metrics processing to complete
+	r.Metrics.Wait()
+	fmt.Fprintln(os.Stderr, metrics.HumanSummary(r.Metrics))
 
 	return nil
 }
