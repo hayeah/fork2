@@ -29,13 +29,6 @@ type MetricItem struct {
 	Lines  int `json:"lines"`
 }
 
-// Add adds the given metrics to this item
-func (m *MetricItem) Add(bytes, tokens, lines int) {
-	m.Bytes += bytes
-	m.Tokens += tokens
-	m.Lines += lines
-}
-
 // job represents a pending metrics calculation job
 type job struct {
 	typ     string
@@ -85,9 +78,15 @@ func (m *OutputMetrics) worker() {
 		// Update the metrics
 		m.mu.Lock()
 		key := MetricKey{Type: job.typ, Key: job.key}
-		item := m.Items[key]
-		item.Add(bytes, tokens, lines)
-		m.Items[key] = item
+		// Check if this key already exists, if so, ignore it
+		if _, exists := m.Items[key]; !exists {
+			// Only add metrics for new keys
+			m.Items[key] = MetricItem{
+				Bytes:  bytes,
+				Tokens: tokens,
+				Lines:  lines,
+			}
+		}
 		m.mu.Unlock()
 	}
 }
@@ -122,7 +121,9 @@ func (m *OutputMetrics) sumByLocked(typeName string) MetricItem {
 	var sum MetricItem
 	for k, v := range m.Items {
 		if k.Type == typeName {
-			sum.Add(v.Bytes, v.Tokens, v.Lines)
+			sum.Bytes += v.Bytes
+			sum.Tokens += v.Tokens
+			sum.Lines += v.Lines
 		}
 	}
 	return sum
