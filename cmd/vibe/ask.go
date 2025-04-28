@@ -185,7 +185,9 @@ func (r *AskRunner) handleOutput() error {
 
 	// Wait for token counting & print chart
 	r.Metrics.Wait()
-	PrintTokenBreakdown(r.Metrics, 30, '█')
+	if err := PrintTokenBreakdown(r.Metrics); err != nil {
+		return err
+	}
 
 	return nil
 }
