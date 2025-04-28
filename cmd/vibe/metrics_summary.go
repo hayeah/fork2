@@ -2,28 +2,54 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 
 	"github.com/hayeah/fork2/internal/metrics"
+	"golang.org/x/term"
 )
 
-// trimMiddle returns s unchanged if len(s) ≤ max; otherwise returns
-// the first max/2-1 runes + "…" + last max/2-1 runes.
-func trimMiddle(s string, max int) string {
+// trimPrefix returns s unchanged if len(s) ≤ max; otherwise returns
+// "…" + the last max-1 runes, preserving the suffix.
+func trimPrefix(s string, max int) string {
 	if len(s) <= max {
 		return s
 	}
+	return "…" + s[len(s)-max+1:]
+}
 
-	half := max/2 - 1
-	return s[:half] + "…" + s[len(s)-half:]
+// termWidth returns the width of the terminal, or 80 as a fallback.
+func termWidth() int {
+	width, _, err := term.GetSize(int(os.Stdout.Fd()))
+	if err != nil || width <= 0 {
+		return 80 // Safe fallback when stdout is not a TTY or on error
+	}
+	return width
 }
 
 // PrintTokenBreakdown prints a visualization of token contribution by each metric item.
 // Bars are normalized to the largest bucket, not to 100% of the total.
+// The layout automatically adjusts to the terminal width, with paths trimmed
+// to preserve the suffix when necessary.
 func PrintTokenBreakdown(m *metrics.OutputMetrics, barW int, fill rune) {
-	// Fixed width for the tokens column, enough for "100000"
-	const tokensW = 6
+	// Fixed width constants
+	const (
+		pctW    = 6 // "100.0%"
+		tokensW = 6 // right-aligned "123456"
+		gapW    = 2 // two spaces between every column
+	)
+
+	// Determine dynamic column widths based on terminal size
+	tw := termWidth()
+	if barW <= 0 {
+		// Auto-size the bar width if not specified
+		barW = int(float64(tw) * 0.35) // 35% for the bar
+	}
+	keyW := tw - (barW + pctW + tokensW + gapW*3)
+	if keyW < 8 {
+		keyW = 8 // never collapse the key column too much
+	}
 
 	// Wait to ensure all workers are done
 	m.Wait()
@@ -77,13 +103,13 @@ func PrintTokenBreakdown(m *metrics.OutputMetrics, barW int, fill rune) {
 			barLen = 1 // always show a dot for non-zero buckets
 		}
 		bar := strings.Repeat(string(fill), barLen)
-		key := trimMiddle(e.key.String(), 34) // shortened key width to accommodate tokens column
-		fmt.Printf("%-*s  %5.1f%%  %*d  %s\n", barW, bar, e.pct, tokensW, e.tokens, key)
+		key := trimPrefix(e.key.String(), keyW)
+		fmt.Printf("%-*s  %5.1f%%  %*d  %-*s\n", barW, bar, e.pct, tokensW, e.tokens, keyW, key)
 	}
 
 	// Print a totals row
 	sep := strings.Repeat("─", barW)
-	fmt.Printf("%-*s  %5.1f%%  %*d  TOTAL\n", barW, sep, 100.0, tokensW, totalTokens)
+	fmt.Printf("%-*s  %5.1f%%  %*d  %-*s\n", barW, sep, 100.0, tokensW, totalTokens, keyW, "TOTAL")
 
 	// Print a summary line
 	fmt.Printf("\nSummary: %d files, %d tokens\n", fileCount, totalTokens)
