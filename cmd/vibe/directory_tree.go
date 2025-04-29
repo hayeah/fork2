@@ -85,9 +85,75 @@ func (dt *DirectoryTree) SelectFiles(selectString string) ([]FileSelection, erro
 	return set.Values(), nil
 }
 
+// Filter returns the minimal set of items that contains every path
+// matched by pattern plus all their ancestor directories.
+func (dt *DirectoryTree) Filter(pattern string) ([]item, error) {
+	if pattern == "" {
+		return dt.dirItems()
+	}
+
+	// 1. build a matcher list (reuse ParseMatchersFromString from select.go)
+	matchers, err := ParseMatchersFromString(pattern)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse pattern: %w", err)
+	}
+
+	// 2. collect all non-dir file paths, run every matcher, build a set.
+	allItems, err := dt.dirItems()
+	if err != nil {
+		return nil, err
+	}
+
+	// Get all file paths (non-directories)
+	var filePaths []string
+	for _, it := range allItems {
+		if !it.IsDir {
+			filePaths = append(filePaths, it.Path)
+		}
+	}
+
+	// Apply matchers to get matched paths
+	matchedSet := NewSet[string]()
+	for _, matcher := range matchers {
+		matchedPaths, err := matcher.Match(filePaths)
+		if err != nil {
+			return nil, err
+		}
+		matchedSet.AddValues(matchedPaths)
+	}
+
+	// 3. walk that set, add every ancestor dir to the set.
+	pathSet := NewSet[string]()
+	for _, path := range matchedSet.Values() {
+		// Add the file path itself
+		pathSet.Add(path)
+
+		// Add all ancestor directories
+		current := path
+		for {
+			parent := filepath.Dir(current)
+			if parent == "." || parent == current {
+				break
+			}
+			pathSet.Add(parent)
+			current = parent
+		}
+	}
+
+	// 4. return only the items whose Path is in the set, preserving order.
+	var filteredItems []item
+	for _, it := range allItems {
+		if pathSet.Contains(it.Path) || it.Path == "." || it.Path == "" {
+			filteredItems = append(filteredItems, it)
+		}
+	}
+
+	return filteredItems, nil
+}
+
 // GenerateDirectoryTree writes a tree-like directory structure to w based on dt.
-func (dt *DirectoryTree) GenerateDirectoryTree(w io.Writer) error {
-	diagram, err := NewDirectoryTreeDiagram(dt)
+func (dt *DirectoryTree) GenerateDirectoryTree(w io.Writer, pattern string) error {
+	diagram, err := NewDirectoryTreeDiagram(dt, pattern)
 	if err != nil {
 		return err
 	}
@@ -101,8 +167,16 @@ type DirectoryTreeDiagram struct {
 }
 
 // NewDirectoryTreeDiagram creates a new DirectoryTreeDiagram from a DirectoryTree.
-func NewDirectoryTreeDiagram(dt *DirectoryTree) (*DirectoryTreeDiagram, error) {
-	items, err := dt.dirItems()
+func NewDirectoryTreeDiagram(dt *DirectoryTree, pattern string) (*DirectoryTreeDiagram, error) {
+	var items []item
+	var err error
+
+	if pattern == "" {
+		items, err = dt.dirItems()
+	} else {
+		items, err = dt.Filter(pattern)
+	}
+
 	if err != nil {
 		return nil, err
 	}

@@ -21,12 +21,13 @@ type AskCmd struct {
 	TokenEstimator string `arg:"--token-estimator" help:"Token count estimator to use: 'simple' (size/4) or 'tiktoken'" default:"simple"`
 	All            bool   `arg:"-a,--all" help:"Select all files and output immediately"`
 	// Output sets the destination for the generated prompt: '-' for stdout, a file path to write the output, or empty to copy to clipboard
-	Output      string   `arg:"-o,--output" help:"Output destination: '-' for stdout; file path to write; if not set, copy to clipboard"`
-	Layout      string   `arg:"--layout" help:"Layout to use for output"`
-	Select      string   `arg:"-s,--select" help:"Select files matching patterns"`
-	Data        []string `arg:"-d,--data,separate" help:"key=value pairs exposed to templates as .Data.* (repeatable)"`
-	Metrics     string   `arg:"-m,--metrics" help:"Write metrics JSON ('-' = stdout)"`
-	Instruction string   `arg:"positional" help:"User instruction or path to instruction file"`
+	Output        string   `arg:"-o,--output" help:"Output destination: '-' for stdout; file path to write; if not set, copy to clipboard"`
+	Layout        string   `arg:"--layout" help:"Layout to use for output"`
+	Select        string   `arg:"-s,--select" help:"Select files matching patterns"`
+	SelectDirTree string   `arg:"-t,--select-dirtree" help:"Filter the directory-tree diagram with the same pattern syntax as --select"`
+	Data          []string `arg:"-d,--data,separate" help:"key=value pairs exposed to templates as .Data.* (repeatable)"`
+	Metrics       string   `arg:"-m,--metrics" help:"Write metrics JSON ('-' = stdout)"`
+	Instruction   string   `arg:"positional" help:"User instruction or path to instruction file"`
 }
 
 // AskRunner encapsulates the state and behavior for the file picker

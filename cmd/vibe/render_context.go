@@ -28,7 +28,8 @@ type VibeContext struct {
 	RenderContext *render.Resolver
 	Renderer      *render.Renderer
 
-	Select string
+	Select        string
+	SelectDirTree string
 
 	DirTree *DirectoryTree
 
@@ -42,9 +43,10 @@ type VibeContext struct {
 // NewVibeContext creates a new VibeContext instance
 func NewVibeContext(ask *AskRunner) (*VibeContext, error) {
 	ctx := &VibeContext{
-		ask:     ask,
-		DirTree: ask.DirTree,
-		Data:    ask.Data,
+		ask:          ask,
+		DirTree:       ask.DirTree,
+		Data:          ask.Data,
+		SelectDirTree: ask.Args.SelectDirTree,
 	}
 
 	// 1. repo the command is running inside
@@ -88,7 +90,7 @@ func NewVibeContext(ask *AskRunner) (*VibeContext, error) {
 // RepoDirectoryTree generates the directory tree structure as a string.
 func (ctx *VibeContext) RepoDirectoryTree() (string, error) {
 	var buf strings.Builder
-	err := ctx.DirTree.GenerateDirectoryTree(&buf)
+	err := ctx.DirTree.GenerateDirectoryTree(&buf, ctx.SelectDirTree)
 	if err != nil {
 		return "", err
 	}

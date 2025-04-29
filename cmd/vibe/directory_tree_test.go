@@ -63,7 +63,7 @@ func TestDirectoryTree_GenerateDirectoryTree(t *testing.T) {
 	assert.NotNil(dt)
 
 	var buf bytes.Buffer
-	err = dt.GenerateDirectoryTree(&buf)
+	err = dt.GenerateDirectoryTree(&buf, "")
 	assert.NoError(err)
 	output := buf.String()
 	fmt.Println(output)
@@ -96,4 +96,70 @@ func TestDirectoryTree_EmptyDir(t *testing.T) {
 
 	allFiles := dt.SelectAllFiles()
 	assert.Len(allFiles, 0, "No files to select in an empty dir")
+}
+
+func TestDirectoryTree_Filter(t *testing.T) {
+	assert := assert.New(t)
+
+	tempDir, err := createTestDirectory(t, map[string]string{
+		"cmd/a.go":        "A",
+		"cmd/b.txt":       "B",
+		"cmd/vibe/c.go":   "C",
+		"internal/d.go":   "D",
+		"internal/e.txt":  "E",
+		"src/f.go":        "F",
+		"src/pkg/g.go":    "G",
+		"src/pkg/test.go": "Test",
+		"src/pkg/h.txt":   "H",
+	})
+	assert.NoError(err)
+
+	dt := NewDirectoryTree(tempDir)
+	assert.NotNil(dt)
+
+	items, err := dt.Filter("cmd/;internal/")
+	assert.NoError(err)
+
+	// Create a set of paths for easier assertion
+	pathSet := NewSet[string]()
+	for _, item := range items {
+		pathSet.Add(item.Path)
+	}
+
+	// Use ElementsMatch to verify the exact paths in the result
+	expectedPaths := []string{
+		".",
+		"cmd",
+		"cmd/a.go",
+		"cmd/b.txt",
+		"cmd/vibe",
+		"cmd/vibe/c.go",
+		"internal",
+		"internal/d.go",
+		"internal/e.txt",
+	}
+	assert.ElementsMatch(expectedPaths, pathSet.Values(), "The filtered paths should match the expected set of paths")
+}
+
+func TestDirectoryTree_FilterEmptyPattern(t *testing.T) {
+	assert := assert.New(t)
+
+	tempDir, err := createTestDirectory(t, map[string]string{
+		"a.txt":        "A",
+		"subdir/b.txt": "B",
+	})
+	assert.NoError(err)
+
+	dt := NewDirectoryTree(tempDir)
+	assert.NotNil(dt)
+
+	// Test with empty pattern
+	allItems, err := dt.dirItems()
+	assert.NoError(err)
+
+	filteredItems, err := dt.Filter("")
+	assert.NoError(err)
+
+	// With empty pattern, should return all items
+	assert.Equal(allItems, filteredItems, "Empty pattern should return all items")
 }
