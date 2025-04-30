@@ -247,18 +247,44 @@ func (r *Renderer) RenderTemplate(t *Template, data Content) (string, error) {
 	return r.renderTemplateInternal(t, data, seen, 0)
 }
 
+// splitLayouts turns `layout = "a;b;c"` into
+// `[]string{"a", "b", "c"}` with whitespace trimmed and
+// empty segments removed.
+func splitLayouts(s string) []string {
+	if s == "" {
+		return nil
+	}
+	parts := strings.Split(s, ";")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
 // renderTemplateInternal is the internal implementation of renderWithLayouts with cycle detection
 func (r *Renderer) renderTemplateInternal(t *Template, data Content, seen map[string]bool, depth int) (string, error) {
 	if depth > 10 {
 		return "", fmt.Errorf("layout nesting too deep (max 10): %s", t.Path)
 	}
 
-	// Check for cycles
-	if t.Meta.Layout != "" {
-		if seen[t.Meta.Layout] {
-			return "", fmt.Errorf("layout cycle detected: %s", t.Meta.Layout)
+	// The template can request several wrapper layouts separated by ';'.
+	// We apply them inner-to-outer, i.e. the *last* element in the split
+	// list wraps first.
+	layoutPaths := splitLayouts(t.Meta.Layout)
+	if len(layoutPaths) > 0 {
+		if depth+len(layoutPaths) > 10 {
+			return "", fmt.Errorf("layout nesting too deep (max 10): %s", t.Path)
 		}
-		seen[t.Meta.Layout] = true
+		// Cycle detection across the whole chain.
+		for _, lp := range layoutPaths {
+			if seen[lp] {
+				return "", fmt.Errorf("layout cycle detected: %s", lp)
+			}
+			seen[lp] = true
+		}
 	}
 
 	// We're already in the correct context from the caller
@@ -288,41 +314,39 @@ func (r *Renderer) renderTemplateInternal(t *Template, data Content, seen map[st
 
 	renderedContent := contentBuf.String()
 
-	// If a layout is specified, load and render it with the content
-	if t.Meta.Layout != "" {
-		// Load the layout template
-		layoutTmpl, err := r.LoadTemplate(t.Meta.Layout)
+	// If *no* layouts, just return renderedContent …
+	if len(layoutPaths) == 0 {
+		if r.metrics != nil {
+			r.metrics.Add("template", t.Path, []byte(t.Body))
+		}
+		return renderedContent, nil
+	}
+
+	// We have ≥1 wrapper.  Apply them from inner-most to outer-most.
+	// Example "outer;inner" → inner wraps first.
+	for i := len(layoutPaths) - 1; i >= 0; i-- {
+		wrapper := strings.TrimSpace(layoutPaths[i])
+
+		layoutTmpl, err := r.LoadTemplate(wrapper)
 		if err != nil {
-			return "", fmt.Errorf("error loading layout template %s: %w", t.Meta.Layout, err)
+			return "", fmt.Errorf("error loading layout template %s: %w", wrapper, err)
 		}
 
-		// Save the current context
-		prevTmpl := r.cur
-
-		// Set the new context for the layout template
+		prev := r.cur
 		r.cur = layoutTmpl
-
-		// Restore the original context when we're done with this layout
-		defer func() {
-			r.cur = prevTmpl
-		}()
-
-		// Save the original content and set the rendered content
 		prevContent := data.Content()
 		data.SetContent(renderedContent)
-		// Restore the original content when we're done
-		defer func() { data.SetContent(prevContent) }()
 
-		// Recursively render with the parent layout
-		return r.renderTemplateInternal(layoutTmpl, data, seen, depth+1)
+		renderedContent, err = r.renderTemplateInternal(
+			layoutTmpl, data, seen, depth+1,
+		)
+		data.SetContent(prevContent)
+		r.cur = prev
+		if err != nil {
+			return "", err
+		}
 	}
-
-	// If no layout is specified, return the content directly
-
-	// Add metrics for template rendering
-	if r.metrics != nil {
-		r.metrics.Add("template", t.Path, []byte(t.Body))
-	}
-
 	return renderedContent, nil
+
+
 }

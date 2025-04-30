@@ -1,6 +1,7 @@
 package render
 
 import (
+	"fmt"
 	"io/fs"
 	"testing"
 	"testing/fstest"
@@ -204,6 +205,17 @@ func TestRendererWithLayout(t *testing.T) {
 {{ block "main" . }}{{ end }}`,
 
 		"templates/user.md": "Hello from the user",
+
+		"templates/user_multi.md": `---toml
+layout = "layouts/outer.md;layouts/inner.md"
+---
+Hello`,
+		"layouts/inner.md": `INNER-START
+{{ .Content }}
+INNER-END`,
+		"layouts/outer.md": `OUTER-START
+{{ .Content }}
+OUTER-END`,
 	})
 
 	ctx := NewResolver(repoFS, systemFS)
@@ -234,12 +246,26 @@ func TestRendererWithLayout(t *testing.T) {
 	assert.Contains(out, "Coder: Linux")
 	assert.Contains(out, "Tool1, Tool2, Tool3")
 	assert.Contains(out, "[file1.go file2.md]")
+
+	// Test multiple layouts
+	tmpl, err = ctx.LoadTemplate("templates/user_multi.md", nil)
+	assert.NoError(err)
+
+	out, err = renderer.RenderTemplate(tmpl, data)
+	assert.NoError(err)
+
+	expected := "OUTER-START\nINNER-START\nHello\nINNER-END\nOUTER-END"
+	assert.Equal(expected, out)
 }
 
 func TestLayoutCycleDetection(t *testing.T) {
 	repoFS := createTestFS(map[string]string{
-		"a.md": "---toml\nlayout = \"b.md\"\n---\nA", // a -> b
-		"b.md": "---toml\nlayout = \"a.md\"\n---\nB", // b -> a (cycle)
+		"a.md": "---toml\nlayout = \"b.md\"\n---\nA",      // a -> b
+		"b.md": "---toml\nlayout = \"a.md\"\n---\nB",      // b -> a (cycle)
+		"c.md": "---toml\nlayout = \"d.md;e.md\"\n---\nC", // c -> d,e
+		"d.md": "---toml\nlayout = \"f.md\"\n---\nD",      // d -> f
+		"e.md": "E",
+		"f.md": "---toml\nlayout = \"c.md\"\n---\nF", // f -> c (cycle through multi-layout)
 	})
 
 	ctx := NewResolver(repoFS)
@@ -247,6 +273,11 @@ func TestLayoutCycleDetection(t *testing.T) {
 	assert := assert.New(t)
 
 	_, err := renderer.Render("a.md", &testContent{})
+	assert.Error(err)
+	assert.Contains(err.Error(), "layout cycle detected")
+
+	// Test cycle detection with multi-layout
+	_, err = renderer.Render("c.md", &testContent{})
 	assert.Error(err)
 	assert.Contains(err.Error(), "layout cycle detected")
 }
@@ -262,12 +293,23 @@ func TestLayoutDeepNestingLimit(t *testing.T) {
 		files["t"+string(rune('0'+i))+".md"] = body
 	}
 
+	// Add a template with multiple layouts that exceeds depth limit
+	files["multi.md"] = "---toml\nlayout = \"l1.md;l2.md;l3.md;l4.md;l5.md;l6.md;l7.md;l8.md;l9.md;l10.md;l11.md\"\n---\nMulti"
+	for i := 1; i <= 11; i++ {
+		files["l"+fmt.Sprintf("%d", i)+".md"] = "L" + fmt.Sprintf("%d", i)
+	}
+
 	repoFS := createTestFS(files)
 	ctx := NewResolver(repoFS)
 	renderer := NewRenderer(ctx, nil)
 	assert := assert.New(t)
 
 	_, err := renderer.Render("t0.md", &testContent{})
+	assert.Error(err)
+	assert.Contains(err.Error(), "layout nesting too deep")
+
+	// Test depth limit with multi-layout
+	_, err = renderer.Render("multi.md", &testContent{})
 	assert.Error(err)
 	assert.Contains(err.Error(), "layout nesting too deep")
 }
@@ -291,8 +333,8 @@ func TestLoadTemplateParsesFrontMatter(t *testing.T) {
 func TestTemplatePrecedenceOrder(t *testing.T) {
 	// Create fake FS layers mimicking the different sources
 	repoFS := createTestFS(map[string]string{
-		"common/header.md":  "REPO HEADER",
-		"unique/repo.md":    "REPO UNIQUE",
+		"common/header.md": "REPO HEADER",
+		"unique/repo.md":   "REPO UNIQUE",
 	})
 
 	vibePromptsFS := createTestFS(map[string]string{
