@@ -160,7 +160,7 @@ type Renderer struct {
 // NewRenderer creates a new Renderer with the given RenderContext and metrics.
 func NewRenderer(ctx *Resolver, m *metrics.OutputMetrics) *Renderer {
 	return &Renderer{
-		ctx: ctx,
+		ctx:     ctx,
 		metrics: m,
 	}
 }
@@ -264,89 +264,87 @@ func splitLayouts(s string) []string {
 	return out
 }
 
-// renderTemplateInternal is the internal implementation of renderWithLayouts with cycle detection
-func (r *Renderer) renderTemplateInternal(t *Template, data Content, seen map[string]bool, depth int) (string, error) {
+// renderTemplateInternal renders *t* then applies its wrapper layouts
+// inner-to-outer, with depth & cycle protection.
+func (r *Renderer) renderTemplateInternal(
+	t *Template, data Content, seen map[string]bool, depth int,
+) (string, error) {
+
+	// ─── Safety guards ────────────────────────────────────────────────────────
 	if depth > 10 {
 		return "", fmt.Errorf("layout nesting too deep (max 10): %s", t.Path)
 	}
 
-	// The template can request several wrapper layouts separated by ';'.
-	// We apply them inner-to-outer, i.e. the *last* element in the split
-	// list wraps first.
-	layoutPaths := splitLayouts(t.Meta.Layout)
-	if len(layoutPaths) > 0 {
-		if depth+len(layoutPaths) > 10 {
-			return "", fmt.Errorf("layout nesting too deep (max 10): %s", t.Path)
+	layouts := splitLayouts(t.Meta.Layout)
+	if depth+len(layouts) > 10 {
+		return "", fmt.Errorf("layout nesting too deep (max 10): %s", t.Path)
+	}
+
+	for _, lp := range layouts { // cycle detection
+		if seen[lp] {
+			return "", fmt.Errorf("layout cycle detected: %s", lp)
 		}
-		// Cycle detection across the whole chain.
-		for _, lp := range layoutPaths {
-			if seen[lp] {
-				return "", fmt.Errorf("layout cycle detected: %s", lp)
-			}
-			seen[lp] = true
-		}
+		seen[lp] = true
 	}
 
-	// We're already in the correct context from the caller
-	// The curPath and curFS should be set to t.Path and the FS that provided t
-
-	// Create a template for content
-	contentTmpl := template.New("content")
-	contentTmpl = contentTmpl.Funcs(template.FuncMap{
-		"partial": func(partialPath string) (string, error) {
-			// Use RenderPartial for partials
-			return r.RenderPartial(partialPath, data)
-		},
-	})
-
-	// Parse the content template
-	contentTmpl, err := contentTmpl.Parse(t.Body)
+	// ─── Render the current template body ────────────────────────────────────
+	rendered, err := r.executeTemplate(t, data)
 	if err != nil {
-		return "", fmt.Errorf("error parsing template %s: %w", t.Path, err)
+		return "", err
 	}
 
-	// Execute the content template
-	var contentBuf bytes.Buffer
-	err = contentTmpl.Execute(&contentBuf, data)
-	if err != nil {
-		return "", fmt.Errorf("error executing template %s: %w", t.Path, err)
-	}
-
-	renderedContent := contentBuf.String()
-
-	// If *no* layouts, just return renderedContent …
-	if len(layoutPaths) == 0 {
+	// No layouts?  We’re done.
+	if len(layouts) == 0 {
 		if r.metrics != nil {
 			r.metrics.Add("template", t.Path, []byte(t.Body))
 		}
-		return renderedContent, nil
+		return rendered, nil
 	}
 
-	// We have ≥1 wrapper.  Apply them from inner-most to outer-most.
-	// Example "outer;inner" → inner wraps first.
-	for i := len(layoutPaths) - 1; i >= 0; i-- {
-		wrapper := strings.TrimSpace(layoutPaths[i])
+	// ─── Apply layouts (inner-to-outer) ──────────────────────────────────────
+	for i := len(layouts) - 1; i >= 0; i-- {
+		wrapperPath := strings.TrimSpace(layouts[i])
 
-		layoutTmpl, err := r.LoadTemplate(wrapper)
+		wrapper, err := r.LoadTemplate(wrapperPath)
 		if err != nil {
-			return "", fmt.Errorf("error loading layout template %s: %w", wrapper, err)
+			return "", fmt.Errorf("error loading layout template %s: %w", wrapperPath, err)
 		}
 
-		prev := r.cur
-		r.cur = layoutTmpl
-		prevContent := data.Content()
-		data.SetContent(renderedContent)
+		// Swap renderer context for relative-partial resolution.
+		prevCur := r.cur
+		r.cur = wrapper
 
-		renderedContent, err = r.renderTemplateInternal(
-			layoutTmpl, data, seen, depth+1,
-		)
+		// Inject the already-rendered content, recurse, restore.
+		prevContent := data.Content()
+		data.SetContent(rendered)
+
+		rendered, err = r.renderTemplateInternal(wrapper, data, seen, depth+1)
+
 		data.SetContent(prevContent)
-		r.cur = prev
+		r.cur = prevCur
+
 		if err != nil {
 			return "", err
 		}
 	}
-	return renderedContent, nil
 
+	return rendered, nil
+}
 
+// executeTemplate renders a single template body with the “partial” helper.
+func (r *Renderer) executeTemplate(t *Template, data Content) (string, error) {
+	tmpl, err := template.New("content").Funcs(template.FuncMap{
+		"partial": func(path string) (string, error) {
+			return r.RenderPartial(path, data)
+		},
+	}).Parse(t.Body)
+	if err != nil {
+		return "", fmt.Errorf("error parsing template %s: %w", t.Path, err)
+	}
+
+	var buf bytes.Buffer
+	if err := tmpl.Execute(&buf, data); err != nil {
+		return "", fmt.Errorf("error executing template %s: %w", t.Path, err)
+	}
+	return buf.String(), nil
 }
