@@ -153,6 +153,12 @@ func (ctx *VibeContext) WriteFileSelections(w io.Writer, contentPath string, lay
 	}
 	ctx.Select = selectPattern
 
+	dirTreePattern := tmpl.Meta.Dirtree
+	if dirTreePattern == "" {
+		dirTreePattern = ctx.ask.Args.SelectDirTree   // same field, new flag
+	}
+	ctx.SelectDirTree = dirTreePattern
+
 	// Set default "files" layout when select pattern is present but no layout is specified
 	if tmpl.Meta.Layout == "" && selectPattern != "" {
 		tmpl.Meta.Layout = "files"

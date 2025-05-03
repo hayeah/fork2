@@ -24,7 +24,7 @@ type AskCmd struct {
 	Output        string   `arg:"-o,--output" help:"Output destination: '-' for stdout; file path to write; if not set, copy to clipboard"`
 	Layout        string   `arg:"--layout" help:"Layout to use for output"`
 	Select        string   `arg:"-s,--select" help:"Select files matching patterns"`
-	SelectDirTree string   `arg:"-t,--select-dirtree" help:"Filter the directory-tree diagram with the same pattern syntax as --select"`
+	SelectDirTree string   `arg:"-t,--dirtree" help:"Filter the directory-tree diagram with the same pattern syntax as --select"`
 	Data          []string `arg:"-d,--data,separate" help:"key=value pairs exposed to templates as .Data.* (repeatable)"`
 	Metrics       string   `arg:"-m,--metrics" help:"Write metrics JSON ('-' = stdout)"`
 	Instruction   string   `arg:"positional" help:"User instruction or path to instruction file"`

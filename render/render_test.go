@@ -317,14 +317,23 @@ func TestLayoutDeepNestingLimit(t *testing.T) {
 func TestLoadTemplateParsesFrontMatter(t *testing.T) {
 	repoFS := createTestFS(map[string]string{
 		"foo.md":  "---toml\nlayout=\"base.md\"\n---\nHello",
+		"bar.md":  "---toml\nlayout=\"base.md\"\nselect=\"*.go\"\ndirtree=\"cmd/;internal/\"\n---\nContent",
 		"base.md": "Base {{ .Content }}",
 	})
 	ctx := NewResolver(repoFS)
 	assert := assert.New(t)
 
+	// Test basic layout parsing
 	tmpl, err := ctx.LoadTemplate("foo.md", nil)
 	assert.NoError(err)
 	assert.Equal("base.md", tmpl.Meta.Layout)
+
+	// Test parsing of all frontmatter fields including dirtree
+	tmpl, err = ctx.LoadTemplate("bar.md", nil)
+	assert.NoError(err)
+	assert.Equal("base.md", tmpl.Meta.Layout)
+	assert.Equal("*.go", tmpl.Meta.Select)
+	assert.Equal("cmd/;internal/", tmpl.Meta.Dirtree)
 }
 
 // TestTemplatePrecedenceOrder verifies that when the same template exists in multiple

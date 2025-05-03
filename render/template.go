@@ -6,8 +6,9 @@ import (
 
 // Meta contains metadata parsed from template frontmatter
 type Meta struct {
-	Layout string `toml:"layout"`
-	Select string `toml:"select"`
+	Layout  string `toml:"layout"`
+	Select  string `toml:"select"`
+	Dirtree string `toml:"dirtree"`
 }
 
 // Template represents a template with its content and metadata
