@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"log"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/atotto/clipboard"
 	"github.com/hayeah/fork2/internal/metrics"
+	"github.com/hayeah/fork2/render"
 	"github.com/pkoukk/tiktoken-go"
 )
 
@@ -27,6 +29,7 @@ type AskCmd struct {
 	SelectDirTree string   `arg:"-t,--dirtree" help:"Filter the directory-tree diagram with the same pattern syntax as --select"`
 	Data          []string `arg:"-d,--data,separate" help:"key=value pairs exposed to templates as .Data.* (repeatable)"`
 	Metrics       string   `arg:"-m,--metrics" help:"Write metrics JSON ('-' = stdout)"`
+	Content       []string `arg:"-c,--content,separate" help:"Content source specifications: '-' for stdin, file paths, URLs, or literals (repeatable)"`
 	Instruction   string   `arg:"positional" help:"User instruction or path to instruction file"`
 }
 
@@ -149,6 +152,15 @@ func (r *AskRunner) handleOutput() error {
 	vibeCtx, err := NewVibeContext(r)
 	if err != nil {
 		return fmt.Errorf("failed to create vibe context: %v", err)
+	}
+
+	// Load content from specified sources
+	if len(r.Args.Content) > 0 {
+		rawContent, err := render.LoadContentSources(context.Background(), r.Args.Content)
+		if err != nil {
+			return fmt.Errorf("failed to load content: %v", err)
+		}
+		vibeCtx.Content = rawContent
 	}
 
 	var buf bytes.Buffer

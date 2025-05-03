@@ -36,6 +36,9 @@ type VibeContext struct {
 	// Data contains key-value pairs passed via --data flags
 	Data map[string]string
 
+	// Content stores the loaded content from various sources
+	Content string
+
 	// Metrics for tracking output
 	Metrics *metrics.OutputMetrics
 }
@@ -189,6 +192,7 @@ func (ctx *VibeContext) WriteFileSelections(w io.Writer, contentPath string, lay
 // See: https://github.com/golang/go/issues/3999
 func newVibeContextMemoized(ctx *VibeContext) *VibeContextMemoized {
 	return &VibeContextMemoized{
+		content:               ctx.Content,
 		FileMapOnce:           sync.OnceValues(ctx.FileMap),
 		RepoDirectoryTreeOnce: sync.OnceValues(ctx.RepoDirectoryTree),
 		RepoPromptsOnce:       sync.OnceValues(ctx.RepoPrompts),
@@ -207,7 +211,7 @@ type VibeContextMemoized struct {
 	Data map[string]string
 }
 
-// Content returns the current clipboard content as a string.
+// Content returns the loaded content from various sources as a string.
 func (ctx *VibeContextMemoized) Content() string {
 	return ctx.content
 }
