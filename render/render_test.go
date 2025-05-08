@@ -68,7 +68,7 @@ func TestResolvePartialPath(t *testing.T) {
 		{name: "local template", currentPath: "templates/main.md", partialPath: "./local/helper", wantFS: repoFS, wantFile: "templates/local/helper"},
 		{name: "relative up one", currentPath: "templates/subdir/page.md", partialPath: "../local/helper", wantFS: repoFS, wantFile: "templates/local/helper"},
 		{name: "relative across tree", currentPath: "templates/subdir/page.md", partialPath: "../../components/shared/footer.md", wantFS: repoFS, wantFile: "components/shared/footer.md"},
-		{name: "missing cur template for relative", currentPath: "", partialPath: "./local/helper", wantErrSubstr: "cannot resolve relative path without currentTemplatePath"},
+		{name: "dot-slash without cur template (fallback to bare path)", currentPath: "", partialPath: "./components/shared/footer.md", wantFS: repoFS, wantFile: "components/shared/footer.md"},
 		{name: "bare path (implicit .md)", partialPath: "components/shared/footer", wantFS: repoFS, wantFile: "components/shared/footer.md"},
 		{name: "explicit .md remains unchanged", partialPath: "components/shared/footer.md", wantFS: repoFS, wantFile: "components/shared/footer.md"},
 	}
@@ -117,7 +117,6 @@ func TestRelativePathResolution(t *testing.T) {
 		{name: "parent and branch", currentPath: "templates/admin/users/list.md", partialPath: "../../blog/list.md", wantFile: "templates/blog/list.md"},
 		{name: "root level", currentPath: "templates/admin/dashboard.md", partialPath: "../../components/button.md", wantFile: "components/button.md"},
 		{name: "complex navigation", currentPath: "templates/blog/list.md", partialPath: "../admin/users/../dashboard.md", wantFile: "templates/admin/dashboard.md"},
-		{name: "missing cur template", currentPath: "", partialPath: "./shared/header.md", wantErrSubstr: "cannot resolve relative path without currentTemplatePath"},
 		{name: "bare path (implicit .md)", currentPath: "templates/page.md", partialPath: "./shared/header", wantFile: "templates/shared/header.md"},
 		{name: "relative path (implicit .md)", currentPath: "templates/blog/post.md", partialPath: "../shared/footer", wantFile: "templates/shared/footer.md"},
 	}

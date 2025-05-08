@@ -108,11 +108,6 @@ func fileFactory(arg string) (ContentLoader, error) {
 	u, _ := url.Parse(arg) // error ignored – arg may be a bare path
 	path := u.Path
 
-	// Handle Windows-style  file://C:/…  (url.Host carries the drive letter)
-	if u.Host != "" {
-		path = filepath.Join(u.Host, u.Path)
-	}
-
 	// “~” expansion
 	if strings.HasPrefix(path, "~/") {
 		home, err := os.UserHomeDir()

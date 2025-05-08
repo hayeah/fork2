@@ -99,6 +99,12 @@ func (ctx *Resolver) ResolvePartialPath(partialPath string, cur *Template) (fs.F
 		currentTemplateFS = cur.FS
 	}
 
+	// Allow "./path" as repo-root shorthand when no template is yet in play.
+	if strings.HasPrefix(partialPath, "./") && currentTemplatePath == "" {
+		cleaned := strings.TrimPrefix(partialPath, "./")
+		return ctx.ResolvePartialPath(cleaned, cur) // tail-recurse as a bare path
+	}
+
 	switch {
 	case strings.HasPrefix(partialPath, "<") && strings.HasSuffix(partialPath, ">"):
 		// System template - use the last FS in Partials
@@ -226,23 +232,11 @@ func (r *Renderer) Render(contentPath string, data Content) (string, error) {
 		return "", fmt.Errorf("error loading content template %s: %w", contentPath, err)
 	}
 
-	// Save the current context
-	prev := r.cur
-
-	// Set the new context for this template
-	r.cur = tmpl
-
-	// Restore the original context when we're done
-	defer func() {
-		r.cur = prev
-	}()
-
 	return r.RenderTemplate(tmpl, data)
 }
 
 // RenderTemplate renders a template and applies any layouts specified in its metadata
 func (r *Renderer) RenderTemplate(t *Template, data Content) (string, error) {
-	// Track seen layouts to prevent infinite recursion
 	seen := make(map[string]bool)
 	return r.renderTemplateInternal(t, data, seen, 0)
 }
@@ -286,6 +280,18 @@ func (r *Renderer) renderTemplateInternal(
 		}
 		seen[lp] = true
 	}
+
+	// Track seen layouts to prevent infinite recursion
+	// Save the current context
+	prev := r.cur
+
+	// Set the new context for this template
+	r.cur = t
+
+	// Restore the original context when we're done
+	defer func() {
+		r.cur = prev
+	}()
 
 	// ─── Render the current template body ────────────────────────────────────
 	rendered, err := r.executeTemplate(t, data)

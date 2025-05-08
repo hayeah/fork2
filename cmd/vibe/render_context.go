@@ -139,6 +139,11 @@ func (ctx *VibeContext) WriteFileSelections(w io.Writer, contentPath string, lay
 		contentPath = "files"
 	}
 
+	// Strip leading "./" from contentPath for consistent behavior
+	if strings.HasPrefix(contentPath, "./") {
+		contentPath = strings.TrimPrefix(contentPath, "./")
+	}
+
 	// Load the content template from path
 	tmpl, err = ctx.Renderer.LoadTemplate(contentPath)
 	if err != nil {
