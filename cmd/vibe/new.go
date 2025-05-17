@@ -47,6 +47,8 @@ func (r *NewCmdRunner) Run() error {
 	var err error
 	var outputDir string
 
+	r.Args.Target = strings.TrimSpace(r.Args.Target)
+
 	// Check if we're in copy mode or if the target is an existing file
 	copyMode := r.Args.Copy != ""
 	targetIsFile := fileExists(r.Args.Target)
