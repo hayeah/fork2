@@ -1,21 +1,19 @@
 package main
 
 import (
-	"bytes"
-	"context"
-	"fmt"
-	"io"
-	"log"
-	"net/url"
-	"os"
-	"path/filepath"
+        "bytes"
+        "fmt"
+        "io"
+        "log"
+        "net/url"
+        "os"
+        "path/filepath"
 	"runtime"
 	"strings"
 
 	"github.com/atotto/clipboard"
-	"github.com/hayeah/fork2/internal/metrics"
-	"github.com/hayeah/fork2/render"
-	"github.com/pkoukk/tiktoken-go"
+        "github.com/hayeah/fork2/internal/metrics"
+        "github.com/pkoukk/tiktoken-go"
 )
 
 // OutCmd contains the arguments for the 'out' subcommand
@@ -97,15 +95,42 @@ func NewAskRunner(cmdArgs OutCmd, rootPath string) (*OutRunner, error) {
 
 // Run executes the file picking process
 func (r *OutRunner) Run() error {
-	// Gather files/dirs
-	r.DirTree = NewDirectoryTree(r.RootPath)
+        // Gather files/dirs
+        r.DirTree = NewDirectoryTree(r.RootPath)
 
-	// Output phase: generate user instruction and handle output
-	if err := r.handleOutput(); err != nil {
-		return err
-	}
+        var buf bytes.Buffer
+        var dest io.Writer
+        switch {
+        case r.Args.Output == "-":
+                dest = os.Stdout
+        case r.Args.Output != "":
+                file, err := os.Create(r.Args.Output)
+                if err != nil {
+                        return fmt.Errorf("failed to create output file %s: %v", r.Args.Output, err)
+                }
+                defer file.Close()
+                dest = file
+        default:
+                dest = &buf
+        }
 
-	return nil
+        pipe, err := BuildOutPipeline(r.RootPath, r.Args)
+        if err != nil {
+                return err
+        }
+
+        if err := pipe.Run(dest, r.Args); err != nil {
+                return err
+        }
+
+        if r.Args.Output == "" {
+                if err := clipboard.WriteAll(buf.String()); err != nil {
+                        return fmt.Errorf("failed to copy to clipboard: %v", err)
+                }
+                fmt.Fprintln(os.Stderr, "Output copied to clipboard")
+        }
+
+        return nil
 }
 
 // parseDataParams parses data parameters from CLI flags into a map
@@ -144,65 +169,6 @@ func calculateTokenCount(filePaths []string, tokenEstimator TokenEstimator) (int
 	}
 
 	return totalTokenCount, nil
-}
-
-// handleOutput processes the user instruction and outputs the result
-func (r *OutRunner) handleOutput() error {
-	// Create a new vibe context for rendering
-	vibeCtx, err := NewVibeContext(r)
-	if err != nil {
-		return fmt.Errorf("failed to create vibe context: %v", err)
-	}
-
-	// Load content from specified sources
-	if len(r.Args.Content) > 0 {
-		rawContent, err := render.LoadContentSources(context.Background(), r.Args.Content)
-		if err != nil {
-			return fmt.Errorf("failed to load content: %v", err)
-		}
-		vibeCtx.Content = rawContent
-	}
-
-	var buf bytes.Buffer
-	var out io.Writer
-	switch {
-	case r.Args.Output == "-":
-		// Write directly to stdout
-		out = os.Stdout
-	case r.Args.Output != "":
-		// Write to specified file
-		file, err := os.Create(r.Args.Output)
-		if err != nil {
-			return fmt.Errorf("failed to create output file %s: %v", r.Args.Output, err)
-		}
-		defer file.Close()
-		out = file
-	default:
-		// Write to buffer for clipboard
-		out = &buf
-	}
-
-	// Pass the content and layout to WriteFileSelections
-	err = vibeCtx.WriteFileSelections(out, r.Args.Instruction, r.Args.Layout)
-	if err != nil {
-		return err
-	}
-
-	// If no explicit output destination provided, copy to clipboard
-	if r.Args.Output == "" {
-		if err := clipboard.WriteAll(buf.String()); err != nil {
-			return fmt.Errorf("failed to copy to clipboard: %v", err)
-		}
-		fmt.Fprintln(os.Stderr, "Output copied to clipboard")
-	}
-
-	// Wait for token counting & print chart
-	r.Metrics.Wait()
-	if err := PrintTokenBreakdown(r.Metrics); err != nil {
-		return err
-	}
-
-	return nil
 }
 
 // findRepoRoot returns the path to the repository root by looking for a .git directory.
