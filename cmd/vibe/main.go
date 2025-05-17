@@ -13,6 +13,7 @@ type Args struct {
 	Ask   *AskCmd   `arg:"subcommand:ask" help:"Select files and generate output"`
 	Merge *MergeCmd `arg:"subcommand:merge" help:"Merge changes"`
 	Ls    *LsCmd    `arg:"subcommand:ls" help:"List files matching patterns"`
+	New   *NewCmd   `arg:"subcommand:new" help:"Create a new prompt/template"`
 }
 
 // item represents each file or directory in the listing.
@@ -61,8 +62,14 @@ func (r *Runner) Run() error {
 			return err
 		}
 		return lsRunner.Run()
+	case r.Args.New != nil:
+		newRunner, err := NewNewRunner(*r.Args.New, r.RootPath)
+		if err != nil {
+			return err
+		}
+		return newRunner.Run()
 	default:
-		return fmt.Errorf("no subcommand specified, use 'ask', 'merge', or 'ls'")
+		return fmt.Errorf("no subcommand specified, use 'ask', 'merge', 'ls', or 'new'")
 	}
 }
 
@@ -72,7 +79,7 @@ func main() {
 	parser := arg.MustParse(&args)
 
 	// If no subcommand is specified, show help
-	if args.Ask == nil && args.Merge == nil && args.Ls == nil {
+	if args.Ask == nil && args.Merge == nil && args.Ls == nil && args.New == nil {
 		parser.WriteHelp(os.Stderr)
 		os.Exit(1)
 	}
