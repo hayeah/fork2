@@ -66,6 +66,13 @@ without closing delimiter`,
 			wantErr:         true,
 			wantErrContains: "front matter not closed",
 		},
+		{
+			name: "Leading blanks allowed",
+			content: "\n  \n---toml\nkey = \"value\"\n---\nbody",
+			wantTag: "toml",
+			wantFrontMatter: "key = \"value\"",
+			wantRemainder: "body",
+		},
 	}
 
 	for _, tc := range tests {

@@ -14,6 +14,7 @@ type RawFrontMatter struct {
 }
 
 // ParseFrontMatter extracts front matter from the template content
+// Leading blank lines are skipped before looking for front matter delimiters
 func ParseFrontMatter(data string) (string, string, string, error) {
 	lines := strings.Split(data, "\n")
 	if len(lines) == 0 {
@@ -21,8 +22,18 @@ func ParseFrontMatter(data string) (string, string, string, error) {
 		return "", "", data, nil
 	}
 
-	// Check if the first line begins with "---", "+++", or "```"
-	firstLine := string(lines[0])
+	// Skip any leading blank lines
+	start := 0
+	for start < len(lines) && strings.TrimSpace(lines[start]) == "" {
+		start++
+	}
+	if start == len(lines) {
+		// File is all blanks
+		return "", "", data, nil
+	}
+
+	// Check if the first non-blank line begins with "---", "+++", or "```"
+	firstLine := string(lines[start])
 	var delimiter, tag string
 
 	switch {
@@ -46,7 +57,7 @@ func ParseFrontMatter(data string) (string, string, string, error) {
 	var frontMatterLines []string
 	foundClose := false
 
-	i := 1
+	i := start + 1
 	for ; i < len(lines); i++ {
 		if string(lines[i]) == delimiter {
 			foundClose = true
