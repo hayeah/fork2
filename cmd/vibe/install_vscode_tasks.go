@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/hayeah/fork2/internal/hujsonutil"
 	"github.com/tailscale/hujson"
 )
 
@@ -146,17 +147,19 @@ func saveJSON(path string, val *hujson.Value) error {
 	return ioutil.WriteFile(path, val.Pack(), 0644)
 }
 
-// mergeJSON merges two JSON values, preserving comments
+// mergeJSON merges the embedded `src` tasks/inputs into `dest` while
+// preserving ordering, comments, and without duplicating labels/ids.
+// It relies on hujsonutil.Value.InsertToArray for all “insert or create” work.
 func mergeJSON(dest, src *hujson.Value) (*hujson.Value, error) {
-	// Work on standardized clones so that comments in the original values
-	// are preserved. The clones are used only for unmarshalling into Go
-	// structures that the JSON patch library can operate on.
+	// Wrap helpers
+	dv := hujsonutil.NewValue(dest)
+
+	// Standardised clones are only used for (un)marshalling into Go structs.
 	destStd := dest.Clone()
 	destStd.Standardize()
 	srcStd := src.Clone()
 	srcStd.Standardize()
 
-	// Extract tasks and inputs from both files using strongly typed structs
 	var destObj, srcObj tasksFile
 	if err := json.Unmarshal(destStd.Pack(), &destObj); err != nil {
 		return nil, err
@@ -165,97 +168,30 @@ func mergeJSON(dest, src *hujson.Value) (*hujson.Value, error) {
 		return nil, err
 	}
 
-	destTasks := destObj.Tasks
-	srcTasks := srcObj.Tasks
-	destInputs := destObj.Inputs
-	srcInputs := srcObj.Inputs
-
-	destHasTasks := len(destTasks) > 0
-	srcHasTasks := len(srcTasks) > 0
-	destHasInputs := len(destInputs) > 0
-	srcHasInputs := len(srcInputs) > 0
-
-	// Create patch operations
-	var patchOps []map[string]interface{}
-
-	// Handle tasks
-	if srcHasTasks {
-		if !destHasTasks {
-			// If dest doesn't have tasks, add the entire array
-			patchOps = append(patchOps, map[string]interface{}{
-				"op":    "add",
-				"path":  "/tasks",
-				"value": srcTasks,
-			})
-			destTasks = append(destTasks, srcTasks...)
-			destHasTasks = true
-		} else {
-			// Merge tasks, avoiding duplicates while preserving order
-			for _, task := range srcTasks {
-				if task.Label == "" {
-					continue
-				}
-				if !taskExists(destTasks, task.Label) {
-					patchOps = append(patchOps, map[string]interface{}{
-						"op":    "add",
-						"path":  "/tasks/-",
-						"value": task,
-					})
-					destTasks = append(destTasks, task)
-				}
-			}
+	// Insert new tasks
+	for _, task := range srcObj.Tasks {
+		if task.Label == "" || taskExists(destObj.Tasks, task.Label) {
+			continue
 		}
-	}
-
-	// Handle inputs
-	if srcHasInputs {
-		if !destHasInputs {
-			// If dest doesn't have inputs, add the entire array
-			patchOps = append(patchOps, map[string]interface{}{
-				"op":    "add",
-				"path":  "/inputs",
-				"value": srcInputs,
-			})
-			destInputs = append(destInputs, srcInputs...)
-			destHasInputs = true
-		} else {
-			// Merge inputs, avoiding duplicates while preserving order
-			for _, input := range srcInputs {
-				if input.ID == "" {
-					continue
-				}
-				if !inputExists(destInputs, input.ID) {
-					patchOps = append(patchOps, map[string]interface{}{
-						"op":    "add",
-						"path":  "/inputs/-",
-						"value": input,
-					})
-					destInputs = append(destInputs, input)
-				}
-			}
+		if err := dv.InsertToArray("/tasks", task); err != nil {
+			return nil, err
 		}
+		destObj.Tasks = append(destObj.Tasks, task) // keep duplicate check up-to-date
 	}
 
-	// If no patches needed, return the original
-	if len(patchOps) == 0 {
-		return dest, nil
+	// Insert new inputs
+	for _, in := range srcObj.Inputs {
+		if in.ID == "" || inputExists(destObj.Inputs, in.ID) {
+			continue
+		}
+		if err := dv.InsertToArray("/inputs", in); err != nil {
+			return nil, err
+		}
+		destObj.Inputs = append(destObj.Inputs, in)
 	}
 
-	// Convert patch operations to JSON
-	patchBytes, err := json.Marshal(patchOps)
-	if err != nil {
-		return nil, err
-	}
-
-	// Clone the destination to avoid modifying it if patch fails
-	destClone := dest.Clone()
-
-	// Apply the patch
-	if err := destClone.Patch(patchBytes); err != nil {
-		return nil, err
-	}
-
-	return &destClone, nil
+	// Nothing else to touch – comments are preserved inside dv.
+	return dest, nil
 }
 
 // taskExists checks if a task with the given label already exists in the slice.
