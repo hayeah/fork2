@@ -106,6 +106,10 @@ func ParseMatcher(pattern string) (Matcher, error) {
 		return nil, fmt.Errorf("patterns with '../' are not supported for security reasons")
 	}
 
+	if strings.Contains(pattern, "|") {
+		// TODO
+	}
+
 	// Check if this is a union pattern with ';' operator (logical OR, highest precedence)
 	if strings.Contains(pattern, ";") {
 		// Split by ';' and trim whitespace from each part
@@ -138,41 +142,8 @@ func ParseMatcher(pattern string) (Matcher, error) {
 		return UnionMatcher{Matchers: subMatchers}, nil
 	}
 
-	// if strings.Contains(pattern, "|") {
-	// 	// Handle compound patterns with '|' operator (logical AND)
-
-	// 	parts := strings.Split(pattern, "|")
-	// 	subMatchers := make([]Matcher, 0, len(parts))
-
-	// 	for _, part := range parts {
-	// 		matcher, err := ParseMatcher(part)
-	// 		if err != nil {
-	// 			return nil, fmt.Errorf("in pattern part '%s': %v", part, err)
-	// 		}
-	// 		subMatchers = append(subMatchers, matcher)
-	// 	}
-
-	// 	return CompoundMatcher{Matchers: subMatchers}, nil
-	// }
-
 	// Default to fuzzy matching
 	return NewFuzzyMatcher(pattern)
-}
-
-func selectSinglePattern(paths []string, pattern string) ([]string, error) {
-	// Empty pattern selects all paths
-	if pattern == "" {
-		return paths, nil
-	}
-
-	// Create a matcher for the pattern
-	matcher, err := ParseMatcher(pattern)
-	if err != nil {
-		return nil, err
-	}
-
-	// Apply the matcher
-	return matcher.Match(paths)
 }
 
 // ParseMatchersFromString parses a string containing multiple patterns into a slice of Matchers
@@ -213,25 +184,4 @@ func ParseMatchersFromString(input string) ([]Matcher, error) {
 	}
 
 	return matchers, nil
-}
-
-// selectByPatterns collects matches from multiple patterns
-func selectByPatterns(paths []string, patterns []string) ([]string, error) {
-	// Create an empty result set
-	resultSet := NewSet[string]()
-
-	// Process each pattern sequentially
-	for _, pattern := range patterns {
-		// For positive patterns, select matching paths to add to result set
-		matches, err := selectSinglePattern(paths, pattern)
-		if err != nil {
-			return nil, fmt.Errorf("pattern '%s': %v", pattern, err)
-		}
-
-		// Add matches to the result set
-		resultSet.AddValues(matches)
-	}
-
-	// Return the values from the set
-	return resultSet.Values(), nil
 }

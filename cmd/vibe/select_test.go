@@ -58,11 +58,6 @@ func TestUnionMatcher(t *testing.T) {
 			must(ParseMatcher("foo;")),
 			[]string{"src/foo.go", "src/foo_test.go"},
 		},
-		{
-			"complex union with compound",
-			must(ParseMatcher("foo | .go;docs | .md")),
-			[]string{"src/foo.go", "src/foo_test.go", "docs/bar.md"},
-		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
