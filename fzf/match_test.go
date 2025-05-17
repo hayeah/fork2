@@ -116,7 +116,7 @@ func TestAdvancedMatcher(t *testing.T) {
 			}
 			got, err := m.Match(samplePaths)
 			assert.NoError(err)
-			assert.Equal(tc.expected, got)
+			assert.Equal(tc.expected, got, tc.name)
 		})
 	}
 }
@@ -138,7 +138,7 @@ func TestContainsWordExact(t *testing.T) {
 		{"right boundary only", "pre-test", "test", true},
 		{"multiple occurrences, first match", "test in a test", "test", true},
 		{"multiple occurrences, second match", "unselect test", "test", true},
-		{"underscore is word char", "pre_test", "test", false},
+		{"underscore is not word char", "pre_test", "test", true},
 		{"digit is word char", "pre2test", "test", false},
 	}
 

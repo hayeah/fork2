@@ -201,5 +201,5 @@ func containsWordPrefix(s, needle string) bool {
 
 // crude word-char definition: Unicode letter or digit or underscore.
 func isWordChar(r rune) bool {
-	return unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_'
+	return unicode.IsLetter(r) || unicode.IsDigit(r)
 }
