@@ -237,7 +237,7 @@ OUTER-END`,
 	// Load the content template, bolt on a layout, and render.
 	tmpl, err := ctx.LoadTemplate("templates/user.md", nil)
 	assert.NoError(err)
-	tmpl.Meta.Layout = "layouts/main.md" // bare path => repo root FS
+	tmpl.FrontMatter.Layout = "layouts/main.md" // bare path => repo root FS
 
 	out, err := renderer.RenderTemplate(tmpl, data)
 	assert.NoError(err)
@@ -325,14 +325,14 @@ func TestLoadTemplateParsesFrontMatter(t *testing.T) {
 	// Test basic layout parsing
 	tmpl, err := ctx.LoadTemplate("foo.md", nil)
 	assert.NoError(err)
-	assert.Equal("base.md", tmpl.Meta.Layout)
+	assert.Equal("base.md", tmpl.FrontMatter.Layout)
 
 	// Test parsing of all frontmatter fields including dirtree
 	tmpl, err = ctx.LoadTemplate("bar.md", nil)
 	assert.NoError(err)
-	assert.Equal("base.md", tmpl.Meta.Layout)
-	assert.Equal("*.go", tmpl.Meta.Select)
-	assert.Equal("cmd/;internal/", tmpl.Meta.Dirtree)
+	assert.Equal("base.md", tmpl.FrontMatter.Layout)
+	assert.Equal("*.go", tmpl.FrontMatter.Select)
+	assert.Equal("cmd/;internal/", tmpl.FrontMatter.Dirtree)
 }
 
 // TestTemplatePrecedenceOrder verifies that when the same template exists in multiple

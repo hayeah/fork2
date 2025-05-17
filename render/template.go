@@ -7,8 +7,8 @@ import (
 	"strings"
 )
 
-// Meta contains metadata parsed from template frontmatter
-type Meta struct {
+// FrontMatter contains metadata parsed from template frontmatter
+type FrontMatter struct {
 	Layout  string `toml:"layout"`
 	Select  string `toml:"select"`
 	Dirtree string `toml:"dirtree"`
@@ -16,11 +16,33 @@ type Meta struct {
 
 // Template represents a template with its content and metadata
 type Template struct {
-	Path           string // repo-relative
-	Body           string // content with front-matter stripped
-	Meta           Meta   // parsed TOML front-matter (zero if none)
-	RawFrontMatter string // full unparsed front-matter block, empty when none
-	FS             fs.FS  // filesystem where the template was found
+	Path           string      // repo-relative
+	Body           string      // content with front-matter stripped
+	FrontMatter    FrontMatter // parsed TOML front-matter (zero if none)
+	RawFrontMatter string      // full unparsed front-matter block, empty when none
+	FS             fs.FS       // filesystem where the template was found
+}
+
+func NewTemplate(content string) (*Template, error) {
+	_, rawFM, body, err := ParseFrontMatter(content)
+	if err != nil {
+		return nil, err
+	}
+
+	var meta FrontMatter
+	if rawFM != "" {
+		if err := ParseToml(rawFM, &meta); err != nil {
+			return nil, err
+		}
+	}
+
+	return &Template{
+		Path:           "",
+		Body:           body,
+		FrontMatter:    meta,
+		RawFrontMatter: rawFM,
+		FS:             nil,
+	}, nil
 }
 
 // LoadTemplateFS is a helper that loads a template from a given filesystem.
@@ -32,25 +54,15 @@ func LoadTemplateFS(path string, fsys fs.FS) (*Template, error) {
 		return nil, err
 	}
 
-	_, rawFM, body, err := ParseFrontMatter(string(blob))
+	t, err := NewTemplate(string(blob))
 	if err != nil {
 		return nil, err
 	}
 
-	var meta Meta
-	if rawFM != "" {
-		if err := ParseToml(rawFM, &meta); err != nil {
-			return nil, err
-		}
-	}
+	t.Path = path
+	t.FS = fsys
 
-	return &Template{
-		Path:           path,
-		Body:           body,
-		Meta:           meta,
-		RawFrontMatter: rawFM,
-		FS:             fsys,
-	}, nil
+	return t, nil
 }
 
 // LoadTemplate is a convenience helper that turns an on-disk file into a

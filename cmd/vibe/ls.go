@@ -43,7 +43,7 @@ func (r *LsRunner) Run() error {
 		if err != nil {
 			return err
 		}
-		pattern = templ.Meta.Select
+		pattern = templ.FrontMatter.Select
 	}
 
 	selections, err := r.DirTree.SelectFiles(pattern)

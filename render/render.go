@@ -74,7 +74,7 @@ func (r *Renderer) RenderPartial(partialPath string, data Content) (string, erro
 	}()
 
 	// Force no layout for partials
-	tmpl.Meta.Layout = ""
+	tmpl.FrontMatter.Layout = ""
 
 	// Render the template
 	return r.RenderTemplate(tmpl, data)
@@ -128,7 +128,7 @@ func (r *Renderer) renderTemplateInternal(
 		return "", fmt.Errorf("layout nesting too deep (max 10): %s", t.Path)
 	}
 
-	layouts := splitLayouts(t.Meta.Layout)
+	layouts := splitLayouts(t.FrontMatter.Layout)
 	if depth+len(layouts) > 10 {
 		return "", fmt.Errorf("layout nesting too deep (max 10): %s", t.Path)
 	}

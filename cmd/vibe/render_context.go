@@ -46,7 +46,7 @@ type VibeContext struct {
 // NewVibeContext creates a new VibeContext instance
 func NewVibeContext(ask *AskRunner) (*VibeContext, error) {
 	ctx := &VibeContext{
-		ask:          ask,
+		ask:           ask,
 		DirTree:       ask.DirTree,
 		Data:          ask.Data,
 		SelectDirTree: ask.Args.SelectDirTree,
@@ -152,24 +152,24 @@ func (ctx *VibeContext) WriteFileSelections(w io.Writer, contentPath string, lay
 
 	// Override the template layout if CLI provided one
 	if layoutPath != "" {
-		tmpl.Meta.Layout = layoutPath
+		tmpl.FrontMatter.Layout = layoutPath
 	}
 
-	selectPattern := tmpl.Meta.Select
+	selectPattern := tmpl.FrontMatter.Select
 	if selectPattern == "" {
 		selectPattern = ctx.ask.Args.Select
 	}
 	ctx.Select = selectPattern
 
-	dirTreePattern := tmpl.Meta.Dirtree
+	dirTreePattern := tmpl.FrontMatter.Dirtree
 	if dirTreePattern == "" {
-		dirTreePattern = ctx.ask.Args.SelectDirTree   // same field, new flag
+		dirTreePattern = ctx.ask.Args.SelectDirTree // same field, new flag
 	}
 	ctx.SelectDirTree = dirTreePattern
 
 	// Set default "files" layout when select pattern is present but no layout is specified
-	if tmpl.Meta.Layout == "" && selectPattern != "" {
-		tmpl.Meta.Layout = "files"
+	if tmpl.FrontMatter.Layout == "" && selectPattern != "" {
+		tmpl.FrontMatter.Layout = "files"
 	}
 
 	data := newVibeContextMemoized(ctx)

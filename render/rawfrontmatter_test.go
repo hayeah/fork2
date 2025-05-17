@@ -20,22 +20,22 @@ func TestRawFrontMatterCapture(t *testing.T) {
 	tmpl, err := ctx.LoadTemplate("simple.md", nil)
 	assert.NoError(err)
 	assert.Equal("layout=\"base.md\"", tmpl.RawFrontMatter)
-	assert.Equal("base.md", tmpl.Meta.Layout)
+	assert.Equal("base.md", tmpl.FrontMatter.Layout)
 	assert.Equal("Hello", tmpl.Body)
 
 	// Test complex frontmatter capture
 	tmpl, err = ctx.LoadTemplate("complex.md", nil)
 	assert.NoError(err)
 	assert.Equal("layout=\"base.md\"\nselect=\"*.go\"\ndirtree=\"cmd/;internal/\"", tmpl.RawFrontMatter)
-	assert.Equal("base.md", tmpl.Meta.Layout)
-	assert.Equal("*.go", tmpl.Meta.Select)
-	assert.Equal("cmd/;internal/", tmpl.Meta.Dirtree)
+	assert.Equal("base.md", tmpl.FrontMatter.Layout)
+	assert.Equal("*.go", tmpl.FrontMatter.Select)
+	assert.Equal("cmd/;internal/", tmpl.FrontMatter.Dirtree)
 	assert.Equal("Content", tmpl.Body)
 
 	// Test no frontmatter
 	tmpl, err = ctx.LoadTemplate("none.md", nil)
 	assert.NoError(err)
 	assert.Equal("", tmpl.RawFrontMatter)
-	assert.Equal("", tmpl.Meta.Layout)
+	assert.Equal("", tmpl.FrontMatter.Layout)
 	assert.Equal("No frontmatter here", tmpl.Body)
 }
