@@ -25,6 +25,32 @@ type InstallVSCodeTasksRunner struct {
 	RootPath string
 }
 
+// vscodeTask represents a single VS Code task definition.
+type vscodeTask struct {
+	Label          string                 `json:"label"`
+	Type           string                 `json:"type"`
+	Command        string                 `json:"command"`
+	Args           []string               `json:"args,omitempty"`
+	Options        map[string]interface{} `json:"options,omitempty"`
+	Presentation   map[string]interface{} `json:"presentation,omitempty"`
+	ProblemMatcher []interface{}          `json:"problemMatcher,omitempty"`
+}
+
+// vscodeInput represents a VS Code input definition.
+type vscodeInput struct {
+	ID          string      `json:"id"`
+	Type        string      `json:"type"`
+	Description string      `json:"description,omitempty"`
+	Default     interface{} `json:"default,omitempty"`
+}
+
+// tasksFile is a partial representation of tasks.json that only cares about
+// tasks and inputs.
+type tasksFile struct {
+	Tasks  []vscodeTask  `json:"tasks"`
+	Inputs []vscodeInput `json:"inputs"`
+}
+
 // NewInstallVSCodeTasksRunner creates a new runner for installing VS Code tasks
 func NewInstallVSCodeTasksRunner(rootPath string) *InstallVSCodeTasksRunner {
 	return &InstallVSCodeTasksRunner{
@@ -130,8 +156,8 @@ func mergeJSON(dest, src *hujson.Value) (*hujson.Value, error) {
 	srcStd := src.Clone()
 	srcStd.Standardize()
 
-	// Extract tasks and inputs from both files
-	var destObj, srcObj map[string]interface{}
+	// Extract tasks and inputs from both files using strongly typed structs
+	var destObj, srcObj tasksFile
 	if err := json.Unmarshal(destStd.Pack(), &destObj); err != nil {
 		return nil, err
 	}
@@ -139,13 +165,15 @@ func mergeJSON(dest, src *hujson.Value) (*hujson.Value, error) {
 		return nil, err
 	}
 
-	// Get tasks arrays
-	destTasks, destHasTasks := destObj["tasks"].([]interface{})
-	srcTasks, srcHasTasks := srcObj["tasks"].([]interface{})
+	destTasks := destObj.Tasks
+	srcTasks := srcObj.Tasks
+	destInputs := destObj.Inputs
+	srcInputs := srcObj.Inputs
 
-	// Get inputs arrays
-	destInputs, destHasInputs := destObj["inputs"].([]interface{})
-	srcInputs, srcHasInputs := srcObj["inputs"].([]interface{})
+	destHasTasks := len(destTasks) > 0
+	srcHasTasks := len(srcTasks) > 0
+	destHasInputs := len(destInputs) > 0
+	srcHasInputs := len(srcInputs) > 0
 
 	// Create patch operations
 	var patchOps []map[string]interface{}
@@ -159,19 +187,21 @@ func mergeJSON(dest, src *hujson.Value) (*hujson.Value, error) {
 				"path":  "/tasks",
 				"value": srcTasks,
 			})
+			destTasks = append(destTasks, srcTasks...)
+			destHasTasks = true
 		} else {
-			// Merge tasks, avoiding duplicates
-			destTasksMap := toMapSlice(destTasks, "label")
-
+			// Merge tasks, avoiding duplicates while preserving order
 			for _, task := range srcTasks {
-				taskMap := task.(map[string]interface{})
-				label := taskMap["label"].(string)
-				if _, exists := destTasksMap[label]; !exists {
+				if task.Label == "" {
+					continue
+				}
+				if !taskExists(destTasks, task.Label) {
 					patchOps = append(patchOps, map[string]interface{}{
 						"op":    "add",
 						"path":  "/tasks/-",
 						"value": task,
 					})
+					destTasks = append(destTasks, task)
 				}
 			}
 		}
@@ -186,20 +216,21 @@ func mergeJSON(dest, src *hujson.Value) (*hujson.Value, error) {
 				"path":  "/inputs",
 				"value": srcInputs,
 			})
+			destInputs = append(destInputs, srcInputs...)
+			destHasInputs = true
 		} else {
-			// Merge inputs, avoiding duplicates
-			// srcInputsMap not used directly as we iterate through srcInputs
-			destInputsMap := toMapSlice(destInputs, "id")
-
+			// Merge inputs, avoiding duplicates while preserving order
 			for _, input := range srcInputs {
-				inputMap := input.(map[string]interface{})
-				id := inputMap["id"].(string)
-				if _, exists := destInputsMap[id]; !exists {
+				if input.ID == "" {
+					continue
+				}
+				if !inputExists(destInputs, input.ID) {
 					patchOps = append(patchOps, map[string]interface{}{
 						"op":    "add",
 						"path":  "/inputs/-",
 						"value": input,
 					})
+					destInputs = append(destInputs, input)
 				}
 			}
 		}
@@ -227,17 +258,24 @@ func mergeJSON(dest, src *hujson.Value) (*hujson.Value, error) {
 	return &destClone, nil
 }
 
-// toMapSlice converts a slice of maps to a map keyed by the specified field
-func toMapSlice(slice []interface{}, keyField string) map[string]interface{} {
-	result := make(map[string]interface{})
-	for _, item := range slice {
-		if m, ok := item.(map[string]interface{}); ok {
-			if key, ok := m[keyField].(string); ok {
-				result[key] = item
-			}
+// taskExists checks if a task with the given label already exists in the slice.
+func taskExists(tasks []vscodeTask, label string) bool {
+	for _, t := range tasks {
+		if t.Label == label {
+			return true
 		}
 	}
-	return result
+	return false
+}
+
+// inputExists checks if an input with the given id already exists in the slice.
+func inputExists(inputs []vscodeInput, id string) bool {
+	for _, in := range inputs {
+		if in.ID == id {
+			return true
+		}
+	}
+	return false
 }
 
 // previewJSON prints a preview of the JSON value
