@@ -18,6 +18,10 @@ type OutPipeline struct {
 	FileMap  *FileMapWriter
 	Metrics  *metrics.OutputMetrics
 	Loader   ContentLoader
+
+	Template     *render.Template
+	ContentSpecs []string
+	DataPairs    []string
 }
 
 // outData implements render.Content and exposes helpers for templates.
@@ -80,29 +84,28 @@ func (d *outData) RepoPrompts() (string, error) {
 }
 
 // Run executes the rendering pipeline using args for configuration.
-func (p *OutPipeline) Run(out io.Writer, args OutArgs) error {
-	dataMap, err := parseDataParams(args.Data)
+func (p *OutPipeline) Run(out io.Writer) error {
+	dataMap, err := parseDataParams(p.DataPairs)
 	if err != nil {
 		return err
 	}
 
 	content := ""
-	if len(args.Content) > 0 {
-		c, err := p.Loader.LoadSources(context.Background(), args.Content)
+	if len(p.ContentSpecs) > 0 {
+		c, err := p.Loader.LoadSources(context.Background(), p.ContentSpecs)
 		if err != nil {
 			return fmt.Errorf("failed to load content: %w", err)
 		}
 		content = c
 	}
 
-	tmpl, err := p.Renderer.LoadTemplate(args.TemplatePath)
-	if err != nil {
-		return fmt.Errorf("error loading content template: %w", err)
+	tmpl := p.Template
+	if tmpl == nil {
+		return fmt.Errorf("template not set")
 	}
 
-	tmpl.FrontMatter.Layout = args.Layout
-	selectPattern := args.Select
-	dirTreePattern := args.SelectDirTree
+	selectPattern := tmpl.FrontMatter.Select
+	dirTreePattern := tmpl.FrontMatter.Dirtree
 
 	root := p.DT.RootPath
 

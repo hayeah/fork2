@@ -13,6 +13,7 @@ import (
 
 	"github.com/atotto/clipboard"
 	"github.com/hayeah/fork2/internal/metrics"
+	"github.com/hayeah/fork2/render"
 	"github.com/pkoukk/tiktoken-go"
 )
 
@@ -29,16 +30,6 @@ type OutCmd struct {
 	Metrics       string   `arg:"-m,--metrics" help:"Write metrics JSON ('-' = stdout)"`
 	Content       []string `arg:"-c,--content,separate" help:"Content source specifications: '-' for stdin, file paths, URLs, or literals (repeatable)"`
 	Template      string   `arg:"positional" help:"User instruction or path to instruction file"`
-}
-
-// OutArgs represents the merged options used when running the pipeline.
-type OutArgs struct {
-	Layout        string
-	Select        string
-	SelectDirTree string
-	TemplatePath  string
-	Content       []string
-	Data          []string
 }
 
 // OutRunner encapsulates the state and behavior for the file picker
@@ -129,12 +120,15 @@ func (r *OutRunner) Run() error {
 		return err
 	}
 
-	merged, err := r.buildOutArgs(pipe)
+	tmpl, err := r.overrideTemplate(pipe)
 	if err != nil {
 		return err
 	}
+	pipe.Template = tmpl
+	pipe.ContentSpecs = r.Args.Content
+	pipe.DataPairs = r.Args.Data
 
-	if err := pipe.Run(dest, merged); err != nil {
+	if err := pipe.Run(dest); err != nil {
 		return err
 	}
 
@@ -148,9 +142,8 @@ func (r *OutRunner) Run() error {
 	return nil
 }
 
-// buildOutArgs merges command-line flags with template frontmatter to produce
-// the final settings for the pipeline.
-func (r *OutRunner) buildOutArgs(pipe *OutPipeline) (OutArgs, error) {
+// overrideTemplate loads the template and applies command-line overrides to its frontmatter.
+func (r *OutRunner) overrideTemplate(pipe *OutPipeline) (*render.Template, error) {
 	templatePath := r.Args.Template
 	if templatePath == "" && r.Args.Select != "" {
 		templatePath = "files"
@@ -159,38 +152,24 @@ func (r *OutRunner) buildOutArgs(pipe *OutPipeline) (OutArgs, error) {
 
 	tmpl, err := pipe.Renderer.LoadTemplate(templatePath)
 	if err != nil {
-		return OutArgs{}, err
+		return nil, err
 	}
 
-	layout := r.Args.Layout
-	// if layout == "" {
-	// 	layout = tmpl.FrontMatter.Layout
-	// }
-
-	selectPattern := tmpl.FrontMatter.Select
+	if r.Args.Layout != "" {
+		tmpl.FrontMatter.Layout = r.Args.Layout
+	}
 	if r.Args.Select != "" {
-		selectPattern = r.Args.Select
+		tmpl.FrontMatter.Select = r.Args.Select
 	}
-
-	dirTreePattern := tmpl.FrontMatter.Dirtree
 	if r.Args.SelectDirTree != "" {
-		dirTreePattern = r.Args.SelectDirTree
+		tmpl.FrontMatter.Dirtree = r.Args.SelectDirTree
 	}
 
-	if layout == "" && selectPattern != "" {
-		layout = "files"
+	if tmpl.FrontMatter.Layout == "" && tmpl.FrontMatter.Select != "" {
+		tmpl.FrontMatter.Layout = "files"
 	}
 
-	merged := OutArgs{
-		Layout:        layout,
-		Select:        selectPattern,
-		SelectDirTree: dirTreePattern,
-		TemplatePath:  templatePath,
-		Content:       r.Args.Content,
-		Data:          r.Args.Data,
-	}
-
-	return merged, nil
+	return tmpl, nil
 }
 
 // parseDataParams parses data parameters from CLI flags into a map
