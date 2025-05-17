@@ -1,6 +1,0 @@
-{
-  "LineNo": 1,
-  "Name": "plan",
-  "Payload": "Modify cmd/pick/main.go to add support for a second argument that represents user instruction.",
-  "Params": null
-}

@@ -10,10 +10,9 @@ import (
 
 // Args defines the command-line arguments with subcommands
 type Args struct {
-	Out   *AskCmd   `arg:"subcommand:out" help:"Select files and generate output"`
-	Merge *MergeCmd `arg:"subcommand:merge" help:"Merge changes"`
-	Ls    *LsCmd    `arg:"subcommand:ls" help:"List files matching patterns"`
-	New   *NewCmd   `arg:"subcommand:new" help:"Create a new prompt/template"`
+	Out *AskCmd `arg:"subcommand:out" help:"Select files and generate output"`
+	Ls  *LsCmd  `arg:"subcommand:ls" help:"List files matching patterns"`
+	New *NewCmd `arg:"subcommand:new" help:"Create a new prompt/template"`
 }
 
 // item represents each file or directory in the listing.
@@ -50,12 +49,6 @@ func (r *Runner) Run() error {
 			return err
 		}
 		return pickRunner.Run()
-	case r.Args.Merge != nil:
-		mergeRunner, err := NewMergeRunner(*r.Args.Merge, r.RootPath)
-		if err != nil {
-			return err
-		}
-		return mergeRunner.Run()
 	case r.Args.Ls != nil:
 		lsRunner, err := NewLsRunner(*r.Args.Ls, r.RootPath)
 		if err != nil {
@@ -79,7 +72,7 @@ func main() {
 	parser := arg.MustParse(&args)
 
 	// If no subcommand is specified, show help
-	if args.Out == nil && args.Merge == nil && args.Ls == nil && args.New == nil {
+	if args.Out == nil && args.Ls == nil && args.New == nil {
 		parser.WriteHelp(os.Stderr)
 		os.Exit(1)
 	}
@@ -88,12 +81,4 @@ func main() {
 	if err := runner.Run(); err != nil {
 		log.Fatal(err)
 	}
-}
-
-// min returns the smaller of a and b
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }
