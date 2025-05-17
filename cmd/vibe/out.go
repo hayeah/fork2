@@ -1,19 +1,19 @@
 package main
 
 import (
-        "bytes"
-        "fmt"
-        "io"
-        "log"
-        "net/url"
-        "os"
-        "path/filepath"
+	"bytes"
+	"fmt"
+	"io"
+	"log"
+	"net/url"
+	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 
 	"github.com/atotto/clipboard"
-        "github.com/hayeah/fork2/internal/metrics"
-        "github.com/pkoukk/tiktoken-go"
+	"github.com/hayeah/fork2/internal/metrics"
+	"github.com/pkoukk/tiktoken-go"
 )
 
 // OutCmd contains the arguments for the 'out' subcommand
@@ -29,6 +29,16 @@ type OutCmd struct {
 	Metrics       string   `arg:"-m,--metrics" help:"Write metrics JSON ('-' = stdout)"`
 	Content       []string `arg:"-c,--content,separate" help:"Content source specifications: '-' for stdin, file paths, URLs, or literals (repeatable)"`
 	Instruction   string   `arg:"positional" help:"User instruction or path to instruction file"`
+}
+
+// OutArgs represents the merged options used when running the pipeline.
+type OutArgs struct {
+	Layout        string
+	Select        string
+	SelectDirTree string
+	Instruction   string
+	Content       []string
+	Data          []string
 }
 
 // OutRunner encapsulates the state and behavior for the file picker
@@ -95,42 +105,94 @@ func NewAskRunner(cmdArgs OutCmd, rootPath string) (*OutRunner, error) {
 
 // Run executes the file picking process
 func (r *OutRunner) Run() error {
-        // Gather files/dirs
-        r.DirTree = NewDirectoryTree(r.RootPath)
+	// Gather files/dirs
+	r.DirTree = NewDirectoryTree(r.RootPath)
 
-        var buf bytes.Buffer
-        var dest io.Writer
-        switch {
-        case r.Args.Output == "-":
-                dest = os.Stdout
-        case r.Args.Output != "":
-                file, err := os.Create(r.Args.Output)
-                if err != nil {
-                        return fmt.Errorf("failed to create output file %s: %v", r.Args.Output, err)
-                }
-                defer file.Close()
-                dest = file
-        default:
-                dest = &buf
-        }
+	var buf bytes.Buffer
+	var dest io.Writer
+	switch {
+	case r.Args.Output == "-":
+		dest = os.Stdout
+	case r.Args.Output != "":
+		file, err := os.Create(r.Args.Output)
+		if err != nil {
+			return fmt.Errorf("failed to create output file %s: %v", r.Args.Output, err)
+		}
+		defer file.Close()
+		dest = file
+	default:
+		dest = &buf
+	}
 
-        pipe, err := BuildOutPipeline(r.RootPath, r.Args)
-        if err != nil {
-                return err
-        }
+	pipe, err := BuildOutPipeline(r.RootPath, r.Args)
+	if err != nil {
+		return err
+	}
 
-        if err := pipe.Run(dest, r.Args); err != nil {
-                return err
-        }
+	merged, err := r.buildOutArgs(pipe)
+	if err != nil {
+		return err
+	}
 
-        if r.Args.Output == "" {
-                if err := clipboard.WriteAll(buf.String()); err != nil {
-                        return fmt.Errorf("failed to copy to clipboard: %v", err)
-                }
-                fmt.Fprintln(os.Stderr, "Output copied to clipboard")
-        }
+	if err := pipe.Run(dest, merged); err != nil {
+		return err
+	}
 
-        return nil
+	if r.Args.Output == "" {
+		if err := clipboard.WriteAll(buf.String()); err != nil {
+			return fmt.Errorf("failed to copy to clipboard: %v", err)
+		}
+		fmt.Fprintln(os.Stderr, "Output copied to clipboard")
+	}
+
+	return nil
+}
+
+// buildOutArgs merges command-line flags with template frontmatter to produce
+// the final settings for the pipeline.
+func (r *OutRunner) buildOutArgs(pipe *OutPipeline) (OutArgs, error) {
+	contentPath := r.Args.Instruction
+	if contentPath == "" && r.Args.Select != "" {
+		contentPath = "files"
+	}
+	if strings.HasPrefix(contentPath, "./") {
+		contentPath = strings.TrimPrefix(contentPath, "./")
+	}
+
+	tmpl, err := pipe.Renderer.LoadTemplate(contentPath)
+	if err != nil {
+		return OutArgs{}, err
+	}
+
+	layout := r.Args.Layout
+	if layout == "" {
+		layout = tmpl.FrontMatter.Layout
+	}
+
+	selectPattern := tmpl.FrontMatter.Select
+	if r.Args.Select != "" {
+		selectPattern = r.Args.Select
+	}
+
+	dirTreePattern := tmpl.FrontMatter.Dirtree
+	if r.Args.SelectDirTree != "" {
+		dirTreePattern = r.Args.SelectDirTree
+	}
+
+	if layout == "" && selectPattern != "" {
+		layout = "files"
+	}
+
+	merged := OutArgs{
+		Layout:        layout,
+		Select:        selectPattern,
+		SelectDirTree: dirTreePattern,
+		Instruction:   contentPath,
+		Content:       r.Args.Content,
+		Data:          r.Args.Data,
+	}
+
+	return merged, nil
 }
 
 // parseDataParams parses data parameters from CLI flags into a map
