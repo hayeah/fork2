@@ -122,12 +122,20 @@ func saveJSON(path string, val *hujson.Value) error {
 
 // mergeJSON merges two JSON values, preserving comments
 func mergeJSON(dest, src *hujson.Value) (*hujson.Value, error) {
+	// Work on standardized clones so that comments in the original values
+	// are preserved. The clones are used only for unmarshalling into Go
+	// structures that the JSON patch library can operate on.
+	destStd := dest.Clone()
+	destStd.Standardize()
+	srcStd := src.Clone()
+	srcStd.Standardize()
+
 	// Extract tasks and inputs from both files
 	var destObj, srcObj map[string]interface{}
-	if err := json.Unmarshal(dest.Pack(), &destObj); err != nil {
+	if err := json.Unmarshal(destStd.Pack(), &destObj); err != nil {
 		return nil, err
 	}
-	if err := json.Unmarshal(src.Pack(), &srcObj); err != nil {
+	if err := json.Unmarshal(srcStd.Pack(), &srcObj); err != nil {
 		return nil, err
 	}
 

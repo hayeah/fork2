@@ -86,9 +86,15 @@ func TestInstallVSCodeTasks(t *testing.T) {
 		t.Error("Original comment was not preserved")
 	}
 
+	// Standardize the parsed HuJSON before unmarshalling so that the JSON
+	// data is valid, while still allowing the file on disk to retain the
+	// original comments for human readability.
+	valStd := val.Clone()
+	valStd.Standardize()
+
 	// Check that the embedded tasks were added
 	var resultObj map[string]interface{}
-	if err := json.Unmarshal(val.Pack(), &resultObj); err != nil {
+	if err := json.Unmarshal(valStd.Pack(), &resultObj); err != nil {
 		t.Fatalf("Failed to unmarshal result: %v", err)
 	}
 
