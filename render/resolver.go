@@ -21,33 +21,14 @@ func (r *Resolver) LoadTemplate(path string, cur *Template) (*Template, error) {
 		return nil, fmt.Errorf("error resolving partial path %q: %w", path, err)
 	}
 
-	// Read the file with fs.ReadFile
-	content, err := fs.ReadFile(fsys, filePath)
+	// Load the template using the filesystem
+	tmpl, err := LoadTemplateFS(filePath, fsys)
 	if err != nil {
 		return nil, err
 	}
 
-	// Parse frontmatter
-	_, frontMatterContent, body, err := ParseFrontMatter(string(content))
-	if err != nil {
-		return nil, err
-	}
-
-	// Create template with empty Meta by default
-	meta := Meta{}
-	if frontMatterContent != "" {
-		if err := ParseToml(frontMatterContent, &meta); err != nil {
-			return nil, err
-		}
-	}
-
-	// Create and return the template with the parsed metadata
-	tmpl := &Template{
-		Path: path,
-		Body: body,
-		Meta: meta,
-		FS:   fsys,
-	}
+	// Set the original path (not the resolved file path) as the template path
+	tmpl.Path = path
 
 	return tmpl, nil
 }
