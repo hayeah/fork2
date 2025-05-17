@@ -23,7 +23,7 @@ var systemTemplatesFS embed.FS
 
 // VibeContext encapsulates the state and functionality for the vibe command
 type VibeContext struct {
-	ask *AskRunner
+	ask *OutRunner
 
 	RenderContext *render.Resolver
 	Renderer      *render.Renderer
@@ -44,7 +44,7 @@ type VibeContext struct {
 }
 
 // NewVibeContext creates a new VibeContext instance
-func NewVibeContext(ask *AskRunner) (*VibeContext, error) {
+func NewVibeContext(ask *OutRunner) (*VibeContext, error) {
 	ctx := &VibeContext{
 		ask:           ask,
 		DirTree:       ask.DirTree,
