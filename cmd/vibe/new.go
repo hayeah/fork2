@@ -9,6 +9,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/hayeah/fork2/render"
 )
 
 //go:embed default_task_template.md
@@ -70,9 +72,27 @@ func (r *NewCmdRunner) Run() error {
 		outputDir = r.RootPath
 	}
 
+	// Create a template object to handle frontmatter
+	tmpl, err := render.NewTemplate(templateContent)
+	if err != nil {
+		return fmt.Errorf("failed to parse template: %v", err)
+	}
+
 	// Replace commit placeholder with current commit hash
 	commitHash := currentCommit()
-	templateContent = replaceCommitPlaceholder(string(templateContent), commitHash)
+	tmpl.RawFrontMatter = replaceCommitPlaceholder(tmpl.RawFrontMatter, commitHash)
+
+	// Rebuild the full file contents
+	if tmpl.RawFrontMatter != "" {
+		delimiter := "```"
+		tag := "toml"
+
+		// Wrap the updated front-matter with the original delimiter
+		templateContent = delimiter + tag + "\n" + tmpl.RawFrontMatter + "\n" + delimiter + "\n" + tmpl.Body
+	} else {
+		// No front-matter, keep the body verbatim
+		templateContent = tmpl.Body
+	}
 
 	// Determine the destination file name and path
 	var taskName string
@@ -120,56 +140,33 @@ func currentCommit() string {
 
 // replaceCommitPlaceholder ensures the template carries the correct commit hash.
 // It updates an existing commit key (commented or uncommented) or
-// injects one in the right place when missing.
+// injects one at the end when missing.
 func replaceCommitPlaceholder(content, hash string) string {
-	lines := strings.Split(content, "\n")
-
 	// Regular expression that matches either:
 	//   commit = "deadbeef"
 	//   # commit = "deadbeef"
-	reCommit := regexp.MustCompile(`^\s*(#\s*)?commit\s*=\s*".*"$`)
+	reCommit := regexp.MustCompile(`\s*(#\s*)?commit\s*=\s*".*"`)
 
-	// First pass – replace an existing commit key if we find one.
-	for i, line := range lines {
-		if reCommit.MatchString(line) {
-			if strings.HasPrefix(strings.TrimSpace(line), "#") {
-				lines[i] = fmt.Sprintf("# commit = \"%s\"", hash)
-			} else {
-				lines[i] = fmt.Sprintf("commit = \"%s\"", hash)
-			}
-			return strings.Join(lines, "\n")
-		}
+	// Find the first occurrence of a commit placeholder
+	loc := reCommit.FindStringIndex(content)
+
+	if loc != nil {
+		// Extract the parts before and after the match
+		before := content[:loc[0]]
+		after := content[loc[1]:]
+
+		// Remove any additional commit placeholders from the after part
+		after = reCommit.ReplaceAllString(after, "")
+
+		// Create the new commit line
+		commitLine := fmt.Sprintf("\ncommit = \"%s\"", hash)
+
+		// Combine the parts
+		return before + commitLine + after
 	}
 
-	// Second pass – locate the end of the front-matter block (if any).
-	insertAt := 0 // default: top of file (no front-matter)
-	for i, line := range lines {
-		trim := strings.TrimSpace(line)
-
-		// Front-matter lines: start with '#' OR contain '=' assignment.
-		if trim == "" { // blank line ends the block
-			insertAt = i
-			break
-		}
-		if strings.HasPrefix(trim, "#") || strings.Contains(trim, "=") {
-			insertAt = i + 1 // keep advancing while still inside block
-			continue
-		}
-		break // hit non-front-matter line
-	}
-
-	// Build result with the new commit line inserted.
-	newLines := append([]string{}, lines[:insertAt]...)
-	newLines = append(newLines, fmt.Sprintf("# commit = \"%s\"", hash))
-
-	// Preserve a blank separator if we are inserting inside a block
-	// that is followed immediately by non-blank content.
-	if insertAt < len(lines) && strings.TrimSpace(lines[insertAt]) != "" {
-		newLines = append(newLines, "")
-	}
-	newLines = append(newLines, lines[insertAt:]...)
-
-	return strings.Join(newLines, "\n")
+	// No commit placeholder found, append at the end
+	return content + "\n commit = \"" + hash + "\""
 }
 
 // dasherize converts a string to a file path friendly format
