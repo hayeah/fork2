@@ -10,7 +10,7 @@ import (
 
 // Args defines the command-line arguments with subcommands
 type Args struct {
-	Ask   *AskCmd   `arg:"subcommand:ask" help:"Select files and generate output"`
+	Out   *AskCmd   `arg:"subcommand:out" help:"Select files and generate output"`
 	Merge *MergeCmd `arg:"subcommand:merge" help:"Merge changes"`
 	Ls    *LsCmd    `arg:"subcommand:ls" help:"List files matching patterns"`
 	New   *NewCmd   `arg:"subcommand:new" help:"Create a new prompt/template"`
@@ -44,8 +44,8 @@ func NewRunner(args Args) *Runner {
 // Run dispatches to the appropriate subcommand
 func (r *Runner) Run() error {
 	switch {
-	case r.Args.Ask != nil:
-		pickRunner, err := NewAskRunner(*r.Args.Ask, r.RootPath)
+	case r.Args.Out != nil:
+		pickRunner, err := NewAskRunner(*r.Args.Out, r.RootPath)
 		if err != nil {
 			return err
 		}
@@ -69,7 +69,7 @@ func (r *Runner) Run() error {
 		}
 		return newRunner.Run()
 	default:
-		return fmt.Errorf("no subcommand specified, use 'ask', 'merge', 'ls', or 'new'")
+		return fmt.Errorf("no subcommand specified, use 'out', 'merge', 'ls', or 'new'")
 	}
 }
 
@@ -79,7 +79,7 @@ func main() {
 	parser := arg.MustParse(&args)
 
 	// If no subcommand is specified, show help
-	if args.Ask == nil && args.Merge == nil && args.Ls == nil && args.New == nil {
+	if args.Out == nil && args.Merge == nil && args.Ls == nil && args.New == nil {
 		parser.WriteHelp(os.Stderr)
 		os.Exit(1)
 	}
