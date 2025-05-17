@@ -1,0 +1,47 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Copy the current template file",
+      "type": "shell",
+      "command": "vibe",
+      "args": [
+        "new",
+        "${input:templateName}",
+        "--copy",
+        "${file}",
+      ],
+      "presentation": {
+        "reveal": "silent",
+        "panel": "shared"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Render the template file",
+      "type": "shell",
+      "command": "vibe",
+      "args": [
+        "out",
+        "${relativeFile}"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "reveal": "silent",
+        "panel": "shared"
+      },
+      "problemMatcher": [] // ← no scanning → no prompt
+    }
+  ],
+  "inputs": [
+    {
+      "id": "templateName", // referenced in ${input:templateName}
+      "type": "promptString", // shows a VS Code InputBox
+      "description": "Template name (leave blank to accept default from filename)",
+      // put an empty space to workaround https://github.com/microsoft/vscode/issues/245665
+      "default": " "
+    }
+  ]
+}
