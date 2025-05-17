@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"fmt"
+	setpkg "github.com/hayeah/fork2/internal/set"
 	"os"
 	"path/filepath"
 	"strings"
@@ -121,7 +122,7 @@ func TestDirectoryTree_Filter(t *testing.T) {
 	assert.NoError(err)
 
 	// Create a set of paths for easier assertion
-	pathSet := NewSet[string]()
+	pathSet := setpkg.NewSet[string]()
 	for _, item := range items {
 		pathSet.Add(item.Path)
 	}

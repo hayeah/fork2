@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	selection "github.com/hayeah/fork2/internal/selection"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -28,14 +29,14 @@ func TestWriteFileMapDirectory(t *testing.T) {
 	assert.NoError(err)
 
 	// Create file selections including a directory
-	selections := []FileSelection{
+	selections := []selection.FileSelection{
 		{
 			Path:   subDir,
-			Ranges: []LineRange{}, // Not applicable for directory
+			Ranges: []selection.LineRange{}, // Not applicable for directory
 		},
 		{
 			Path:   textFile,
-			Ranges: []LineRange{}, // All content
+			Ranges: []selection.LineRange{}, // All content
 		},
 	}
 

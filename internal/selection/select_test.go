@@ -1,6 +1,7 @@
-package main
+package selection_test
 
 import (
+	selectionPkg "github.com/hayeah/fork2/internal/selection"
 	"sort"
 	"testing"
 
@@ -35,27 +36,27 @@ func eq(t *testing.T, got, want []string) {
 func TestUnionMatcher(t *testing.T) {
 	cases := []struct {
 		name  string
-		match Matcher
+		match selectionPkg.Matcher
 		want  []string
 	}{
 		{
 			"foo OR bar",
-			must(ParseMatcher("foo;bar")),
+			must(selectionPkg.ParseMatcher("foo;bar")),
 			[]string{"src/foo.go", "src/foo_test.go", "docs/bar.md"},
 		},
 		{
 			".go OR .md",
-			must(ParseMatcher(".go;.md")),
+			must(selectionPkg.ParseMatcher(".go;.md")),
 			[]string{"src/foo.go", "src/foo_test.go", "docs/bar.md", "internal/baz_test.go", "internal/baz.go", "README.md"},
 		},
 		{
 			"internal OR docs",
-			must(ParseMatcher("internal;docs")),
+			must(selectionPkg.ParseMatcher("internal;docs")),
 			[]string{"docs/bar.md", "internal/baz_test.go", "internal/baz.go"},
 		},
 		{
 			"empty union part",
-			must(ParseMatcher("foo;")),
+			must(selectionPkg.ParseMatcher("foo;")),
 			[]string{"src/foo.go", "src/foo_test.go"},
 		},
 	}
@@ -73,7 +74,7 @@ func TestUnionMatcher(t *testing.T) {
 // -----------------------------------------------------------------------------
 
 // must unwraps matcher creation for brevity in table tests.
-func must(m Matcher, err error) Matcher {
+func must(m selectionPkg.Matcher, err error) selectionPkg.Matcher {
 	if err != nil {
 		panic(err)
 	}
@@ -85,7 +86,7 @@ func TestParseMatcherDotSlashAnchors(t *testing.T) {
 		"render/foo.go",
 		"cmd/render/bar.go",
 	}
-	m, err := ParseMatcher("./render")
+	m, err := selectionPkg.ParseMatcher("./render")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
