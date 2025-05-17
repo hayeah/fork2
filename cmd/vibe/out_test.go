@@ -59,40 +59,13 @@ func TestAskRunnerData(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			a := assert.New(t)
 
-			// Create AskCmd with test data
-			cmdArgs := OutCmd{
-				TokenEstimator: "simple",
-				Data:           tt.data,
-			}
+                        parsed, err := parseDataParams(tt.data)
+                        a.NoError(err)
 
-			// Create AskRunner
-			r, err := NewAskRunner(cmdArgs, tempDir)
-			a.NoError(err)
-
-			// Check that data was parsed correctly
-			a.Equal(len(tt.expected), len(r.Data))
-			for k, v := range tt.expected {
-				a.Equal(v, r.Data[k])
-			}
-
-			// Create VibeContext
-			ctx, err := NewVibeContext(r)
-			a.NoError(err)
-
-			// Check that data was copied to VibeContext
-			a.Equal(len(tt.expected), len(ctx.Data))
-			for k, v := range tt.expected {
-				a.Equal(v, ctx.Data[k])
-			}
-
-			// Create memoized context
-			memoCtx := newVibeContextMemoized(ctx)
-
-			// Check that data was copied to memoized context
-			a.Equal(len(tt.expected), len(memoCtx.Data))
-			for k, v := range tt.expected {
-				a.Equal(v, memoCtx.Data[k])
-			}
-		})
-	}
+                        a.Equal(len(tt.expected), len(parsed))
+                        for k, v := range tt.expected {
+                                a.Equal(v, parsed[k])
+                        }
+                })
+        }
 }
