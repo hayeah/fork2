@@ -1,4 +1,4 @@
-package main
+package selection
 
 import (
 	"fmt"
@@ -122,7 +122,7 @@ func (fs *FileSelection) extractContents(sortedRanges []LineRange) ([]FileSelect
 	}
 
 	// Check if it's a binary file first (early return)
-	if IsBinaryFile(content) {
+	if isBinaryFile(content) {
 		return []FileSelectionContent{{
 			Path:    fs.Path,
 			Content: "[binary file omitted]",

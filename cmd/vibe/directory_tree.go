@@ -7,6 +7,9 @@ import (
 	"path/filepath"
 	"sync"
 
+	selection "github.com/hayeah/fork2/internal/selection"
+	setpkg "github.com/hayeah/fork2/internal/set"
+
 	"github.com/hayeah/fork2/ignore"
 )
 
@@ -63,10 +66,10 @@ func (dt *DirectoryTree) SelectAllFiles() []string {
 }
 
 // SelectFiles returns file selections for the given select string (no memoization).
-func (dt *DirectoryTree) SelectFiles(selectString string) ([]FileSelection, error) {
-	set := NewFileSelectionSet()
+func (dt *DirectoryTree) SelectFiles(selectString string) ([]selection.FileSelection, error) {
+	set := selection.NewFileSelectionSet()
 	if selectString != "" {
-		matchers, err := ParseMatchersFromString(selectString)
+		matchers, err := selection.ParseMatchersFromString(selectString)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse select string: %w", err)
 		}
@@ -78,7 +81,7 @@ func (dt *DirectoryTree) SelectFiles(selectString string) ([]FileSelection, erro
 				return nil, err
 			}
 			for _, path := range matchedPaths {
-				set.Add(FileSelection{Path: path, Ranges: nil})
+				set.Add(selection.FileSelection{Path: path, Ranges: nil})
 			}
 		}
 	}
@@ -93,7 +96,7 @@ func (dt *DirectoryTree) Filter(pattern string) ([]item, error) {
 	}
 
 	// 1. build a matcher list (reuse ParseMatchersFromString from select.go)
-	matchers, err := ParseMatchersFromString(pattern)
+	matchers, err := selection.ParseMatchersFromString(pattern)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse pattern: %w", err)
 	}
@@ -113,7 +116,7 @@ func (dt *DirectoryTree) Filter(pattern string) ([]item, error) {
 	}
 
 	// Apply matchers to get matched paths
-	matchedSet := NewSet[string]()
+	matchedSet := setpkg.NewSet[string]()
 	for _, matcher := range matchers {
 		matchedPaths, err := matcher.Match(filePaths)
 		if err != nil {
@@ -123,7 +126,7 @@ func (dt *DirectoryTree) Filter(pattern string) ([]item, error) {
 	}
 
 	// 3. walk that set, add every ancestor dir to the set.
-	pathSet := NewSet[string]()
+	pathSet := setpkg.NewSet[string]()
 	for _, path := range matchedSet.Values() {
 		// Add the file path itself
 		pathSet.Add(path)

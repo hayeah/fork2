@@ -1,6 +1,7 @@
-package main
+package set_test
 
 import (
+	setpkg "github.com/hayeah/fork2/internal/set"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -10,7 +11,7 @@ func TestSet_Basic(t *testing.T) {
 	assert := assert.New(t)
 
 	// Create a new set
-	set := NewSet[string]()
+	set := setpkg.NewSet[string]()
 	assert.Equal(0, set.Len(), "New set should be empty")
 
 	// Add elements
@@ -37,7 +38,7 @@ func TestSet_FromSlice(t *testing.T) {
 	assert := assert.New(t)
 
 	slice := []int{1, 2, 3, 2, 1} // Contains duplicates
-	set := NewSetFromSlice(slice)
+	set := setpkg.NewSetFromSlice(slice)
 
 	assert.Equal(3, set.Len(), "Set should have 3 unique elements")
 	assert.True(set.Contains(1), "Set should contain 1")
@@ -48,7 +49,7 @@ func TestSet_FromSlice(t *testing.T) {
 func TestSet_Values(t *testing.T) {
 	assert := assert.New(t)
 
-	set := NewSet[string]()
+	set := setpkg.NewSet[string]()
 	set.AddValues([]string{"apple", "banana", "cherry"})
 
 	values := set.Values()
@@ -61,10 +62,10 @@ func TestSet_Values(t *testing.T) {
 func TestSet_SortedValues(t *testing.T) {
 	assert := assert.New(t)
 
-	set := NewSet[int]()
+	set := setpkg.NewSet[int]()
 	set.AddValues([]int{3, 1, 4, 1, 5, 9, 2, 6, 5})
 
-	sorted := SortedValues(set, func(a, b int) bool {
+	sorted := setpkg.SortedValues(set, func(a, b int) bool {
 		return a < b
 	})
 
@@ -74,8 +75,8 @@ func TestSet_SortedValues(t *testing.T) {
 func TestSet_Union(t *testing.T) {
 	assert := assert.New(t)
 
-	set1 := NewSetFromSlice([]string{"apple", "banana", "cherry"})
-	set2 := NewSetFromSlice([]string{"banana", "cherry", "date"})
+	set1 := setpkg.NewSetFromSlice([]string{"apple", "banana", "cherry"})
+	set2 := setpkg.NewSetFromSlice([]string{"banana", "cherry", "date"})
 
 	union := set1.Union(set2)
 
@@ -89,8 +90,8 @@ func TestSet_Union(t *testing.T) {
 func TestSet_Intersection(t *testing.T) {
 	assert := assert.New(t)
 
-	set1 := NewSetFromSlice([]string{"apple", "banana", "cherry"})
-	set2 := NewSetFromSlice([]string{"banana", "cherry", "date"})
+	set1 := setpkg.NewSetFromSlice([]string{"apple", "banana", "cherry"})
+	set2 := setpkg.NewSetFromSlice([]string{"banana", "cherry", "date"})
 
 	intersection := set1.Intersection(set2)
 
@@ -104,8 +105,8 @@ func TestSet_Intersection(t *testing.T) {
 func TestSet_Difference(t *testing.T) {
 	assert := assert.New(t)
 
-	set1 := NewSetFromSlice([]string{"apple", "banana", "cherry"})
-	set2 := NewSetFromSlice([]string{"banana", "cherry", "date"})
+	set1 := setpkg.NewSetFromSlice([]string{"apple", "banana", "cherry"})
+	set2 := setpkg.NewSetFromSlice([]string{"banana", "cherry", "date"})
 
 	diff := set1.Difference(set2)
 

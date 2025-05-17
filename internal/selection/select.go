@@ -1,7 +1,6 @@
 // Package main provides file selection functionality using various pattern matching techniques.
 //
 // # Pattern Syntax
-//
 // The pattern syntax supports several matching strategies:
 //
 // 1. Fuzzy matching: "foo" matches any path containing "foo"
@@ -13,7 +12,7 @@
 // - Empty pattern: "" matches all paths
 // - "./" prefix is automatically stripped
 // - "../" prefix is rejected for security reasons
-package main
+package selection
 
 import (
 	"bufio"
@@ -21,6 +20,7 @@ import (
 	"strings"
 
 	"github.com/hayeah/fork2/fzf"
+	setpkg "github.com/hayeah/fork2/internal/set"
 )
 
 // Matcher is an interface for matching file paths
@@ -85,7 +85,7 @@ type UnionMatcher struct {
 
 // Match implements the Matcher interface for UnionMatcher
 func (m UnionMatcher) Match(paths []string) ([]string, error) {
-	resultSet := NewSet[string]()
+	resultSet := setpkg.NewSet[string]()
 
 	for _, matcher := range m.Matchers {
 		matches, err := matcher.Match(paths)
