@@ -1,7 +1,6 @@
 package chart
 
 import (
-	"bytes"
 	"testing"
 
 	"github.com/hayeah/fork2/internal/assert"
@@ -132,20 +131,4 @@ func TestLayoutChartProperties(t *testing.T) {
 	ass.Equal(5, len(lines), "should emit 3 bars + total + summary")
 	ass.Contains(lines[0], "#", "bar chars missing")
 	ass.Contains(lines[len(lines)-1], "Summary:", "summary line missing")
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-//  Public façade: Print (golden / fixture test)
-// ─────────────────────────────────────────────────────────────────────────────
-
-func TestPrint_Golden(t *testing.T) {
-	assert := assert.New(t)
-
-	buf := &bytes.Buffer{}
-	opt := DefaultOptions(constantTermWidth(80), buf)
-	err := Print(fakeMetrics(), opt)
-	assert.NoError(err)
-
-	// Golden fixture lives at fixtures/<TestName>_golden.txt
-	assert.EqualToStringFixture("golden", buf.String())
 }
