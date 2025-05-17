@@ -38,11 +38,12 @@ type job struct {
 
 // OutputMetrics collects metrics for various components
 type OutputMetrics struct {
-	mu    sync.Mutex
-	wg    sync.WaitGroup
-	jobs  chan job
-	Items map[MetricKey]MetricItem
-	Ctr   Counter // token/line/byte counter
+	mu        sync.Mutex
+	wg        sync.WaitGroup
+	jobs      chan job
+	closeOnce sync.Once
+	Items     map[MetricKey]MetricItem
+	Ctr       Counter // token/line/byte counter
 }
 
 // NewOutputMetrics creates a new OutputMetrics with the given counter and worker count
@@ -99,19 +100,14 @@ func (m *OutputMetrics) Add(typ, key string, content []byte) {
 // Wait waits for all pending jobs to complete
 // It is idempotent and can be called multiple times safely
 func (m *OutputMetrics) Wait() {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+	// Close the jobs channel exactly once, if it exists
+	m.closeOnce.Do(func() {
+		if m.jobs != nil {
+			close(m.jobs)
+		}
+	})
 
-	// Use a flag in the struct to track if we've already closed
-	// This is a safer approach than trying to detect if a channel is closed
-	if m.jobs != nil {
-		// Safe to close only once
-		close(m.jobs)
-		// Set to nil to mark as closed
-		m.jobs = nil
-	}
-
-	// Always wait, which is also idempotent
+	// Wait for all workers to finish processing
 	m.wg.Wait()
 }
 
