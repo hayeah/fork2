@@ -59,6 +59,11 @@ func NewMatcher(pattern string) (Matcher, error) {
 				t.wordPrefix = true // leading boundary only
 			}
 		}
+		// treat ./ prefix as ^ anchor
+		if strings.HasPrefix(p, "./") {
+			t.anchorHead = true
+			p = p[2:]
+		}
 
 		// --- ^ / $ path anchors ---------------------------------------------------
 		if strings.HasPrefix(p, "^") {

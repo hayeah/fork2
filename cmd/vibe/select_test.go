@@ -84,3 +84,16 @@ func must(m Matcher, err error) Matcher {
 	}
 	return m
 }
+
+func TestParseMatcherDotSlashAnchors(t *testing.T) {
+	paths := []string{
+		"render/foo.go",
+		"cmd/render/bar.go",
+	}
+	m, err := ParseMatcher("./render")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	got, _ := m.Match(paths)
+	eq(t, got, []string{"render/foo.go"})
+}

@@ -106,9 +106,6 @@ func ParseMatcher(pattern string) (Matcher, error) {
 		return nil, fmt.Errorf("patterns with '../' are not supported for security reasons")
 	}
 
-	// Strip "./" prefix if present
-	pattern = strings.TrimPrefix(pattern, "./")
-
 	// Check if this is a union pattern with ';' operator (logical OR, highest precedence)
 	if strings.Contains(pattern, ";") {
 		// Split by ';' and trim whitespace from each part
