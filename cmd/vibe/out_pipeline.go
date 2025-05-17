@@ -80,7 +80,7 @@ func (d *outData) RepoPrompts() (string, error) {
 }
 
 // Run executes the rendering pipeline using args for configuration.
-func (p *OutPipeline) Run(out io.Writer, args OutCmd) error {
+func (p *OutPipeline) Run(out io.Writer, args OutArgs) error {
 	dataMap, err := parseDataParams(args.Data)
 	if err != nil {
 		return err
@@ -95,34 +95,14 @@ func (p *OutPipeline) Run(out io.Writer, args OutCmd) error {
 		content = c
 	}
 
-	contentPath := args.Instruction
-	if contentPath == "" && args.Select != "" {
-		contentPath = "files"
-	}
-	if strings.HasPrefix(contentPath, "./") {
-		contentPath = strings.TrimPrefix(contentPath, "./")
-	}
-
-	tmpl, err := p.Renderer.LoadTemplate(contentPath)
+	tmpl, err := p.Renderer.LoadTemplate(args.TemplatePath)
 	if err != nil {
 		return fmt.Errorf("error loading content template: %w", err)
 	}
 
-	if args.Layout != "" {
-		tmpl.FrontMatter.Layout = args.Layout
-	}
-
-	selectPattern := tmpl.FrontMatter.Select
-	if selectPattern == "" {
-		selectPattern = args.Select
-	}
-	dirTreePattern := tmpl.FrontMatter.Dirtree
-	if dirTreePattern == "" {
-		dirTreePattern = args.SelectDirTree
-	}
-	if tmpl.FrontMatter.Layout == "" && selectPattern != "" {
-		tmpl.FrontMatter.Layout = "files"
-	}
+	tmpl.FrontMatter.Layout = args.Layout
+	selectPattern := args.Select
+	dirTreePattern := args.SelectDirTree
 
 	root := p.DT.RootPath
 
