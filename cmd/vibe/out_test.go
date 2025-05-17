@@ -60,7 +60,7 @@ func TestAskRunnerData(t *testing.T) {
 			a := assert.New(t)
 
 			// Create AskCmd with test data
-			cmdArgs := AskCmd{
+			cmdArgs := OutCmd{
 				TokenEstimator: "simple",
 				Data:           tt.data,
 			}

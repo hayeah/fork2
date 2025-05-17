@@ -18,8 +18,8 @@ import (
 	"github.com/pkoukk/tiktoken-go"
 )
 
-// AskCmd contains the arguments for the 'ask' subcommand
-type AskCmd struct {
+// OutCmd contains the arguments for the 'out' subcommand
+type OutCmd struct {
 	TokenEstimator string `arg:"--token-estimator" help:"Token count estimator to use: 'simple' (size/4) or 'tiktoken'" default:"simple"`
 	All            bool   `arg:"-a,--all" help:"Select all files and output immediately"`
 	// Output sets the destination for the generated prompt: '-' for stdout, a file path to write the output, or empty to copy to clipboard
@@ -33,9 +33,9 @@ type AskCmd struct {
 	Instruction   string   `arg:"positional" help:"User instruction or path to instruction file"`
 }
 
-// AskRunner encapsulates the state and behavior for the file picker
-type AskRunner struct {
-	Args           AskCmd
+// OutRunner encapsulates the state and behavior for the file picker
+type OutRunner struct {
+	Args           OutCmd
 	RootPath       string
 	DirTree        *DirectoryTree
 	TokenEstimator TokenEstimator
@@ -44,7 +44,7 @@ type AskRunner struct {
 }
 
 // NewAskRunner creates and initializes a new PickRunner
-func NewAskRunner(cmdArgs AskCmd, rootPath string) (*AskRunner, error) {
+func NewAskRunner(cmdArgs OutCmd, rootPath string) (*OutRunner, error) {
 	info, err := os.Stat(rootPath)
 	if err != nil {
 		return nil, fmt.Errorf("error accessing %s: %v", rootPath, err)
@@ -84,7 +84,7 @@ func NewAskRunner(cmdArgs AskCmd, rootPath string) (*AskRunner, error) {
 		counter = &metrics.SimpleCounter{}
 	}
 
-	r := &AskRunner{
+	r := &OutRunner{
 		Args:           cmdArgs,
 		RootPath:       rootPath,
 		TokenEstimator: tokenEstimator,
@@ -96,7 +96,7 @@ func NewAskRunner(cmdArgs AskCmd, rootPath string) (*AskRunner, error) {
 }
 
 // Run executes the file picking process
-func (r *AskRunner) Run() error {
+func (r *OutRunner) Run() error {
 	// Gather files/dirs
 	r.DirTree = NewDirectoryTree(r.RootPath)
 
@@ -147,7 +147,7 @@ func calculateTokenCount(filePaths []string, tokenEstimator TokenEstimator) (int
 }
 
 // handleOutput processes the user instruction and outputs the result
-func (r *AskRunner) handleOutput() error {
+func (r *OutRunner) handleOutput() error {
 	// Create a new vibe context for rendering
 	vibeCtx, err := NewVibeContext(r)
 	if err != nil {
