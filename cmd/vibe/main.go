@@ -10,9 +10,10 @@ import (
 
 // Args defines the command-line arguments with subcommands
 type Args struct {
-	Out *OutCmd `arg:"subcommand:out" help:"Select files and generate output"`
-	Ls  *LsCmd  `arg:"subcommand:ls" help:"List files matching patterns"`
-	New *NewCmd `arg:"subcommand:new" help:"Create a new prompt/template"`
+	Out  *OutCmd                `arg:"subcommand:out" help:"Select files and generate output"`
+	Ls   *LsCmd                 `arg:"subcommand:ls" help:"List files matching patterns"`
+	New  *NewCmd                `arg:"subcommand:new" help:"Create a new prompt/template"`
+	VSCT *InstallVSCodeTasksCmd `arg:"subcommand:install:vscode:tasks" help:"Merge vibe.tasks.jsonc into .vscode/tasks.json"`
 }
 
 // item represents each file or directory in the listing.
@@ -61,8 +62,11 @@ func (r *Runner) Run() error {
 			return err
 		}
 		return newRunner.Run()
+	case r.Args.VSCT != nil:
+		runner := &InstallVSCodeTasksRunner{RootPath: r.RootPath}
+		return runner.Run()
 	default:
-		return fmt.Errorf("no subcommand specified, use 'out', 'merge', 'ls', or 'new'")
+		return fmt.Errorf("no subcommand specified, use 'out', 'merge', 'ls', 'new', or 'install:vscode:tasks'")
 	}
 }
 
@@ -72,7 +76,7 @@ func main() {
 	parser := arg.MustParse(&args)
 
 	// If no subcommand is specified, show help
-	if args.Out == nil && args.Ls == nil && args.New == nil {
+	if args.Out == nil && args.Ls == nil && args.New == nil && args.VSCT == nil {
 		parser.WriteHelp(os.Stderr)
 		os.Exit(1)
 	}
