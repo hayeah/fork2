@@ -8,3 +8,32 @@ repos:
     -   id: end-of-file-fixer
     -   id: check-yaml
     -   id: check-added-large-files
+
+    # ==========================================================================
+    # Golang Pre-Commit Hooks | https://github.com/tekwizely/pre-commit-golang
+    #
+    # !! ALL Hooks enabled by default - Comment out hooks you are not using
+    #
+    # Visit the project home page to learn more about the available Hooks,
+    # including useful arguments you might want to pass into them.
+    #
+    # NOTE: When passing options to hooks, if your options contain a reference
+    #       to an existing file, then you will need to use a trailing '--'
+    #       argument to separate the hook options from the modified-file list
+    #       that Pre-Commit passes into the hook.
+    #       For repo-based hooks, '--' is not needed.
+    #
+    # NOTE: You can pass environment variables to hooks using args with the
+    #       following format:
+    #
+    #           --hook:env:NAME=VALUE
+    #
+    # Consider adding aliases to longer-named hooks for easier CLI usage.
+    # ==========================================================================
+-   repo: local
+    hooks:
+      - id: go-fmt
+        name: go fmt
+        language: system        # uses the Go already on your PATH
+        entry: bash -c 'go fmt ./...'   # or limit to "$@"
+        types: [go]             # only feed it *.go files
