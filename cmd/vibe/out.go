@@ -126,7 +126,6 @@ func (r *OutRunner) Run() error {
 	}
 	pipe.Template = tmpl
 	pipe.ContentSpecs = r.Args.Content
-	pipe.DataPairs = r.Args.Data
 
 	if err := pipe.Run(dest); err != nil {
 		return err
