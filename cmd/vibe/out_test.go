@@ -59,13 +59,13 @@ func TestAskRunnerData(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			a := assert.New(t)
 
-                        parsed, err := parseDataParams(tt.data)
-                        a.NoError(err)
+			parsed, err := parseDataParams(tt.data)
+			a.NoError(err)
 
-                        a.Equal(len(tt.expected), len(parsed))
-                        for k, v := range tt.expected {
-                                a.Equal(v, parsed[k])
-                        }
-                })
-        }
+			a.Equal(len(tt.expected), len(parsed))
+			for k, v := range tt.expected {
+				a.Equal(v, parsed[k])
+			}
+		})
+	}
 }

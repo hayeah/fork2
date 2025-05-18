@@ -67,11 +67,11 @@ without closing delimiter`,
 			wantErrContains: "front matter not closed",
 		},
 		{
-			name: "Leading blanks allowed",
-			content: "\n  \n---toml\nkey = \"value\"\n---\nbody",
-			wantTag: "toml",
+			name:            "Leading blanks allowed",
+			content:         "\n  \n---toml\nkey = \"value\"\n---\nbody",
+			wantTag:         "toml",
 			wantFrontMatter: "key = \"value\"",
-			wantRemainder: "body",
+			wantRemainder:   "body",
 		},
 	}
 

@@ -10,9 +10,9 @@ import (
 
 // Args defines the command-line arguments with subcommands
 type Args struct {
-	Out *OutCmd `arg:"subcommand:out" help:"Select files and generate output"`
-	Ls  *LsCmd  `arg:"subcommand:ls" help:"List files matching patterns"`
-	New *NewCmd `arg:"subcommand:new" help:"Create a new prompt/template"`
+	Out                *OutCmd                `arg:"subcommand:out" help:"Select files and generate output"`
+	Ls                 *LsCmd                 `arg:"subcommand:ls" help:"List files matching patterns"`
+	New                *NewCmd                `arg:"subcommand:new" help:"Create a new prompt/template"`
 	InstallVSCodeTasks *InstallVSCodeTasksCmd `arg:"subcommand:install:vscode:tasks" help:"Install VS Code tasks for vibe"`
 }
 
