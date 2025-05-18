@@ -31,14 +31,11 @@ func BuildOutPipeline(root string, args OutCmd) (*OutPipeline, error) {
 	fileMapWriter := ProvideFileMapService(root, outputMetrics)
 	contentLoader := ProvideContentLoader()
 	outPipeline := &OutPipeline{
-		DT:           directoryTree,
-		Renderer:     renderer,
-		FileMap:      fileMapWriter,
-		Metrics:      outputMetrics,
-		Loader:       contentLoader,
-		Template:     nil,
-		ContentSpecs: nil,
-		DataPairs:    nil,
+		DT:       directoryTree,
+		Renderer: renderer,
+		FileMap:  fileMapWriter,
+		Metrics:  outputMetrics,
+		Loader:   contentLoader,
 	}
 	return outPipeline, nil
 }
