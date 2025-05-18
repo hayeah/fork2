@@ -13,16 +13,15 @@ import (
 
 // OutPipeline groups all services needed by the out command.
 type OutPipeline struct {
-	DT               *DirectoryTree
-	Renderer         *render.Renderer
-	FileMap          *FileMapWriter
-	Metrics          *metrics.OutputMetrics
-	Loader           ContentLoader
-	WorkingDirectory string
+	DT       *DirectoryTree
+	Renderer *render.Renderer
+	FileMap  *FileMapWriter
+	Metrics  *metrics.OutputMetrics
+	Loader   ContentLoader
+	Env      *AppEnv
 
 	Template     *render.Template
 	ContentSpecs []string
-	DataPairs    []string
 }
 
 // outData implements render.Content and exposes helpers for templates.
@@ -87,7 +86,7 @@ func (d *outData) RepoPrompts() (string, error) {
 
 // Run executes the rendering pipeline using args for configuration.
 func (p *OutPipeline) Run(out io.Writer) error {
-	dataMap, err := parseDataParams(p.DataPairs)
+	dataMap, err := parseDataParams(p.Env.DataPairs)
 	if err != nil {
 		return err
 	}
@@ -116,7 +115,7 @@ func (p *OutPipeline) Run(out io.Writer) error {
 		selectPattern:    selectPattern,
 		dirTreePattern:   dirTreePattern,
 		rootPath:         root,
-		WorkingDirectory: p.WorkingDirectory,
+		WorkingDirectory: string(p.Env.WorkingDirectory),
 		ContentStr:       content,
 		Data:             dataMap,
 	}

@@ -13,11 +13,15 @@ import (
 // Injectors from wire.go:
 
 func BuildOutPipeline(root string, args OutCmd) (*OutPipeline, error) {
-	directoryTree, err := ProvideDirectoryTreeService(root)
+	appEnv, err := ProvideAppEnv(root, args)
 	if err != nil {
 		return nil, err
 	}
-	v, err := ProvideFSList(root)
+	directoryTree, err := ProvideDirectoryTreeService(appEnv)
+	if err != nil {
+		return nil, err
+	}
+	v, err := ProvideFSList(appEnv)
 	if err != nil {
 		return nil, err
 	}
@@ -28,19 +32,15 @@ func BuildOutPipeline(root string, args OutCmd) (*OutPipeline, error) {
 	}
 	outputMetrics := ProvideMetrics(counter)
 	renderer := ProvideRenderer(resolver, outputMetrics)
-	fileMapWriter := ProvideFileMapService(root, outputMetrics)
-	workingDirectory := ProvideWorkingDirectory(root)
+	fileMapWriter := ProvideFileMapService(appEnv, outputMetrics)
 	contentLoader := ProvideContentLoader()
 	outPipeline := &OutPipeline{
-		DT:               directoryTree,
-		Renderer:         renderer,
-		FileMap:          fileMapWriter,
-		Metrics:          outputMetrics,
-		Loader:           contentLoader,
-		WorkingDirectory: workingDirectory,
-		Template:         nil,
-		ContentSpecs:     nil,
-		DataPairs:        nil,
+		DT:       directoryTree,
+		Renderer: renderer,
+		FileMap:  fileMapWriter,
+		Metrics:  outputMetrics,
+		Loader:   contentLoader,
+		Env:      appEnv,
 	}
 	return outPipeline, nil
 }

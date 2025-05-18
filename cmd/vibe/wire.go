@@ -8,6 +8,7 @@ import (
 
 func BuildOutPipeline(root string, args OutCmd) (*OutPipeline, error) {
 	wire.Build(
+		ProvideAppEnv,
 		ProvideCounter,
 		ProvideMetrics,
 		ProvideFSList,
@@ -15,9 +16,8 @@ func BuildOutPipeline(root string, args OutCmd) (*OutPipeline, error) {
 		ProvideRenderer,
 		ProvideDirectoryTreeService,
 		ProvideFileMapService,
-		ProvideWorkingDirectory,
 		ProvideContentLoader,
-		wire.Struct(new(OutPipeline), "DT", "Renderer", "FileMap", "Metrics", "Loader", "WorkingDirectory"),
+		wire.Struct(new(OutPipeline), "DT", "Renderer", "FileMap", "Metrics", "Loader", "Env"),
 	)
 	return nil, nil
 }
