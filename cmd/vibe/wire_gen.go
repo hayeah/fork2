@@ -29,13 +29,18 @@ func BuildOutPipeline(root string, args OutCmd) (*OutPipeline, error) {
 	outputMetrics := ProvideMetrics(counter)
 	renderer := ProvideRenderer(resolver, outputMetrics)
 	fileMapWriter := ProvideFileMapService(root, outputMetrics)
+	workingDirectory := ProvideWorkingDirectory(root)
 	contentLoader := ProvideContentLoader()
 	outPipeline := &OutPipeline{
-		DT:       directoryTree,
-		Renderer: renderer,
-		FileMap:  fileMapWriter,
-		Metrics:  outputMetrics,
-		Loader:   contentLoader,
+		DT:               directoryTree,
+		Renderer:         renderer,
+		FileMap:          fileMapWriter,
+		Metrics:          outputMetrics,
+		Loader:           contentLoader,
+		WorkingDirectory: workingDirectory,
+		Template:         nil,
+		ContentSpecs:     nil,
+		DataPairs:        nil,
 	}
 	return outPipeline, nil
 }

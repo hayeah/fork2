@@ -40,6 +40,12 @@ func ProvideFileMapService(root string, m *metrics.OutputMetrics) *FileMapWriter
 	return NewWriteFileMap(root, m)
 }
 
+func ProvideWorkingDirectory(root string) string {
+	// expand to absolute path
+	abs, _ := filepath.Abs(root)
+	return abs
+}
+
 func ProvideRenderer(resolver *render.Resolver, m *metrics.OutputMetrics) *render.Renderer {
 	return render.NewRenderer(resolver, m)
 }

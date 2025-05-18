@@ -15,8 +15,9 @@ func BuildOutPipeline(root string, args OutCmd) (*OutPipeline, error) {
 		ProvideRenderer,
 		ProvideDirectoryTreeService,
 		ProvideFileMapService,
+		ProvideWorkingDirectory,
 		ProvideContentLoader,
-		wire.Struct(new(OutPipeline), "DT", "Renderer", "FileMap", "Metrics", "Loader"),
+		wire.Struct(new(OutPipeline), "DT", "Renderer", "FileMap", "Metrics", "Loader", "WorkingDirectory"),
 	)
 	return nil, nil
 }

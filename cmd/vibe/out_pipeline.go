@@ -13,11 +13,12 @@ import (
 
 // OutPipeline groups all services needed by the out command.
 type OutPipeline struct {
-	DT       *DirectoryTree
-	Renderer *render.Renderer
-	FileMap  *FileMapWriter
-	Metrics  *metrics.OutputMetrics
-	Loader   ContentLoader
+	DT               *DirectoryTree
+	Renderer         *render.Renderer
+	FileMap          *FileMapWriter
+	Metrics          *metrics.OutputMetrics
+	Loader           ContentLoader
+	WorkingDirectory string
 
 	Template     *render.Template
 	ContentSpecs []string
@@ -26,12 +27,13 @@ type OutPipeline struct {
 
 // outData implements render.Content and exposes helpers for templates.
 type outData struct {
-	pipeline       *OutPipeline
-	selectPattern  string
-	dirTreePattern string
-	rootPath       string
-	ContentStr     string
-	Data           map[string]string
+	pipeline         *OutPipeline
+	selectPattern    string
+	dirTreePattern   string
+	rootPath         string
+	WorkingDirectory string
+	ContentStr       string
+	Data             map[string]string
 
 	fileMapOnce sync.Once
 	fileMap     string
@@ -110,12 +112,13 @@ func (p *OutPipeline) Run(out io.Writer) error {
 	root := p.DT.RootPath
 
 	data := &outData{
-		pipeline:       p,
-		selectPattern:  selectPattern,
-		dirTreePattern: dirTreePattern,
-		rootPath:       root,
-		ContentStr:     content,
-		Data:           dataMap,
+		pipeline:         p,
+		selectPattern:    selectPattern,
+		dirTreePattern:   dirTreePattern,
+		rootPath:         root,
+		WorkingDirectory: p.WorkingDirectory,
+		ContentStr:       content,
+		Data:             dataMap,
 	}
 
 	rendered, err := p.Renderer.RenderTemplate(tmpl, data)

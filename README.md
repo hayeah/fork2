@@ -189,6 +189,7 @@ vibe:
    - `.RepoDirectoryTree` – a pretty `tree` ‑style listing
    - `.FileMap` – a collapsed or full listing of the selected files
    - `.RepoPrompts` – any repo‑wide instructions (`*.prompt.md` in the root)
+   - `.WorkingDirectory` – the directory `vibe` was run from
    - Environment variables (`.Env`)
    - CLI variables (`--var key=value` → `.Vars.key`)
 3. **Parses _explain.md_** as a Go template, plugging the data into the placeholders.
