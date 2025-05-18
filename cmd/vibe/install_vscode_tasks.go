@@ -28,13 +28,17 @@ type InstallVSCodeTasksRunner struct {
 
 // vscodeTask represents a single VS Code task definition.
 type vscodeTask struct {
-	Label          string                 `json:"label"`
-	Type           string                 `json:"type"`
-	Command        string                 `json:"command"`
-	Args           []string               `json:"args,omitempty"`
-	Options        map[string]interface{} `json:"options,omitempty"`
-	Presentation   map[string]interface{} `json:"presentation,omitempty"`
-	ProblemMatcher []interface{}          `json:"problemMatcher,omitempty"`
+	Label        string                 `json:"label"`
+	Type         string                 `json:"type"`
+	Command      string                 `json:"command"`
+	Args         []string               `json:"args,omitempty"`
+	Options      map[string]interface{} `json:"options,omitempty"`
+	Presentation map[string]interface{} `json:"presentation,omitempty"`
+	// Keep the "problemMatcher" property even when empty so VS Code doesn't
+	// fall back to default problem matchers. "omitempty" would drop the
+	// field when the slice is empty, resulting in the config missing this
+	// property entirely.
+	ProblemMatcher []interface{} `json:"problemMatcher"`
 }
 
 // vscodeInput represents a VS Code input definition.
