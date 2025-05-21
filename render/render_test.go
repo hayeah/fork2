@@ -3,6 +3,7 @@ package render
 import (
 	"fmt"
 	"io/fs"
+	"strings"
 	"testing"
 	"testing/fstest"
 
@@ -399,4 +400,41 @@ func TestTemplatePrecedenceOrder(t *testing.T) {
 			assert.Equal(tc.expected, output)
 		})
 	}
+}
+
+func TestInclude(t *testing.T) {
+	systemFS := createTestFS(map[string]string{
+		"vibe/sys.txt": "SYSTEM",
+	})
+
+	repoFS := createTestFS(map[string]string{
+		"common/raw.txt":              "RAW {{ partial \"<vibe/sys.txt>\" }}",
+		"templates/current/main.md":   "{{ include \"@common/raw.txt\" }}",
+		"templates/current/local.txt": "LOCAL",
+	})
+
+	ctx := NewResolver(repoFS, systemFS)
+	renderer := NewRenderer(ctx, nil)
+	assert := assert.New(t)
+
+	// direct include from repo root
+	text, err := renderer.Include("@common/raw.txt")
+	assert.NoError(err)
+	assert.Equal("RAW {{ partial \"<vibe/sys.txt>\" }}", text)
+
+	// include using system path
+	text, err = renderer.Include("<vibe/sys.txt>")
+	assert.NoError(err)
+	assert.Equal("SYSTEM", text)
+
+	// include with relative path
+	renderer.cur = &Template{Path: "templates/current/main.md", FS: repoFS}
+	text, err = renderer.Include("./local.txt")
+	assert.NoError(err)
+	assert.Equal("LOCAL", text)
+
+	// include used inside a template should not render inner template syntax
+	out, err := renderer.Render("templates/current/main.md", &testContent{})
+	assert.NoError(err)
+	assert.Equal("RAW {{ partial \"<vibe/sys.txt>\" }}", strings.TrimSpace(out))
 }

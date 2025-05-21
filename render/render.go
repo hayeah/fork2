@@ -5,6 +5,7 @@ package render
 import (
 	"bytes"
 	"fmt"
+	"io/fs"
 	"strings"
 	"text/template"
 
@@ -78,6 +79,27 @@ func (r *Renderer) RenderPartial(partialPath string, data Content) (string, erro
 
 	// Render the template
 	return r.RenderTemplate(tmpl, data)
+}
+
+// Include reads a file and returns its raw contents as a string.
+// The path resolution follows the same rules as templates, so callers can use
+// system (<vibe/foo>), repo (@foo/bar) and relative (./foo) paths.
+func (r *Renderer) Include(path string) (string, error) {
+	fsys, filePath, err := r.ctx.ResolvePartialPath(path, r.cur)
+	if err != nil {
+		return "", fmt.Errorf("error resolving include path %s: %w", path, err)
+	}
+
+	b, err := fs.ReadFile(fsys, filePath)
+	if err != nil {
+		return "", fmt.Errorf("error reading include %s: %w", filePath, err)
+	}
+
+	if r.metrics != nil {
+		r.metrics.Add("include", filePath, b)
+	}
+
+	return string(b), nil
 }
 
 // Render renders a template, with optional layout wrapping.
@@ -201,6 +223,9 @@ func (r *Renderer) executeTemplate(t *Template, data Content) (string, error) {
 	tmpl, err := template.New("content").Funcs(template.FuncMap{
 		"partial": func(path string) (string, error) {
 			return r.RenderPartial(path, data)
+		},
+		"include": func(path string) (string, error) {
+			return r.Include(path)
 		},
 	}).Parse(t.Body)
 	if err != nil {
