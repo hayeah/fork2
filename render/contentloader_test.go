@@ -129,3 +129,15 @@ func TestPickLoader_HomeExpansion(t *testing.T) {
 	assert.NoError(err)
 	assert.Equal("home-file", out)
 }
+
+func TestPickLoader_Shell(t *testing.T) {
+	ctx := context.Background()
+	assert := assert.New(t)
+
+	ld, err := pickLoader("sh:echo shell works")
+	assert.NoError(err)
+
+	out, err := ld.Load(ctx)
+	assert.NoError(err)
+	assert.Equal("shell works\n", out)
+}

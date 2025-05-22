@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -147,6 +148,28 @@ func (l *HTTPLoader) Load(ctx context.Context) (string, error) {
 
 func httpFactory(arg string) (ContentLoader, error) { return &HTTPLoader{URL: arg}, nil }
 
+// ─── Shell command ───────────────────────────────────────────────────────────
+
+type ShellLoader struct {
+	Command string
+}
+
+func (l *ShellLoader) Load(ctx context.Context) (string, error) {
+	cmd := exec.CommandContext(ctx, "sh", "-c", l.Command)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("shell command failed: %w\nOutput:\n%s", err, output)
+	}
+	return string(output), nil
+}
+
+func shellFactory(arg string) (ContentLoader, error) {
+	if i := strings.IndexRune(arg, ':'); i >= 0 {
+		arg = arg[i+1:]
+	}
+	return &ShellLoader{Command: arg}, nil
+}
+
 /* -------------------------------------------------------------------------- */
 /*                       Built-in scheme registrations                        */
 /* -------------------------------------------------------------------------- */
@@ -163,6 +186,9 @@ func init() {
 
 	// HTTP(S)
 	RegisterScheme(httpFactory, "http", "https")
+
+	// Shell commands
+	RegisterScheme(shellFactory, "shell", "sh")
 }
 
 /* -------------------------------------------------------------------------- */
