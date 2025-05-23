@@ -19,6 +19,7 @@ var defaultTemplate string
 // NewCmd defines the command-line arguments for the new subcommand
 type NewCmd struct {
 	Copy   string `arg:"--copy" help:"Seed the new file from an existing template"`
+	Dir    string `arg:"-d,--dir" help:"Directory to save the new file"`
 	Target string `arg:"positional" help:"Either the task name in free-text, or a path ending in .md"`
 }
 
@@ -74,6 +75,10 @@ func (r *NewCmdRunner) Run() error {
 		outputDir = r.RootPath
 	}
 
+	if r.Args.Dir != "" {
+		outputDir = expandPath(r.Args.Dir)
+	}
+
 	// Create a template object to handle frontmatter
 	tmpl, err := render.NewTemplate(templateContent)
 	if err != nil {
@@ -119,6 +124,10 @@ func (r *NewCmdRunner) Run() error {
 
 	fileName := fmt.Sprintf("%s.%s.md", timestamp, taskName)
 	destPath = filepath.Join(outputDir, fileName)
+
+	if err := os.MkdirAll(outputDir, 0755); err != nil {
+		return fmt.Errorf("failed to create directory %s: %v", outputDir, err)
+	}
 
 	// Write the file
 	err = os.WriteFile(destPath, []byte(templateContent), 0644)
