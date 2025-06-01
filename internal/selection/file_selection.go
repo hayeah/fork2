@@ -108,6 +108,15 @@ func (fs *FileSelection) Contents() ([]FileSelectionContent, error) {
 // If sortedRanges is empty, it returns the entire file content.
 // Assumes that the ranges are already sorted and merged.
 func (fs *FileSelection) extractContents(sortedRanges []LineRange) ([]FileSelectionContent, error) {
+	// Check if it's a lock file first (early return)
+	if isLockFile(fs.Path) {
+		return []FileSelectionContent{{
+			Path:    fs.Path,
+			Content: "[lock file omitted]",
+			Range:   nil,
+		}}, nil
+	}
+
 	// Open the file
 	file, err := os.Open(fs.Path)
 	if err != nil {
@@ -121,7 +130,7 @@ func (fs *FileSelection) extractContents(sortedRanges []LineRange) ([]FileSelect
 		return nil, fmt.Errorf("failed to read file %s: %w", fs.Path, err)
 	}
 
-	// Check if it's a binary file first (early return)
+	// Check if it's a binary file (early return)
 	if isBinaryFile(content) {
 		return []FileSelectionContent{{
 			Path:    fs.Path,
