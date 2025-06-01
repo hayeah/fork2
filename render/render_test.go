@@ -254,7 +254,8 @@ OUTER-END`,
 	out, err = renderer.RenderTemplate(tmpl, data)
 	assert.NoError(err)
 
-	expected := "OUTER-START\nINNER-START\nHello\nINNER-END\nOUTER-END"
+	// With the new layout order, user content comes at the end
+	expected := "OUTER-START\nINNER-START\n\nINNER-END\nOUTER-END\nHello"
 	assert.Equal(expected, out)
 }
 

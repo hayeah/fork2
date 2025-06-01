@@ -12,6 +12,8 @@ type FrontMatter struct {
 	Layout  string `toml:"layout"`
 	Select  string `toml:"select"`
 	Dirtree string `toml:"dirtree"`
+	Before  string `toml:"before"`
+	After   string `toml:"after"`
 }
 
 // Template represents a template with its content and metadata
