@@ -225,14 +225,19 @@ func (r *Renderer) renderTemplateInternal(
 
 	// ─── Process before files (with empty .Content) ─────────────────────────
 	beforeFiles := splitSemicolon(t.FrontMatter.Before)
-	var beforeBuf bytes.Buffer
 	if len(beforeFiles) > 0 {
 		// Temporarily set empty content for before templates
 		prevContent := data.Content()
 		data.SetContent("")
 
-		if err := r.processFiles(&beforeBuf, beforeFiles, data); err != nil {
+		startLen := buf.Len()
+		if err := r.processFiles(buf, beforeFiles, data); err != nil {
 			return fmt.Errorf("error processing before files: %w", err)
+		}
+
+		// Add newline if we actually wrote something
+		if buf.Len() > startLen {
+			buf.WriteByte('\n')
 		}
 
 		// Restore original content
@@ -240,10 +245,12 @@ func (r *Renderer) renderTemplateInternal(
 	}
 
 	// ─── Apply layouts (with empty .Content for the first layout) ────────────
-	var layoutBuf bytes.Buffer
 	if len(layouts) > 0 {
 		// Save original content
 		prevContent := data.Content()
+
+		// Use a temporary buffer for iterating through layouts
+		var layoutBuf bytes.Buffer
 
 		// Apply layouts from innermost to outermost
 		for i := len(layouts) - 1; i >= 0; i-- {
@@ -253,9 +260,6 @@ func (r *Renderer) renderTemplateInternal(
 			if err != nil {
 				return fmt.Errorf("error loading layout template %s: %w", wrapperPath, err)
 			}
-
-			// Create a new buffer for this layout iteration
-			var iterBuf bytes.Buffer
 
 			// Swap renderer context for relative-partial resolution.
 			prevCur := r.cur
@@ -269,15 +273,21 @@ func (r *Renderer) renderTemplateInternal(
 				data.SetContent(layoutBuf.String())
 			}
 
-			if err := r.renderTemplateInternal(&iterBuf, wrapper, data, seen, depth+1); err != nil {
+			// Reset the buffer for the next iteration
+			layoutBuf.Reset()
+
+			if err := r.renderTemplateInternal(&layoutBuf, wrapper, data, seen, depth+1); err != nil {
 				r.cur = prevCur
 				return err
 			}
 
 			r.cur = prevCur
+		}
 
-			// Replace the layout buffer with the new iteration
-			layoutBuf = iterBuf
+		// Write the final layout content to the main buffer
+		if layoutBuf.Len() > 0 {
+			buf.Write(layoutBuf.Bytes())
+			buf.WriteByte('\n')
 		}
 
 		// Restore original content
@@ -286,14 +296,19 @@ func (r *Renderer) renderTemplateInternal(
 
 	// ─── Process after files (with empty .Content) ──────────────────────────
 	afterFiles := splitSemicolon(t.FrontMatter.After)
-	var afterBuf bytes.Buffer
 	if len(afterFiles) > 0 {
 		// Temporarily set empty content for after templates
 		prevContent := data.Content()
 		data.SetContent("")
 
-		if err := r.processFiles(&afterBuf, afterFiles, data); err != nil {
+		startLen := buf.Len()
+		if err := r.processFiles(buf, afterFiles, data); err != nil {
 			return fmt.Errorf("error processing after files: %w", err)
+		}
+
+		// Add newline if we actually wrote something
+		if buf.Len() > startLen {
+			buf.WriteByte('\n')
 		}
 
 		// Restore original content
@@ -301,29 +316,8 @@ func (r *Renderer) renderTemplateInternal(
 	}
 
 	// ─── Render the user content (current template body) ────────────────────
-	var userBuf bytes.Buffer
-	if err := r.executeTemplate(&userBuf, t, data); err != nil {
+	if err := r.executeTemplate(buf, t, data); err != nil {
 		return err
-	}
-
-	// ─── Combine all parts with newline separation ──────────────────────────
-	if beforeBuf.Len() > 0 {
-		buf.Write(beforeBuf.Bytes())
-		buf.WriteByte('\n')
-	}
-
-	if layoutBuf.Len() > 0 {
-		buf.Write(layoutBuf.Bytes())
-		buf.WriteByte('\n')
-	}
-
-	if afterBuf.Len() > 0 {
-		buf.Write(afterBuf.Bytes())
-		buf.WriteByte('\n')
-	}
-
-	if userBuf.Len() > 0 {
-		buf.Write(userBuf.Bytes())
 	}
 
 	return nil
