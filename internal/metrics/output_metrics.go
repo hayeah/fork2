@@ -97,6 +97,26 @@ func (m *OutputMetrics) Add(typ, key string, content []byte) {
 	m.jobs <- job{typ: typ, key: key, content: content}
 }
 
+// AddBytesCountAsEstimate adds metrics using byte count with estimated token count
+// It estimates tokens by dividing bytes by 4 (approximate average bytes per token)
+// This avoids the need to process the full content for token counting
+func (m *OutputMetrics) AddBytesCountAsEstimate(typ, key string, byteCount int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	metricKey := MetricKey{Type: typ, Key: key}
+	// Check if this key already exists, if so, ignore it
+	if _, exists := m.Items[metricKey]; !exists {
+		// Estimate tokens as bytes/4 (rough approximation)
+		// Estimate lines as bytes/50 (rough approximation of average line length)
+		m.Items[metricKey] = MetricItem{
+			Bytes:  byteCount,
+			Tokens: byteCount / 4,
+			Lines:  byteCount / 50,
+		}
+	}
+}
+
 // Wait waits for all pending jobs to complete
 // It is idempotent and can be called multiple times safely
 func (m *OutputMetrics) Wait() {

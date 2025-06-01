@@ -71,25 +71,87 @@ type FileSelection struct {
 	Ranges []LineRange // Line ranges to include, empty means all lines
 }
 
+// Read writes selected line ranges from the file to the provided writer.
+// If Ranges is empty, it streams the entire file content efficiently.
+// This method provides better performance than ReadString for large files.
+// Returns the number of bytes written (excluding header comments).
+func (fs *FileSelection) Read(w io.Writer) (int64, error) {
+	var totalBytes int64
+
+	// Check if it's a lock file first (early return)
+	if isLockFile(fs.Path) {
+		fmt.Fprintf(w, "\n<!-- Read File: %s -->\n", fs.Path)
+		n, err := io.WriteString(w, "[lock file omitted]")
+		return int64(n), err
+	}
+
+	// Open the file
+	file, err := os.Open(fs.Path)
+	if err != nil {
+		return 0, fmt.Errorf("failed to open file %s: %w", fs.Path, err)
+	}
+	defer file.Close()
+
+	// Fast path for whole file (no ranges)
+	if len(fs.Ranges) == 0 {
+		// Check if binary by reading first 512 bytes
+		header := make([]byte, 512)
+		n, err := file.Read(header)
+		if err != nil && err != io.EOF {
+			return 0, fmt.Errorf("failed to read file header %s: %w", fs.Path, err)
+		}
+
+		if isBinaryFile(header[:n]) {
+			fmt.Fprintf(w, "\n<!-- Read File: %s -->\n", fs.Path)
+			n, err := io.WriteString(w, "[binary file omitted]")
+			return int64(n), err
+		}
+
+		// Reset file position
+		_, err = file.Seek(0, 0)
+		if err != nil {
+			return 0, fmt.Errorf("failed to seek file %s: %w", fs.Path, err)
+		}
+
+		// Write header comment
+		fmt.Fprintf(w, "\n<!-- Read File: %s -->\n", fs.Path)
+
+		// Stream the entire file
+		bytesWritten, err := io.Copy(w, file)
+		return bytesWritten, err
+	}
+
+	// For ranges, we need to read the whole file and process lines
+	contents, err := fs.Contents()
+	if err != nil {
+		return 0, err
+	}
+
+	for _, content := range contents {
+		if content.Range == nil {
+			fmt.Fprintf(w, "\n<!-- Read File: %s -->\n", content.Path)
+		} else {
+			fmt.Fprintf(w, "\n<!-- Read File: %s#%d,%d -->\n", content.Path, content.Range.Start, content.Range.End)
+		}
+
+		n, err := io.WriteString(w, content.Content)
+		totalBytes += int64(n)
+		if err != nil {
+			return totalBytes, err
+		}
+	}
+
+	return totalBytes, nil
+}
+
 // ReadString reads selected line ranges from the file.
 // If Ranges is empty, it returns the entire file content.
 func (fs *FileSelection) ReadString() (string, error) {
-	contents, err := fs.Contents()
+	var result strings.Builder
+	_, err := fs.Read(&result)
 	if err != nil {
 		return "", err
 	}
-
-	var result strings.Builder
-	for _, content := range contents {
-		if content.Range == nil {
-			fmt.Fprintf(&result, "\n<!-- Read File: %s -->\n", content.Path)
-		} else {
-			fmt.Fprintf(&result, "\n<!-- Read File: %s#%d,%d -->\n", content.Path, content.Range.Start, content.Range.End)
-		}
-
-		result.WriteString(content.Content)
-	}
-
 	return result.String(), nil
 }
 

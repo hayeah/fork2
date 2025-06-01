@@ -43,18 +43,15 @@ func (w *FileMapWriter) Output(out io.Writer, selections []selection.FileSelecti
 			continue
 		}
 
-		// Read selected file content
-		content, err := selection.ReadString()
+		// Stream file content directly to output and get byte count
+		bytesWritten, err := selection.Read(out)
 		if err != nil {
-			return fmt.Errorf("failed to read selected content from %s: %w", selection.Path, err)
+			return fmt.Errorf("failed to write selected content from %s: %w", selection.Path, err)
 		}
 
-		// Write file content
-		fmt.Fprint(out, content)
-
-		// Add metrics for file content
+		// Add metrics using byte count estimate
 		if w.metrics != nil {
-			w.metrics.Add("file", selection.Path, []byte(content))
+			w.metrics.AddBytesCountAsEstimate("file", selection.Path, int(bytesWritten))
 		}
 	}
 

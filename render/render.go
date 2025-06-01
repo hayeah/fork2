@@ -5,12 +5,25 @@ package render
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"io/fs"
 	"strings"
 	"text/template"
 
 	"github.com/hayeah/fork2/internal/metrics"
 )
+
+// countingWriter is an io.Writer that counts bytes written
+type countingWriter struct {
+	w     io.Writer
+	count int64
+}
+
+func (cw *countingWriter) Write(p []byte) (n int, err error) {
+	n, err = cw.w.Write(p)
+	cw.count += int64(n)
+	return n, err
+}
 
 // Renderer provides template rendering capabilities.
 type Renderer struct {
@@ -43,10 +56,11 @@ type Content interface {
 	SetContent(string) // setter (mutates receiver)
 }
 
-// RenderPartial renders a template without a layout.
-// It's a convenience method that calls Render with an empty layoutPath.
+// RenderPartialTo renders a template without a layout to the provided writer.
+// It's a convenience method that calls RenderTo with an empty layoutPath.
 //
 // Parameters:
+//   - w: The writer to render to
 //   - partialPath: The path to the template to render. Can be in one of three formats:
 //   - System template: <vibe/coder>
 //   - Repo root template: @common/header
@@ -54,13 +68,12 @@ type Content interface {
 //   - data: The data to pass to the template during rendering
 //
 // Returns:
-//   - A string containing the rendered template
 //   - An error if the template could not be loaded or rendered
-func (r *Renderer) RenderPartial(partialPath string, data Content) (string, error) {
+func (r *Renderer) RenderPartialTo(w io.Writer, partialPath string, data Content) error {
 	// Load the template
 	tmpl, err := r.LoadTemplate(partialPath)
 	if err != nil {
-		return "", fmt.Errorf("error loading template %s: %w", partialPath, err)
+		return fmt.Errorf("error loading template %s: %w", partialPath, err)
 	}
 
 	// Save the current context
@@ -78,7 +91,29 @@ func (r *Renderer) RenderPartial(partialPath string, data Content) (string, erro
 	tmpl.FrontMatter.Layout = ""
 
 	// Render the template
-	return r.RenderTemplate(tmpl, data)
+	return r.RenderTemplateTo(w, tmpl, data)
+}
+
+// RenderPartial renders a template without a layout.
+// It's a convenience method that calls Render with an empty layoutPath.
+//
+// Parameters:
+//   - partialPath: The path to the template to render. Can be in one of three formats:
+//   - System template: <vibe/coder>
+//   - Repo root template: @common/header
+//   - Local template: ./helpers/buttons (relative to current template path)
+//   - data: The data to pass to the template during rendering
+//
+// Returns:
+//   - A string containing the rendered template
+//   - An error if the template could not be loaded or rendered
+func (r *Renderer) RenderPartial(partialPath string, data Content) (string, error) {
+	var buf bytes.Buffer
+	err := r.RenderPartialTo(&buf, partialPath, data)
+	if err != nil {
+		return "", err
+	}
+	return buf.String(), nil
 }
 
 // Include reads a file and returns its raw contents as a string.
@@ -102,25 +137,43 @@ func (r *Renderer) Include(path string) (string, error) {
 	return string(b), nil
 }
 
+// RenderTo renders a template to the provided writer, with optional layout wrapping.
+// If the template has no layout specified, it's rendered as a standalone template.
+// If the template has a layout, it's rendered and then passed as .Content to the layout template.
+// data is the data to pass to the template.
+func (r *Renderer) RenderTo(w io.Writer, contentPath string, data Content) error {
+	// Load the content template
+	tmpl, err := r.LoadTemplate(contentPath)
+	if err != nil {
+		return fmt.Errorf("error loading content template %s: %w", contentPath, err)
+	}
+
+	return r.RenderTemplateTo(w, tmpl, data)
+}
+
 // Render renders a template, with optional layout wrapping.
 // If the template has no layout specified, it's rendered as a standalone template.
 // If the template has a layout, it's rendered and then passed as .Content to the layout template.
 // data is the data to pass to the template.
 func (r *Renderer) Render(contentPath string, data Content) (string, error) {
-	// Load the content template
-	tmpl, err := r.LoadTemplate(contentPath)
+	var buf bytes.Buffer
+	err := r.RenderTo(&buf, contentPath, data)
 	if err != nil {
-		return "", fmt.Errorf("error loading content template %s: %w", contentPath, err)
+		return "", err
 	}
+	return buf.String(), nil
+}
 
-	return r.RenderTemplate(tmpl, data)
+// RenderTemplateTo renders a template to the provided writer and applies any layouts specified in its metadata
+func (r *Renderer) RenderTemplateTo(w io.Writer, t *Template, data Content) error {
+	seen := make(map[string]bool)
+	return r.renderTemplateInternal(w, t, data, seen, 0)
 }
 
 // RenderTemplate renders a template and applies any layouts specified in its metadata
 func (r *Renderer) RenderTemplate(t *Template, data Content) (string, error) {
-	seen := make(map[string]bool)
 	var buf bytes.Buffer
-	err := r.renderTemplateInternal(&buf, t, data, seen, 0)
+	err := r.RenderTemplateTo(&buf, t, data)
 	if err != nil {
 		return "", err
 	}
@@ -159,9 +212,9 @@ func (r *Renderer) processFile(path string, data Content) (string, error) {
 	return r.Include(path)
 }
 
-// processFiles processes a list of files and writes their concatenated content to buf
+// processFiles processes a list of files and writes their concatenated content to w
 // Each file's content is separated by at least one newline
-func (r *Renderer) processFiles(buf *bytes.Buffer, files []string, data Content) error {
+func (r *Renderer) processFiles(w io.Writer, files []string, data Content) error {
 	if len(files) == 0 {
 		return nil
 	}
@@ -173,9 +226,15 @@ func (r *Renderer) processFiles(buf *bytes.Buffer, files []string, data Content)
 		}
 		if content != "" {
 			if i > 0 {
-				buf.WriteByte('\n')
+				_, err := w.Write([]byte{'\n'})
+				if err != nil {
+					return err
+				}
 			}
-			buf.WriteString(content)
+			_, err := io.WriteString(w, content)
+			if err != nil {
+				return err
+			}
 		}
 	}
 
@@ -186,7 +245,7 @@ func (r *Renderer) processFiles(buf *bytes.Buffer, files []string, data Content)
 // inner-to-outer, with depth & cycle protection.
 // New layout order: [before ...]<<<layouts ...>>>[after...] [user]
 func (r *Renderer) renderTemplateInternal(
-	buf *bytes.Buffer, t *Template, data Content, seen map[string]bool, depth int,
+	w io.Writer, t *Template, data Content, seen map[string]bool, depth int,
 ) error {
 
 	// ─── Safety guards ────────────────────────────────────────────────────────
@@ -230,14 +289,18 @@ func (r *Renderer) renderTemplateInternal(
 		prevContent := data.Content()
 		data.SetContent("")
 
-		startLen := buf.Len()
-		if err := r.processFiles(buf, beforeFiles, data); err != nil {
+		// Use a counting writer to track if anything was written
+		cw := &countingWriter{w: w}
+		if err := r.processFiles(cw, beforeFiles, data); err != nil {
 			return fmt.Errorf("error processing before files: %w", err)
 		}
 
 		// Add newline if we actually wrote something
-		if buf.Len() > startLen {
-			buf.WriteByte('\n')
+		if cw.count > 0 {
+			_, err := w.Write([]byte{'\n'})
+			if err != nil {
+				return err
+			}
 		}
 
 		// Restore original content
@@ -284,10 +347,16 @@ func (r *Renderer) renderTemplateInternal(
 			r.cur = prevCur
 		}
 
-		// Write the final layout content to the main buffer
+		// Write the final layout content to the main writer
 		if layoutBuf.Len() > 0 {
-			buf.Write(layoutBuf.Bytes())
-			buf.WriteByte('\n')
+			_, err := w.Write(layoutBuf.Bytes())
+			if err != nil {
+				return err
+			}
+			_, err = w.Write([]byte{'\n'})
+			if err != nil {
+				return err
+			}
 		}
 
 		// Restore original content
@@ -301,14 +370,18 @@ func (r *Renderer) renderTemplateInternal(
 		prevContent := data.Content()
 		data.SetContent("")
 
-		startLen := buf.Len()
-		if err := r.processFiles(buf, afterFiles, data); err != nil {
+		// Use a counting writer to track if anything was written
+		cw := &countingWriter{w: w}
+		if err := r.processFiles(cw, afterFiles, data); err != nil {
 			return fmt.Errorf("error processing after files: %w", err)
 		}
 
 		// Add newline if we actually wrote something
-		if buf.Len() > startLen {
-			buf.WriteByte('\n')
+		if cw.count > 0 {
+			_, err := w.Write([]byte{'\n'})
+			if err != nil {
+				return err
+			}
 		}
 
 		// Restore original content
@@ -316,7 +389,7 @@ func (r *Renderer) renderTemplateInternal(
 	}
 
 	// ─── Render the user content (current template body) ────────────────────
-	if err := r.executeTemplate(buf, t, data); err != nil {
+	if err := r.executeTemplate(w, t, data); err != nil {
 		return err
 	}
 
@@ -324,7 +397,7 @@ func (r *Renderer) renderTemplateInternal(
 }
 
 // executeTemplate renders a single template body with the "partial" helper.
-func (r *Renderer) executeTemplate(buf *bytes.Buffer, t *Template, data Content) error {
+func (r *Renderer) executeTemplate(w io.Writer, t *Template, data Content) error {
 	tmpl, err := template.New("content").Funcs(template.FuncMap{
 		"partial": func(path string) (string, error) {
 			return r.RenderPartial(path, data)
@@ -337,7 +410,7 @@ func (r *Renderer) executeTemplate(buf *bytes.Buffer, t *Template, data Content)
 		return fmt.Errorf("error parsing template %s: %w", t.Path, err)
 	}
 
-	if err := tmpl.Execute(buf, data); err != nil {
+	if err := tmpl.Execute(w, data); err != nil {
 		return fmt.Errorf("error executing template %s: %w", t.Path, err)
 	}
 	return nil
