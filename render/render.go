@@ -119,28 +119,18 @@ func (r *Renderer) Render(contentPath string, data Content) (string, error) {
 // RenderTemplate renders a template and applies any layouts specified in its metadata
 func (r *Renderer) RenderTemplate(t *Template, data Content) (string, error) {
 	seen := make(map[string]bool)
-	return r.renderTemplateInternal(t, data, seen, 0)
+	var buf bytes.Buffer
+	err := r.renderTemplateInternal(&buf, t, data, seen, 0)
+	if err != nil {
+		return "", err
+	}
+	return buf.String(), nil
 }
 
-// splitLayouts turns `layout = "a;b;c"` into
-// `[]string{"a", "b", "c"}` with whitespace trimmed and
-// empty segments removed.
-func splitLayouts(s string) []string {
-	if s == "" {
-		return nil
-	}
-	parts := strings.Split(s, ";")
-	out := make([]string, 0, len(parts))
-	for _, p := range parts {
-		if p = strings.TrimSpace(p); p != "" {
-			out = append(out, p)
-		}
-	}
-	return out
-}
-
-// splitFiles splits a semicolon-separated list of files and trims whitespace
-func splitFiles(s string) []string {
+// splitSemicolon splits a semicolon-separated string into a slice,
+// trimming whitespace and removing empty segments.
+// Used for both layout and file lists.
+func splitSemicolon(s string) []string {
 	if s == "" {
 		return nil
 	}
@@ -169,48 +159,49 @@ func (r *Renderer) processFile(path string, data Content) (string, error) {
 	return r.Include(path)
 }
 
-// processFiles processes a list of files and returns their concatenated content
+// processFiles processes a list of files and writes their concatenated content to buf
 // Each file's content is separated by at least one newline
-func (r *Renderer) processFiles(files []string, data Content) (string, error) {
+func (r *Renderer) processFiles(buf *bytes.Buffer, files []string, data Content) error {
 	if len(files) == 0 {
-		return "", nil
+		return nil
 	}
 
-	var parts []string
-	for _, file := range files {
+	for i, file := range files {
 		content, err := r.processFile(file, data)
 		if err != nil {
-			return "", fmt.Errorf("error processing file %s: %w", file, err)
+			return fmt.Errorf("error processing file %s: %w", file, err)
 		}
 		if content != "" {
-			parts = append(parts, content)
+			if i > 0 {
+				buf.WriteByte('\n')
+			}
+			buf.WriteString(content)
 		}
 	}
 
-	// Join with newline separator to ensure at least one newline between parts
-	return strings.Join(parts, "\n"), nil
+	return nil
 }
 
 // renderTemplateInternal renders *t* then applies its wrapper layouts
 // inner-to-outer, with depth & cycle protection.
 // New layout order: [before ...]<<<layouts ...>>>[after...] [user]
 func (r *Renderer) renderTemplateInternal(
-	t *Template, data Content, seen map[string]bool, depth int,
-) (string, error) {
+	buf *bytes.Buffer, t *Template, data Content, seen map[string]bool, depth int,
+) error {
 
 	// ─── Safety guards ────────────────────────────────────────────────────────
 	if depth > 10 {
-		return "", fmt.Errorf("layout nesting too deep (max 10): %s", t.Path)
+		return fmt.Errorf("layout nesting too deep (max 10): %s", t.Path)
 	}
 
-	layouts := splitLayouts(t.FrontMatter.Layout)
+	layouts := splitSemicolon(t.FrontMatter.Layout)
 	if depth+len(layouts) > 10 {
-		return "", fmt.Errorf("layout nesting too deep (max 10): %s", t.Path)
+		return fmt.Errorf("layout nesting too deep (max 10): %s", t.Path)
 	}
 
 	for _, lp := range layouts { // cycle detection
 		if seen[lp] {
-			return "", fmt.Errorf("layout cycle detected: %s", lp)
+			return fmt.Errorf("layout cycle detected: %s", lp)
 		}
 		seen[lp] = true
 	}
@@ -227,18 +218,21 @@ func (r *Renderer) renderTemplateInternal(
 		r.cur = prev
 	}()
 
+	// Track metrics early
+	if r.metrics != nil {
+		r.metrics.Add("template", t.Path, []byte(t.Body))
+	}
+
 	// ─── Process before files (with empty .Content) ─────────────────────────
-	beforeFiles := splitFiles(t.FrontMatter.Before)
-	beforeContent := ""
+	beforeFiles := splitSemicolon(t.FrontMatter.Before)
+	var beforeBuf bytes.Buffer
 	if len(beforeFiles) > 0 {
 		// Temporarily set empty content for before templates
 		prevContent := data.Content()
 		data.SetContent("")
 
-		var err error
-		beforeContent, err = r.processFiles(beforeFiles, data)
-		if err != nil {
-			return "", fmt.Errorf("error processing before files: %w", err)
+		if err := r.processFiles(&beforeBuf, beforeFiles, data); err != nil {
+			return fmt.Errorf("error processing before files: %w", err)
 		}
 
 		// Restore original content
@@ -246,13 +240,10 @@ func (r *Renderer) renderTemplateInternal(
 	}
 
 	// ─── Apply layouts (with empty .Content for the first layout) ────────────
-	layoutContent := ""
+	var layoutBuf bytes.Buffer
 	if len(layouts) > 0 {
 		// Save original content
 		prevContent := data.Content()
-
-		// Start with empty content for the innermost layout
-		var rendered string
 
 		// Apply layouts from innermost to outermost
 		for i := len(layouts) - 1; i >= 0; i-- {
@@ -260,8 +251,11 @@ func (r *Renderer) renderTemplateInternal(
 
 			wrapper, err := r.LoadTemplate(wrapperPath)
 			if err != nil {
-				return "", fmt.Errorf("error loading layout template %s: %w", wrapperPath, err)
+				return fmt.Errorf("error loading layout template %s: %w", wrapperPath, err)
 			}
+
+			// Create a new buffer for this layout iteration
+			var iterBuf bytes.Buffer
 
 			// Swap renderer context for relative-partial resolution.
 			prevCur := r.cur
@@ -272,36 +266,34 @@ func (r *Renderer) renderTemplateInternal(
 			if i == len(layouts)-1 {
 				data.SetContent("")
 			} else {
-				data.SetContent(rendered)
+				data.SetContent(layoutBuf.String())
 			}
 
-			rendered, err = r.renderTemplateInternal(wrapper, data, seen, depth+1)
+			if err := r.renderTemplateInternal(&iterBuf, wrapper, data, seen, depth+1); err != nil {
+				r.cur = prevCur
+				return err
+			}
 
 			r.cur = prevCur
 
-			if err != nil {
-				return "", err
-			}
+			// Replace the layout buffer with the new iteration
+			layoutBuf = iterBuf
 		}
-
-		layoutContent = rendered
 
 		// Restore original content
 		data.SetContent(prevContent)
 	}
 
 	// ─── Process after files (with empty .Content) ──────────────────────────
-	afterFiles := splitFiles(t.FrontMatter.After)
-	afterContent := ""
+	afterFiles := splitSemicolon(t.FrontMatter.After)
+	var afterBuf bytes.Buffer
 	if len(afterFiles) > 0 {
 		// Temporarily set empty content for after templates
 		prevContent := data.Content()
 		data.SetContent("")
 
-		var err error
-		afterContent, err = r.processFiles(afterFiles, data)
-		if err != nil {
-			return "", fmt.Errorf("error processing after files: %w", err)
+		if err := r.processFiles(&afterBuf, afterFiles, data); err != nil {
+			return fmt.Errorf("error processing after files: %w", err)
 		}
 
 		// Restore original content
@@ -309,41 +301,36 @@ func (r *Renderer) renderTemplateInternal(
 	}
 
 	// ─── Render the user content (current template body) ────────────────────
-	userContent, err := r.executeTemplate(t, data)
-	if err != nil {
-		return "", err
+	var userBuf bytes.Buffer
+	if err := r.executeTemplate(&userBuf, t, data); err != nil {
+		return err
 	}
 
 	// ─── Combine all parts with newline separation ──────────────────────────
-	var parts []string
-
-	if beforeContent != "" {
-		parts = append(parts, beforeContent)
+	if beforeBuf.Len() > 0 {
+		buf.Write(beforeBuf.Bytes())
+		buf.WriteByte('\n')
 	}
 
-	if layoutContent != "" {
-		parts = append(parts, layoutContent)
+	if layoutBuf.Len() > 0 {
+		buf.Write(layoutBuf.Bytes())
+		buf.WriteByte('\n')
 	}
 
-	if afterContent != "" {
-		parts = append(parts, afterContent)
+	if afterBuf.Len() > 0 {
+		buf.Write(afterBuf.Bytes())
+		buf.WriteByte('\n')
 	}
 
-	if userContent != "" {
-		parts = append(parts, userContent)
+	if userBuf.Len() > 0 {
+		buf.Write(userBuf.Bytes())
 	}
 
-	// Track metrics
-	if r.metrics != nil {
-		r.metrics.Add("template", t.Path, []byte(t.Body))
-	}
-
-	// Join all parts with newline separation
-	return strings.Join(parts, "\n"), nil
+	return nil
 }
 
 // executeTemplate renders a single template body with the "partial" helper.
-func (r *Renderer) executeTemplate(t *Template, data Content) (string, error) {
+func (r *Renderer) executeTemplate(buf *bytes.Buffer, t *Template, data Content) error {
 	tmpl, err := template.New("content").Funcs(template.FuncMap{
 		"partial": func(path string) (string, error) {
 			return r.RenderPartial(path, data)
@@ -353,12 +340,11 @@ func (r *Renderer) executeTemplate(t *Template, data Content) (string, error) {
 		},
 	}).Parse(t.Body)
 	if err != nil {
-		return "", fmt.Errorf("error parsing template %s: %w", t.Path, err)
+		return fmt.Errorf("error parsing template %s: %w", t.Path, err)
 	}
 
-	var buf bytes.Buffer
-	if err := tmpl.Execute(&buf, data); err != nil {
-		return "", fmt.Errorf("error executing template %s: %w", t.Path, err)
+	if err := tmpl.Execute(buf, data); err != nil {
+		return fmt.Errorf("error executing template %s: %w", t.Path, err)
 	}
-	return buf.String(), nil
+	return nil
 }
