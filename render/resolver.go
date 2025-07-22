@@ -11,6 +11,7 @@ import (
 type Resolver struct {
 	// Search‑order stack of filesystems – first = highest priority, last = builtin defaults
 	Partials []fs.FS
+	Mode     string
 }
 
 // LoadTemplate loads a template from a path and returns the template.
@@ -34,16 +35,39 @@ func (r *Resolver) LoadTemplate(path string, cur *Template) (*Template, error) {
 }
 
 // NewResolver creates a new Resolver with the given filesystem stack.
-func NewResolver(partials ...fs.FS) *Resolver {
-	return &Resolver{Partials: partials}
+func NewResolver(mode string, partials ...fs.FS) *Resolver {
+	return &Resolver{Partials: partials, Mode: mode}
 }
 
 // resolveTemplateFile checks for an exact match and, only if no
 // extension is present, falls back to the ".md" variant.
 // It searches through all provided filesystems in order.
-func resolveTemplateFile(base string, filesystems ...fs.FS) (fs.FS, string, error) {
+func (r *Resolver) resolveTemplateFile(base string, filesystems ...fs.FS) (fs.FS, string, error) {
 	for _, fsys := range filesystems {
-		// exact path first
+		// If mode is set, try mode-specific variant first
+		if r.Mode != "" {
+			// For files with extensions, insert mode before the extension
+			ext := filepath.Ext(base)
+			if ext != "" {
+				modeVariant := base[:len(base)-len(ext)] + "." + r.Mode + ext
+				if _, err := fs.Stat(fsys, modeVariant); err == nil {
+					return fsys, modeVariant, nil
+				}
+			} else {
+				// For files without extensions, try mode variant with .md extension first
+				modeVariant := base + "." + r.Mode + ".md"
+				if _, err := fs.Stat(fsys, modeVariant); err == nil {
+					return fsys, modeVariant, nil
+				}
+				// Then try mode variant without .md extension
+				modeVariant = base + "." + r.Mode
+				if _, err := fs.Stat(fsys, modeVariant); err == nil {
+					return fsys, modeVariant, nil
+				}
+			}
+		}
+
+		// exact path fallback
 		if _, err := fs.Stat(fsys, base); err == nil {
 			return fsys, base, nil
 		}
@@ -88,7 +112,7 @@ func (ctx *Resolver) ResolvePartialPath(partialPath string, cur *Template) (fs.F
 		}
 		path := strings.TrimPrefix(strings.TrimSuffix(partialPath, ">"), "<")
 		fsys := ctx.Partials[len(ctx.Partials)-1]
-		return resolveTemplateFile(path, fsys)
+		return ctx.resolveTemplateFile(path, fsys)
 
 	case strings.HasPrefix(partialPath, "@"):
 		// Repo root template - use the first FS in Partials
@@ -97,7 +121,7 @@ func (ctx *Resolver) ResolvePartialPath(partialPath string, cur *Template) (fs.F
 		}
 		path := strings.TrimPrefix(partialPath, "@")
 		fsys := ctx.Partials[0]
-		return resolveTemplateFile(path, fsys)
+		return ctx.resolveTemplateFile(path, fsys)
 
 	case strings.HasPrefix(partialPath, "./") || strings.HasPrefix(partialPath, "../") || partialPath == "." || partialPath == "..":
 		// Local template (relative to current template)
@@ -114,7 +138,7 @@ func (ctx *Resolver) ResolvePartialPath(partialPath string, cur *Template) (fs.F
 		// Resolve the path relative to the current template
 		fullPath := filepath.Join(currentDir, partialPath)
 		fullPath = filepath.Clean(fullPath)
-		return resolveTemplateFile(fullPath, currentTemplateFS)
+		return ctx.resolveTemplateFile(fullPath, currentTemplateFS)
 
 	default:
 		// Bare path - search through all filesystems in order
@@ -123,6 +147,6 @@ func (ctx *Resolver) ResolvePartialPath(partialPath string, cur *Template) (fs.F
 		}
 
 		// Search through all filesystems
-		return resolveTemplateFile(partialPath, ctx.Partials...)
+		return ctx.resolveTemplateFile(partialPath, ctx.Partials...)
 	}
 }

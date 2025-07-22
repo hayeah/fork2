@@ -28,6 +28,7 @@ type AppEnv struct {
 	RootPath         RootPath
 	WorkingDirectory WorkingDirectory
 	DataPairs        []string
+	Mode             string
 }
 
 // DefaultContentLoader implements ContentLoader using render.LoadContentSources.
@@ -49,6 +50,7 @@ func ProvideAppEnv(root string, args OutCmd) (*AppEnv, error) {
 		RootPath:         RootPath(root),
 		WorkingDirectory: WorkingDirectory(abs),
 		DataPairs:        args.Data,
+		Mode:             args.Mode,
 	}, nil
 }
 
@@ -70,8 +72,8 @@ func ProvideRenderer(resolver *render.Resolver, m *metrics.OutputMetrics) *rende
 	return render.NewRenderer(resolver, m)
 }
 
-func ProvideResolver(fsList []fs.FS) *render.Resolver {
-	return render.NewResolver(fsList...)
+func ProvideResolver(env *AppEnv, fsList []fs.FS) *render.Resolver {
+	return render.NewResolver(env.Mode, fsList...)
 }
 
 func ProvideCounter(args OutCmd) (metrics.Counter, error) {

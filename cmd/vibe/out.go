@@ -29,6 +29,7 @@ type OutCmd struct {
 	Data          []string `arg:"-d,--data,separate" help:"key=value pairs exposed to templates as .Data.* (repeatable)"`
 	Metrics       string   `arg:"-m,--metrics" help:"Write metrics JSON ('-' = stdout)"`
 	Content       []string `arg:"-c,--content,separate" help:"Content source specifications: '-' for stdin, file paths, URLs, or literals (repeatable)"`
+	Mode          string   `arg:"--mode,-m" help:"Template specialization mode"`
 	Template      string   `arg:"positional" help:"User instruction or path to instruction file"`
 }
 

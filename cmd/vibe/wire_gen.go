@@ -25,7 +25,7 @@ func BuildOutPipeline(root string, args OutCmd) (*OutPipeline, error) {
 	if err != nil {
 		return nil, err
 	}
-	resolver := ProvideResolver(v)
+	resolver := ProvideResolver(appEnv, v)
 	counter, err := ProvideCounter(args)
 	if err != nil {
 		return nil, err

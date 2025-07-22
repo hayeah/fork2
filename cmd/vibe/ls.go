@@ -11,6 +11,7 @@ import (
 // LsCmd defines the command-line arguments for the ls subcommand
 type LsCmd struct {
 	Select string `arg:"-s,--select" help:"Select files matching patterns"`
+	Mode   string `arg:"--mode,-m" help:"Template specialization mode"`
 	// optional positional prompt file (template); empty means rely on --select
 	Template string `arg:"positional" help:"Path to a prompt/template file"`
 }
@@ -38,7 +39,7 @@ func NewLsRunner(cmd LsCmd, root string) (*LsRunner, error) {
 func (r *LsRunner) Run() error {
 	pattern := r.Args.Select
 	if pattern == "" { // derive from template front-matter
-		resolver := render.NewResolver(os.DirFS(r.RootPath))
+		resolver := render.NewResolver(r.Args.Mode, os.DirFS(r.RootPath))
 		templ, err := render.NewRenderer(resolver, nil).LoadTemplate(r.Args.Template)
 		if err != nil {
 			return err
