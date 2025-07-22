@@ -98,6 +98,26 @@ func (m UnionMatcher) Match(paths []string) ([]string, error) {
 	return resultSet.Values(), nil
 }
 
+// splitMatchers splits a pattern by the given separator and parses each part into a Matcher
+func splitMatchers(pattern, separator string) ([]Matcher, error) {
+	parts := strings.Split(pattern, separator)
+	subMatchers := make([]Matcher, 0, len(parts))
+
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue // Skip empty parts
+		}
+		matcher, err := ParseMatcher(part)
+		if err != nil {
+			return nil, err
+		}
+		subMatchers = append(subMatchers, matcher)
+	}
+
+	return subMatchers, nil
+}
+
 // ParseMatcher parses a single pattern string into a Matcher
 func ParseMatcher(pattern string) (Matcher, error) {
 	pattern = strings.TrimSpace(pattern)
@@ -106,27 +126,31 @@ func ParseMatcher(pattern string) (Matcher, error) {
 		return nil, fmt.Errorf("patterns with '../' are not supported for security reasons")
 	}
 
+	// Check if this is a compound pattern with '|' operator (logical AND)
 	if strings.Contains(pattern, "|") {
-		// TODO
+		subMatchers, err := splitMatchers(pattern, "|")
+		if err != nil {
+			return nil, fmt.Errorf("compound pattern error: %w", err)
+		}
+
+		// If no valid matchers were created, return an error
+		if len(subMatchers) == 0 {
+			return nil, fmt.Errorf("compound pattern contains no valid patterns")
+		}
+
+		// If only one matcher, return it directly without wrapping
+		if len(subMatchers) == 1 {
+			return subMatchers[0], nil
+		}
+
+		return CompoundMatcher{Matchers: subMatchers}, nil
 	}
 
 	// Check if this is a union pattern with ';' operator (logical OR, highest precedence)
 	if strings.Contains(pattern, ";") {
-		// Split by ';' and trim whitespace from each part
-		parts := strings.Split(pattern, ";")
-		subMatchers := make([]Matcher, 0, len(parts))
-
-		for _, part := range parts {
-			// Trim whitespace from each part
-			part = strings.TrimSpace(part)
-			if part == "" {
-				continue // Skip empty parts
-			}
-			matcher, err := ParseMatcher(part)
-			if err != nil {
-				return nil, fmt.Errorf("in union pattern part '%s': %v", part, err)
-			}
-			subMatchers = append(subMatchers, matcher)
+		subMatchers, err := splitMatchers(pattern, ";")
+		if err != nil {
+			return nil, fmt.Errorf("union pattern error: %w", err)
 		}
 
 		// If no valid matchers were created, return an error

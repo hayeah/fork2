@@ -58,8 +58,13 @@ separators are normalised to “/”.*
 
 ### 4. Multiple terms
 
-* `cmd .go` – keeps paths that contain **both** “cmd” *and* “.go”.
+* `cmd .go` – keeps paths that contain **both** "cmd" *and* ".go".
 
+### 5. Operators
+
+* **Negation** (`!`) – Exclude paths matching a pattern. Example: `!test` excludes paths containing "test".
+* **Union** (`;`) – Combine multiple patterns with OR logic. Example: `.go;.md` matches Go files OR Markdown files.
+* **Compound** (`|`) – Apply filters to previous results like a pipe. Example: `.go;.md | !test` first matches all Go OR Markdown files, then filters out any containing "test".
 
 ### Examples
 
@@ -101,6 +106,9 @@ Examples:
 - `.go !_test.go;.md`
   All non test `.go` files, plus `.md` files
 
+- `cmd/vibe .go;render .go | !test`
+  All `.go` files from `cmd/vibe` OR `render` directories, then exclude any containing "test"
+
 #### Worked Examples
 
 Show me every Go file in the repo
@@ -141,6 +149,17 @@ Instead of using `;`, you could also put multiple patterns on different lines:
 ```bash
 vibe out --select '.go
 !_test.go;.md'
+```
+
+Use compound patterns to filter union results:
+
+```bash
+# Select Go files from two directories, then exclude test files
+vibe out --select 'cmd/vibe .go;render .go | !test'
+
+# This is equivalent to:
+# 1. First: match all .go files in cmd/vibe OR all .go files in render
+# 2. Then: filter out any files containing "test" from the combined results
 ```
 
 ## List Matched Files
