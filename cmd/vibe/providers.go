@@ -72,8 +72,53 @@ func ProvideRenderer(resolver *render.Resolver, m *metrics.OutputMetrics) *rende
 	return render.NewRenderer(resolver, m)
 }
 
+func ProvideTemplate(env *AppEnv, resolver *render.Resolver, args OutCmd, fsList []fs.FS) (*render.Template, error) {
+	// decide which file the user wants to render
+	templatePath := args.Template
+	if templatePath == "" && args.Select != "" {
+		templatePath = "files"
+	}
+	if templatePath == "" {
+		return nil, nil // nothing to inspect
+	}
+
+	// templatePath = strings.TrimPrefix(templatePath, "./")
+
+	// Create a temporary resolver to load the template
+	// tempResolver := render.NewResolver(env.Mode, fsList...)
+	// renderer := render.NewRenderer(tempResolver, nil)
+	tmpl, err := resolver.LoadTemplate(templatePath, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	if env.Mode == "" && tmpl.FrontMatter.Mode != "" {
+		resolver.Mode = tmpl.FrontMatter.Mode
+	}
+
+	// Apply command-line overrides
+	if args.Layout != "" {
+		tmpl.FrontMatter.Layout = args.Layout
+	}
+	if args.Select != "" {
+		tmpl.FrontMatter.Select = args.Select
+	}
+	if args.SelectDirTree != "" {
+		tmpl.FrontMatter.Dirtree = args.SelectDirTree
+	}
+
+	if tmpl.FrontMatter.Layout == "" && tmpl.FrontMatter.Select != "" {
+		tmpl.FrontMatter.Layout = "files"
+	}
+
+	return tmpl, nil
+}
+
 func ProvideResolver(env *AppEnv, fsList []fs.FS) *render.Resolver {
-	return render.NewResolver(env.Mode, fsList...)
+	// NOTE: ProvideTemplate will destructively update some of the resolver
+	// properties depending on template metadata.
+	mode := env.Mode
+	return render.NewResolver(mode, fsList...)
 }
 
 func ProvideCounter(args OutCmd) (metrics.Counter, error) {

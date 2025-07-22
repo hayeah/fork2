@@ -34,6 +34,10 @@ func BuildOutPipeline(root string, args OutCmd) (*OutPipeline, error) {
 	renderer := ProvideRenderer(resolver, outputMetrics)
 	fileMapWriter := ProvideFileMapService(appEnv, outputMetrics)
 	contentLoader := ProvideContentLoader()
+	template, err := ProvideTemplate(appEnv, resolver, args, v)
+	if err != nil {
+		return nil, err
+	}
 	outPipeline := &OutPipeline{
 		DT:       directoryTree,
 		Renderer: renderer,
@@ -41,6 +45,7 @@ func BuildOutPipeline(root string, args OutCmd) (*OutPipeline, error) {
 		Metrics:  outputMetrics,
 		Loader:   contentLoader,
 		Env:      appEnv,
+		Template: template,
 	}
 	return outPipeline, nil
 }

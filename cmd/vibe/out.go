@@ -13,7 +13,6 @@ import (
 
 	"github.com/atotto/clipboard"
 	"github.com/hayeah/fork2/internal/metrics"
-	"github.com/hayeah/fork2/render"
 	"github.com/pkoukk/tiktoken-go"
 )
 
@@ -121,11 +120,6 @@ func (r *OutRunner) Run() error {
 		return err
 	}
 
-	tmpl, err := r.overrideTemplate(pipe)
-	if err != nil {
-		return err
-	}
-	pipe.Template = tmpl
 	pipe.ContentSpecs = r.Args.Content
 
 	if err := pipe.Run(dest); err != nil {
@@ -140,36 +134,6 @@ func (r *OutRunner) Run() error {
 	}
 
 	return nil
-}
-
-// overrideTemplate loads the template and applies command-line overrides to its frontmatter.
-func (r *OutRunner) overrideTemplate(pipe *OutPipeline) (*render.Template, error) {
-	templatePath := r.Args.Template
-	if templatePath == "" && r.Args.Select != "" {
-		templatePath = "files"
-	}
-	templatePath = strings.TrimPrefix(templatePath, "./")
-
-	tmpl, err := pipe.Renderer.LoadTemplate(templatePath)
-	if err != nil {
-		return nil, err
-	}
-
-	if r.Args.Layout != "" {
-		tmpl.FrontMatter.Layout = r.Args.Layout
-	}
-	if r.Args.Select != "" {
-		tmpl.FrontMatter.Select = r.Args.Select
-	}
-	if r.Args.SelectDirTree != "" {
-		tmpl.FrontMatter.Dirtree = r.Args.SelectDirTree
-	}
-
-	if tmpl.FrontMatter.Layout == "" && tmpl.FrontMatter.Select != "" {
-		tmpl.FrontMatter.Layout = "files"
-	}
-
-	return tmpl, nil
 }
 
 // parseDataParams parses data parameters from CLI flags into a map
