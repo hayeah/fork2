@@ -3,6 +3,7 @@ package render
 import (
 	"fmt"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"strings"
 )
@@ -84,10 +85,11 @@ func (r *Resolver) resolveTemplateFile(base string, filesystems ...fs.FS) (fs.FS
 
 // ResolvePartialPath determines which FS and file should be used for a given partial path.
 // It uses the following rules:
-// 1. System Template <vibe/coder> - use the last FS in Partials
-// 2. Repo Root Template @common/header - use the first FS in Partials
-// 3. Local Template ./helpers/buttons - use the same FS as the current template
-// 4. Bare path common/header - search all FS in order until found
+// 1. Absolute path /path/to/template.md - use OS filesystem directly
+// 2. System Template <vibe/coder> - use the last FS in Partials
+// 3. Repo Root Template @common/header - use the first FS in Partials
+// 4. Local Template ./helpers/buttons - use the same FS as the current template
+// 5. Bare path common/header - search all FS in order until found
 // Callers may omit the `.md` extension; the resolver will look for both *name* and *name.md*, but only when *name* has no extension.
 func (ctx *Resolver) ResolvePartialPath(partialPath string, cur *Template) (fs.FS, string, error) {
 	// Derive curPath/curFS from cur (if cur == nil, pass empty string / nil)
@@ -105,6 +107,13 @@ func (ctx *Resolver) ResolvePartialPath(partialPath string, cur *Template) (fs.F
 	}
 
 	switch {
+	case filepath.IsAbs(partialPath):
+		// Absolute path - use OS filesystem directly
+		dir := filepath.Dir(partialPath)
+		base := filepath.Base(partialPath)
+		fsys := os.DirFS(dir)
+		return ctx.resolveTemplateFile(base, fsys)
+
 	case strings.HasPrefix(partialPath, "<") && strings.HasSuffix(partialPath, ">"):
 		// System template - use the last FS in Partials
 		if len(ctx.Partials) == 0 {
