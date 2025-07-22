@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/hayeah/fork2/internal/metrics"
+	"github.com/hayeah/fork2/internal/selection"
 	"github.com/hayeah/fork2/render"
 )
 
@@ -45,6 +46,13 @@ type outData struct {
 	promptsOnce sync.Once
 	prompts     string
 	promptsErr  error
+
+	selectedOnce  sync.Once
+	selectedPaths []string
+
+	selectionsOnce sync.Once
+	selections     []selection.FileSelection
+	selectionsErr  error
 }
 
 func (d *outData) Content() string     { return d.ContentStr }
@@ -56,7 +64,7 @@ func (d *outData) FileMap() (string, error) {
 			d.fileMap = ""
 			return
 		}
-		sels, err := d.pipeline.DT.SelectFiles(d.selectPattern)
+		sels, err := d.getSelections()
 		if err != nil {
 			d.fileMapErr = err
 			return
@@ -82,6 +90,31 @@ func (d *outData) RepoPrompts() (string, error) {
 		d.prompts, d.promptsErr = loadVibeFiles(d.rootPath)
 	})
 	return d.prompts, d.promptsErr
+}
+
+// getSelections returns the FileSelection slice matched by the
+// template's `select` pattern, memoised for reuse by other helpers.
+func (d *outData) getSelections() ([]selection.FileSelection, error) {
+	d.selectionsOnce.Do(func() {
+		if d.selectPattern == "" {
+			return
+		}
+		d.selections, d.selectionsErr = d.pipeline.DT.SelectFiles(d.selectPattern)
+	})
+	return d.selections, d.selectionsErr
+}
+
+func (d *outData) SelectedPaths() []string {
+	d.selectedOnce.Do(func() {
+		sels, err := d.getSelections()
+		if err != nil {
+			return // ignore error; template helpers should stay silent
+		}
+		for _, s := range sels {
+			d.selectedPaths = append(d.selectedPaths, s.Path)
+		}
+	})
+	return d.selectedPaths
 }
 
 // Run executes the rendering pipeline using args for configuration.
