@@ -153,13 +153,16 @@ vibe ls --select '.go'
 
 # List files from a template's select pattern
 vibe ls templates/my_prompt.md
+
+# List files using a mode-specific template
+vibe ls --mode=cc templates/my_prompt.md
 ```
 
 When using a template file, the `ls` command will use the `select` pattern defined in the template's front-matter.
 
 ## Prompt Templates
 
-Prompt templates turn vibe into a tiny static‑site generator—except the “pages” it builds are prompts instead of HTML. Each template is just a text or markdown file that contains two distinct parts:
+Prompt templates turn vibe into a tiny static‑site generator—except the "pages" it builds are prompts instead of HTML. Each template is just a text or markdown file that contains two distinct parts:
 
 Front‑matter (TOML) – establishes how the template is rendered. The block is enclosed in a fenced code block at the very start of the file.
 
@@ -173,6 +176,29 @@ Give me an overview and walkthrough of the above code.
 
 The template body is normal text/markdown that may use Go text/template syntax
 `{{ ... }}` to reference data that vibe makes available at render time.
+
+### Template Specialization with Mode
+
+The `--mode/-m` flag allows you to create specialized versions of templates for different contexts. When a mode is specified, vibe will first look for a mode-specific variant of the template before falling back to the default.
+
+```bash
+# Uses files.cc.md if it exists, otherwise files.md
+vibe out --mode=cc files
+
+# Uses analyze.gpt4.md if it exists, otherwise analyze.md
+vibe out --mode=gpt4 analyze
+```
+
+Mode variants are created by inserting the mode name before the file extension:
+- `files.md` → `files.cc.md` (for `--mode=cc`)
+- `explain.md` → `explain.gpt4.md` (for `--mode=gpt4`)
+
+This feature is useful for:
+- Tool-specific templates (e.g., templates optimized for Claude Code vs ChatGPT)
+- Model-specific variations (e.g., different instructions for GPT-4 vs Claude)
+- Environment-specific templates (e.g., development vs production)
+
+The mode applies to all template resolution including layouts and partials, allowing you to create complete template sets for different contexts.
 
 ### How rendering works
 
