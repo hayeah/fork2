@@ -133,7 +133,7 @@ func TestOutRunner_ErrorHandling(t *testing.T) {
 			require.NoError(t, os.Chdir("testdata/project"))
 			t.Cleanup(func() { _ = os.Chdir(oldDir) })
 
-			runner, err := NewAskRunner(c.cmd, ".")
+			runner, err := NewAskRunner(c.cmd)
 			if c.errPhase == "new" {
 				assert.Error(t, err)
 				if c.errMsg != "" {
@@ -207,7 +207,7 @@ func TestOutRunner_TokenEstimator(t *testing.T) {
 			require.NoError(t, os.Chdir("testdata/project"))
 			t.Cleanup(func() { _ = os.Chdir(oldDir) })
 
-			runner, err := NewAskRunner(cmd, ".")
+			runner, err := NewAskRunner(cmd)
 			if tt.wantErr {
 				assert.Error(t, err)
 				return

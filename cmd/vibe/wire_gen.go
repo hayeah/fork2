@@ -32,7 +32,11 @@ func BuildOutPipeline(root string, args OutCmd) (*OutPipeline, error) {
 	}
 	outputMetrics := ProvideMetrics(counter)
 	renderer := ProvideRenderer(resolver, outputMetrics)
-	fileMapWriter := ProvideFileMapService(appEnv, outputMetrics)
+	fs, err := ProvideRootFS(appEnv)
+	if err != nil {
+		return nil, err
+	}
+	fileMapWriter := ProvideFileMapService(appEnv, fs, outputMetrics)
 	contentLoader := ProvideContentLoader()
 	template, err := ProvideTemplate(appEnv, resolver, args, v)
 	if err != nil {

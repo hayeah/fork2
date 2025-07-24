@@ -40,6 +40,11 @@ func (DefaultContentLoader) LoadSources(ctx context.Context, specs []string) (st
 
 func ProvideContentLoader() ContentLoader { return DefaultContentLoader{} }
 
+// ProvideRootFS creates a filesystem abstraction for the repo root
+func ProvideRootFS(env *AppEnv) (fs.FS, error) {
+	return os.DirFS(string(env.RootPath)), nil
+}
+
 // ProvideAppEnv builds the runtime environment used by other providers.
 func ProvideAppEnv(root string, args OutCmd) (*AppEnv, error) {
 	abs, err := filepath.Abs(root)
@@ -64,8 +69,8 @@ func ProvideMetrics(counter metrics.Counter) *metrics.OutputMetrics {
 	return metrics.NewOutputMetrics(counter, runtime.NumCPU())
 }
 
-func ProvideFileMapService(env *AppEnv, m *metrics.OutputMetrics) *FileMapWriter {
-	return NewWriteFileMap(string(env.RootPath), m)
+func ProvideFileMapService(env *AppEnv, rfs fs.FS, m *metrics.OutputMetrics) *FileMapWriter {
+	return NewWriteFileMap(rfs, string(env.RootPath), m)
 }
 
 func ProvideRenderer(resolver *render.Resolver, m *metrics.OutputMetrics) *render.Renderer {

@@ -51,7 +51,7 @@ func runRunner(t *testing.T, cmd OutCmd, cwd string) string {
 	require.NoError(t, os.Chdir(cwd))
 	t.Cleanup(func() { _ = os.Chdir(oldDir) })
 
-	runner, err := NewAskRunner(cmd, ".")
+	runner, err := NewAskRunner(cmd)
 	require.NoError(t, err)
 
 	if cmd.Output == "-" {

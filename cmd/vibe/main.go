@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io/fs"
 	"log"
 	"os"
 
@@ -25,7 +26,7 @@ type item struct {
 }
 
 // TokenEstimator is a function type that estimates token count for a file
-type TokenEstimator func(filePath string) (int, error)
+type TokenEstimator func(fsys fs.FS, filePath string) (int, error)
 
 // Runner encapsulates the state and behavior for the CLI
 type Runner struct {
@@ -45,7 +46,7 @@ func NewRunner(args Args) *Runner {
 func (r *Runner) Run() error {
 	switch {
 	case r.Args.Out != nil:
-		pickRunner, err := NewAskRunner(*r.Args.Out, r.RootPath)
+		pickRunner, err := NewAskRunner(*r.Args.Out)
 		if err != nil {
 			return err
 		}

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"io/fs"
 	"log"
 	"net/url"
 	"os"
@@ -29,6 +30,7 @@ type OutCmd struct {
 	Metrics       string   `arg:"-m,--metrics" help:"Write metrics JSON ('-' = stdout)"`
 	Content       []string `arg:"-c,--content,separate" help:"Content source specifications: '-' for stdin, file paths, URLs, or literals (repeatable)"`
 	Mode          string   `arg:"--mode,-m" help:"Template specialization mode"`
+	Root          string   `arg:"-r,--root" help:"Path to repo root (default: .)"`
 	Template      string   `arg:"positional" help:"User instruction or path to instruction file"`
 }
 
@@ -43,14 +45,20 @@ type OutRunner struct {
 }
 
 // NewAskRunner creates and initializes a new PickRunner
-func NewAskRunner(cmdArgs OutCmd, rootPath string) (*OutRunner, error) {
-	info, err := os.Stat(rootPath)
+func NewAskRunner(cmdArgs OutCmd) (*OutRunner, error) {
+	// Use cmdArgs.Root if specified, otherwise use current directory
+	root := "."
+	if cmdArgs.Root != "" {
+		root = cmdArgs.Root
+	}
+
+	info, err := os.Stat(root)
 	if err != nil {
-		return nil, fmt.Errorf("error accessing %s: %v", rootPath, err)
+		return nil, fmt.Errorf("error accessing %s: %v", root, err)
 	}
 
 	if !info.IsDir() {
-		return nil, fmt.Errorf("not a directory: %s", rootPath)
+		return nil, fmt.Errorf("not a directory: %s", root)
 	}
 
 	// Select the token estimator based on the flag
@@ -85,7 +93,7 @@ func NewAskRunner(cmdArgs OutCmd, rootPath string) (*OutRunner, error) {
 
 	r := &OutRunner{
 		Args:           cmdArgs,
-		RootPath:       rootPath,
+		RootPath:       root,
 		TokenEstimator: tokenEstimator,
 		Data:           data,
 		Metrics:        metrics.NewOutputMetrics(counter, runtime.NumCPU()),
@@ -159,11 +167,11 @@ func parseDataParams(params []string) (map[string]string, error) {
 }
 
 // calculateTokenCount calculates the total token count for a list of file paths
-func calculateTokenCount(filePaths []string, tokenEstimator TokenEstimator) (int, error) {
+func calculateTokenCount(fsys fs.FS, filePaths []string, tokenEstimator TokenEstimator) (int, error) {
 	totalTokenCount := 0
 
 	for _, path := range filePaths {
-		tokenCount, err := tokenEstimator(path)
+		tokenCount, err := tokenEstimator(fsys, path)
 		if err != nil {
 			log.Printf("Error estimating tokens for %s: %v", path, err)
 		} else {
@@ -263,8 +271,8 @@ func loadVibeFiles(startPath string) (string, error) {
 }
 
 // estimateTokenCountSimple estimates tokens using the simple size/4 method
-func estimateTokenCountSimple(filePath string) (int, error) {
-	data, err := os.ReadFile(filePath)
+func estimateTokenCountSimple(fsys fs.FS, filePath string) (int, error) {
+	data, err := fs.ReadFile(fsys, filePath)
 	if err != nil {
 		return 0, err
 	}
@@ -273,8 +281,8 @@ func estimateTokenCountSimple(filePath string) (int, error) {
 }
 
 // estimateTokenCountTiktoken estimates tokens using the tiktoken-go library
-func estimateTokenCountTiktoken(filePath string) (int, error) {
-	data, err := os.ReadFile(filePath)
+func estimateTokenCountTiktoken(fsys fs.FS, filePath string) (int, error) {
+	data, err := fs.ReadFile(fsys, filePath)
 	if err != nil {
 		return 0, err
 	}

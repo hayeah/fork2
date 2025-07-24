@@ -9,6 +9,7 @@ import (
 func BuildOutPipeline(root string, args OutCmd) (*OutPipeline, error) {
 	wire.Build(
 		ProvideAppEnv,
+		ProvideRootFS,
 		ProvideTemplate,
 		ProvideCounter,
 		ProvideMetrics,

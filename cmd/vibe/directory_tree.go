@@ -31,6 +31,7 @@ func NewDirectoryTree(rootPath string) *DirectoryTree {
 // dirItemsImpl is the actual implementation that walks the directory tree.
 func (dt *DirectoryTree) dirItemsImpl() ([]item, error) {
 	var items []item
+
 	ig, err := ignore.NewIgnore(dt.RootPath)
 	if err != nil {
 		return nil, err

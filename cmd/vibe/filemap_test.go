@@ -44,7 +44,7 @@ func TestWriteFileMapDirectory(t *testing.T) {
 	var buf strings.Builder
 
 	// Test FileMapWriter
-	fileMapWriter := NewWriteFileMap(tempDir, nil)
+	fileMapWriter := NewWriteFileMap(os.DirFS(tempDir), tempDir, nil)
 	err = fileMapWriter.Output(&buf, selections)
 	assert.NoError(err)
 
