@@ -1,0 +1,3 @@
+This is sample content that can be loaded
+using the --content flag or other content
+loading mechanisms in the out command.
