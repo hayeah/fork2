@@ -20,3 +20,14 @@
 
 Co-Authored-By: Claude <noreply@anthropic.com>
 ```
+
+# Done Notification
+
+- After you are done with a task, notify the user with a concise message.
+  - If you wrote code (after lint, test, and commit), run `fork.py status`, which reports:
+    - project name
+    - workspace number
+    - one-line HEAD commit msg
+  - If you you finished some task, but new code, write your message.
+- exec `say.py --voice shimmer "{project name} {workspace number} is ready for review. {concise msg}."`
+  - This will play a voice msg to the user. It shouldn't be too long.
