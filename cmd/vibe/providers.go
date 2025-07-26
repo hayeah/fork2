@@ -140,9 +140,16 @@ func ProvideCounter(args OutCmd) (metrics.Counter, error) {
 }
 
 // ProvideFSList builds the filesystem stack for templates.
-func ProvideFSList(env *AppEnv) ([]fs.FS, error) {
+func ProvideFSList(env *AppEnv, args OutCmd) ([]fs.FS, error) {
 	root := string(env.RootPath)
 	partials := []fs.FS{os.DirFS(root)}
+
+	// Add any additional template paths from args
+	for _, path := range args.TemplatePaths {
+		if fi, err := os.Stat(path); err == nil && fi.IsDir() {
+			partials = append(partials, os.DirFS(path))
+		}
+	}
 
 	if envVar := os.Getenv("VIBE_PROMPTS"); envVar != "" {
 		for _, dir := range strings.Split(envVar, string(os.PathListSeparator)) {

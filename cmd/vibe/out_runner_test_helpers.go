@@ -4,52 +4,21 @@ import (
 	"bytes"
 	"io"
 	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// getTestTemplatePath returns the absolute path to a template in testdata
-func getTestTemplatePath(t *testing.T, templateName string) string {
-	t.Helper()
-	// Get the absolute path to the test directory
-	cwd, err := os.Getwd()
-	require.NoError(t, err)
-
-	// Find the cmd/vibe directory
-	dir := cwd
-	for {
-		if filepath.Base(dir) == "vibe" && filepath.Base(filepath.Dir(dir)) == "cmd" {
-			break
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			t.Fatal("Could not find cmd/vibe directory")
-		}
-		dir = parent
-	}
-
-	return filepath.Join(dir, "testdata", "templates", templateName)
-}
-
-// Template file names in testdata
-const (
-	tmplListSelected = "list_selected.md"
-	tmplContent      = "content_test.md"
-	tmplData         = "data_test.md"
-	tmplContext      = "test_context.md"
-)
-
 // runRunner executes the runner and captures output (stdout or file)
-func runRunner(t *testing.T, cmd OutCmd, cwd string) string {
+func runRunner(t *testing.T, cmd OutCmd, root string) string {
 	t.Helper()
 
-	oldDir, err := os.Getwd()
-	require.NoError(t, err)
-	require.NoError(t, os.Chdir(cwd))
-	t.Cleanup(func() { _ = os.Chdir(oldDir) })
+	// Set the root directory for the command
+	cmd.Root = root
+
+	// Add testdata/templates to the template search path
+	cmd.TemplatePaths = []string{"testdata/templates"}
 
 	runner, err := NewAskRunner(cmd)
 	require.NoError(t, err)

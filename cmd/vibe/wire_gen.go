@@ -21,7 +21,7 @@ func BuildOutPipeline(root string, args OutCmd) (*OutPipeline, error) {
 	if err != nil {
 		return nil, err
 	}
-	v, err := ProvideFSList(appEnv)
+	v, err := ProvideFSList(appEnv, args)
 	if err != nil {
 		return nil, err
 	}

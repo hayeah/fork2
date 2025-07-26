@@ -32,6 +32,7 @@ type OutCmd struct {
 	Mode          string   `arg:"--mode,-m" help:"Template specialization mode"`
 	Root          string   `arg:"-r,--root" help:"Path to repo root (default: .)"`
 	Template      string   `arg:"positional" help:"User instruction or path to instruction file"`
+	TemplatePaths []string // Additional paths to search for templates (not exposed as CLI arg)
 }
 
 // OutRunner encapsulates the state and behavior for the file picker

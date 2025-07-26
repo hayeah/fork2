@@ -1,7 +1,6 @@
 package main
 
 import (
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -26,7 +25,7 @@ func TestOutRunner_SelectVariants(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			cmd := OutCmd{
 				Select:         c.selectQ,
-				Template:       getTestTemplatePath(t, tmplListSelected),
+				Template:       "list_selected.md",
 				Output:         "-",
 				TokenEstimator: "simple",
 			}
@@ -54,7 +53,7 @@ func TestOutRunner_DataAndContent(t *testing.T) {
 		outFile := createTempOutput(t)
 
 		cmd := OutCmd{
-			Template:       getTestTemplatePath(t, tmplData),
+			Template:       "data_test.md",
 			Data:           []string{"model=gpt4", "debug=true"},
 			Output:         outFile,
 			TokenEstimator: "simple",
@@ -70,7 +69,7 @@ func TestOutRunner_DataAndContent(t *testing.T) {
 		outFile := createTempOutput(t)
 
 		cmd := OutCmd{
-			Template:       getTestTemplatePath(t, tmplContent),
+			Template:       "content_test.md",
 			Content:        []string{"text:Hello from test"},
 			Output:         outFile,
 			TokenEstimator: "simple",
@@ -88,7 +87,7 @@ func TestOutRunner_AllFlag(t *testing.T) {
 
 	cmd := OutCmd{
 		All:            true,
-		Template:       getTestTemplatePath(t, tmplListSelected),
+		Template:       "list_selected.md",
 		Output:         outFile,
 		TokenEstimator: "simple",
 	}
@@ -128,10 +127,9 @@ func TestOutRunner_ErrorHandling(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			oldDir, err := os.Getwd()
-			require.NoError(t, err)
-			require.NoError(t, os.Chdir("testdata/project"))
-			t.Cleanup(func() { _ = os.Chdir(oldDir) })
+			// Set the root directory for the command
+			c.cmd.Root = "testdata/project"
+			c.cmd.TemplatePaths = []string{"testdata/templates"}
 
 			runner, err := NewAskRunner(c.cmd)
 			if c.errPhase == "new" {
@@ -153,7 +151,7 @@ func TestOutRunner_TemplateHelpers(t *testing.T) {
 	outFile := createTempOutput(t)
 
 	cmd := OutCmd{
-		Template:       getTestTemplatePath(t, tmplContext),
+		Template:       "test_context.md",
 		Output:         outFile,
 		TokenEstimator: "simple",
 	}
@@ -200,12 +198,9 @@ func TestOutRunner_TokenEstimator(t *testing.T) {
 				Select:         ".go$",
 				Output:         "-",
 				TokenEstimator: tt.estimator,
+				Root:           "testdata/project",
+				TemplatePaths:  []string{"testdata/templates"},
 			}
-
-			oldDir, err := os.Getwd()
-			require.NoError(t, err)
-			require.NoError(t, os.Chdir("testdata/project"))
-			t.Cleanup(func() { _ = os.Chdir(oldDir) })
 
 			runner, err := NewAskRunner(cmd)
 			if tt.wantErr {
