@@ -32,8 +32,7 @@ func TestFileSelection_ReadString_LockFiles(t *testing.T) {
 	// Test each lock file
 	for filename := range lockFiles {
 		t.Run(filename, func(t *testing.T) {
-			filePath := filepath.Join(tmpDir, filename)
-			fs := FileSelection{Path: filePath}
+			fs := NewFileSelection(os.DirFS(tmpDir), filename, nil)
 
 			result, err := fs.ReadString()
 			if err != nil {
@@ -65,7 +64,7 @@ func TestFileSelection_ReadString_LockFiles(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		fs := FileSelection{Path: regularFile}
+		fs := NewFileSelection(os.DirFS(tmpDir), "regular.txt", nil)
 		result, err := fs.ReadString()
 		if err != nil {
 			t.Fatalf("ReadString() error = %v", err)

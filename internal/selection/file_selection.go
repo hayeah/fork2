@@ -3,7 +3,7 @@ package selection
 import (
 	"fmt"
 	"io"
-	"os"
+	"io/fs"
 	"regexp"
 	"sort"
 	"strconv"
@@ -29,10 +29,13 @@ var reFileSelection = regexp.MustCompile(`^(.+)#(\d+),(\d+)$`)
 // ParseFileSelection parses a path string that may contain a line range specification
 // Format: path#start,end where start and end are line numbers
 // Returns a FileSelection with the path and any line ranges found
-func ParseFileSelection(path string) (FileSelection, error) {
+func ParseFileSelection(fsys fs.FS, path string) (FileSelection, error) {
+	if fsys == nil {
+		panic("ParseFileSelection: fs parameter must not be nil")
+	}
 	// If there's no hash character, just return the path as is
 	if !strings.Contains(path, "#") {
-		return FileSelection{Path: path}, nil
+		return NewFileSelection(fsys, path, nil), nil
 	}
 
 	// Use a regular expression to validate and parse the path format
@@ -56,19 +59,30 @@ func ParseFileSelection(path string) (FileSelection, error) {
 	}
 
 	// Create a FileSelection with the path and line range
-	return FileSelection{
-		Path: filePath,
-		Ranges: []LineRange{{
-			Start: startLine,
-			End:   endLine,
-		}},
-	}, nil
+	return NewFileSelection(fsys, filePath, []LineRange{{
+		Start: startLine,
+		End:   endLine,
+	}}), nil
 }
 
 // FileSelection represents a file and its selected line ranges
 type FileSelection struct {
 	Path   string      // File path
 	Ranges []LineRange // Line ranges to include, empty means all lines
+	FS     fs.FS       // File system to read from (required)
+}
+
+// NewFileSelection creates a new FileSelection with the given filesystem, path and ranges.
+// The fs parameter is required and must not be nil.
+func NewFileSelection(fsys fs.FS, path string, ranges []LineRange) FileSelection {
+	if fsys == nil {
+		panic("NewFileSelection: fs parameter must not be nil")
+	}
+	return FileSelection{
+		FS:     fsys,
+		Path:   path,
+		Ranges: ranges,
+	}
 }
 
 // Read writes selected line ranges from the file to the provided writer.
@@ -86,7 +100,7 @@ func (fs *FileSelection) Read(w io.Writer) (int64, error) {
 	}
 
 	// Open the file
-	file, err := os.Open(fs.Path)
+	file, err := fs.FS.Open(fs.Path)
 	if err != nil {
 		return 0, fmt.Errorf("failed to open file %s: %w", fs.Path, err)
 	}
@@ -94,9 +108,16 @@ func (fs *FileSelection) Read(w io.Writer) (int64, error) {
 
 	// Fast path for whole file (no ranges)
 	if len(fs.Ranges) == 0 {
-		// Check if binary by reading first 512 bytes
+		// For binary check, we need to read the file twice
+		// First, check if it's binary
+		checkFile, err := fs.FS.Open(fs.Path)
+		if err != nil {
+			return 0, fmt.Errorf("failed to open file for binary check %s: %w", fs.Path, err)
+		}
+
 		header := make([]byte, 512)
-		n, err := file.Read(header)
+		n, err := checkFile.Read(header)
+		checkFile.Close()
 		if err != nil && err != io.EOF {
 			return 0, fmt.Errorf("failed to read file header %s: %w", fs.Path, err)
 		}
@@ -105,12 +126,6 @@ func (fs *FileSelection) Read(w io.Writer) (int64, error) {
 			fmt.Fprintf(w, "\n<!-- Read File: %s -->\n", fs.Path)
 			n, err := io.WriteString(w, "[binary file omitted]")
 			return int64(n), err
-		}
-
-		// Reset file position
-		_, err = file.Seek(0, 0)
-		if err != nil {
-			return 0, fmt.Errorf("failed to seek file %s: %w", fs.Path, err)
 		}
 
 		// Write header comment
@@ -180,7 +195,7 @@ func (fs *FileSelection) extractContents(sortedRanges []LineRange) ([]FileSelect
 	}
 
 	// Open the file
-	file, err := os.Open(fs.Path)
+	file, err := fs.FS.Open(fs.Path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open file %s: %w", fs.Path, err)
 	}

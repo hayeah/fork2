@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sync"
@@ -17,12 +18,14 @@ import (
 type DirectoryTree struct {
 	RootPath string
 	dirItems func() ([]item, error) // Memoized function for walkItems
+	fsys     fs.FS                  // File system to use for file operations
 }
 
 // NewDirectoryTree constructs a DirectoryTree for the given rootPath, but does not walk the directory yet.
 func NewDirectoryTree(rootPath string) *DirectoryTree {
 	dt := &DirectoryTree{
 		RootPath: rootPath,
+		fsys:     os.DirFS(rootPath),
 	}
 	dt.dirItems = sync.OnceValues(dt.dirItemsImpl)
 	return dt
@@ -82,7 +85,7 @@ func (dt *DirectoryTree) SelectFiles(selectString string) ([]selection.FileSelec
 				return nil, err
 			}
 			for _, path := range matchedPaths {
-				set.Add(selection.FileSelection{Path: path, Ranges: nil})
+				set.Add(selection.NewFileSelection(dt.fsys, path, nil))
 			}
 		}
 	}

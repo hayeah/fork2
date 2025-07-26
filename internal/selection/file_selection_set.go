@@ -38,6 +38,7 @@ func (s *FileSelectionSet) Add(selection FileSelection) {
 		newSelection := FileSelection{
 			Path:   selection.Path,
 			Ranges: selection.Ranges,
+			FS:     selection.FS,
 		}
 
 		// If there are ranges, coalesce them

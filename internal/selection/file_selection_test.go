@@ -68,11 +68,11 @@ func TestFileSelectionContentLineRange(t *testing.T) {
 	assert.NoError(err)
 
 	// Test extracting all lines (no ranges)
-	fs := FileSelection{Path: testFile, Ranges: []LineRange{}}
+	fs := NewFileSelection(os.DirFS(tempDir), "test.txt", []LineRange{})
 	contents, err := fs.Contents()
 	assert.NoError(err)
 	assert.Len(contents, 1)
-	assert.Equal(testFile, contents[0].Path)
+	assert.Equal("test.txt", contents[0].Path)
 	assert.Equal(content.String(), contents[0].Content)
 	assert.Nil(contents[0].Range)
 
@@ -81,19 +81,19 @@ func TestFileSelectionContentLineRange(t *testing.T) {
 		{Start: 1, End: 3},
 		{Start: 10, End: 12},
 	}
-	fs = FileSelection{Path: testFile, Ranges: ranges}
+	fs = NewFileSelection(os.DirFS(tempDir), "test.txt", ranges)
 	contents, err = fs.Contents()
 	assert.NoError(err)
 	assert.Len(contents, 2)
 
 	// Check first range
-	assert.Equal(testFile, contents[0].Path)
+	assert.Equal("test.txt", contents[0].Path)
 	assert.Equal("Line 1\nLine 2\nLine 3\n", contents[0].Content)
 	assert.Equal(1, contents[0].Range.Start)
 	assert.Equal(3, contents[0].Range.End)
 
 	// Check second range
-	assert.Equal(testFile, contents[1].Path)
+	assert.Equal("test.txt", contents[1].Path)
 	assert.Equal("Line 10\nLine 11\nLine 12\n", contents[1].Content)
 	assert.Equal(10, contents[1].Range.Start)
 	assert.Equal(12, contents[1].Range.End)
@@ -105,7 +105,7 @@ func TestFileSelectionContentLineRange(t *testing.T) {
 	// assert.Equal(expected, selectedLines)
 
 	// Test with non-existent file
-	fs = FileSelection{Path: filepath.Join(tempDir, "nonexistent.txt"), Ranges: ranges}
+	fs = NewFileSelection(os.DirFS(tempDir), "nonexistent.txt", ranges)
 	_, err = fs.Contents()
 	assert.Error(err)
 }
@@ -113,16 +113,17 @@ func TestFileSelectionContentLineRange(t *testing.T) {
 // TestParseLineRangeFromPath tests the parseLineRangeFromPath function
 func TestParseLineRangeFromPath(t *testing.T) {
 	assert := assert.New(t)
+	fsys := os.DirFS(".")
 
 	t.Run("PathWithoutRange", func(t *testing.T) {
-		result, err := ParseFileSelection("path/to/file.go")
+		result, err := ParseFileSelection(fsys, "path/to/file.go")
 		assert.NoError(err)
 		assert.Equal("path/to/file.go", result.Path)
 		assert.Empty(result.Ranges, "Should have no ranges for path without # marker")
 	})
 
 	t.Run("PathWithValidRange", func(t *testing.T) {
-		result, err := ParseFileSelection("path/to/file.go#10,20")
+		result, err := ParseFileSelection(fsys, "path/to/file.go#10,20")
 		assert.NoError(err)
 		assert.Equal("path/to/file.go", result.Path)
 		assert.Len(result.Ranges, 1, "Should have one range")
@@ -131,38 +132,38 @@ func TestParseLineRangeFromPath(t *testing.T) {
 	})
 
 	t.Run("PathWithInvalidFormat", func(t *testing.T) {
-		_, err := ParseFileSelection("path/to/file.go#abc,20")
+		_, err := ParseFileSelection(fsys, "path/to/file.go#abc,20")
 		assert.Error(err)
 		assert.Contains(err.Error(), "invalid file path format")
 	})
 
 	t.Run("PathWithInvalidEndLine", func(t *testing.T) {
 		// This will now fail at the regex matching stage
-		_, err := ParseFileSelection("path/to/file.go#10,xyz")
+		_, err := ParseFileSelection(fsys, "path/to/file.go#10,xyz")
 		assert.Error(err)
 		assert.Contains(err.Error(), "invalid file path format")
 	})
 
 	t.Run("PathWithHashButNoRange", func(t *testing.T) {
-		_, err := ParseFileSelection("path/to/file.go#")
+		_, err := ParseFileSelection(fsys, "path/to/file.go#")
 		assert.Error(err)
 		assert.Contains(err.Error(), "invalid file path format")
 	})
 
 	t.Run("PathWithInvalidRangeFormat", func(t *testing.T) {
-		_, err := ParseFileSelection("path/to/file.go#10-20")
+		_, err := ParseFileSelection(fsys, "path/to/file.go#10-20")
 		assert.Error(err)
 		assert.Contains(err.Error(), "invalid file path format")
 	})
 
 	t.Run("PathWithMultipleHashes", func(t *testing.T) {
-		_, err := ParseFileSelection("path/to/file#10#20")
+		_, err := ParseFileSelection(fsys, "path/to/file#10#20")
 		assert.Error(err)
 		assert.Contains(err.Error(), "invalid file path format")
 	})
 
 	t.Run("PathWithMissingComma", func(t *testing.T) {
-		_, err := ParseFileSelection("path/to/file.go#1020")
+		_, err := ParseFileSelection(fsys, "path/to/file.go#1020")
 		assert.Error(err)
 		assert.Contains(err.Error(), "invalid file path format")
 	})

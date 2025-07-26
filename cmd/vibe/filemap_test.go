@@ -29,15 +29,10 @@ func TestWriteFileMapDirectory(t *testing.T) {
 	assert.NoError(err)
 
 	// Create file selections including a directory
+	fsys := os.DirFS(tempDir)
 	selections := []selection.FileSelection{
-		{
-			Path:   subDir,
-			Ranges: []selection.LineRange{}, // Not applicable for directory
-		},
-		{
-			Path:   textFile,
-			Ranges: []selection.LineRange{}, // All content
-		},
+		selection.NewFileSelection(fsys, "subdir", nil),   // Directory
+		selection.NewFileSelection(fsys, "text.txt", nil), // All content
 	}
 
 	// Create a buffer to write to
@@ -51,6 +46,7 @@ func TestWriteFileMapDirectory(t *testing.T) {
 	// Check output - should only contain the text file
 	output := buf.String()
 
-	assert.Contains(output, textFile)
+	// Should contain relative path in the header comment
+	assert.Contains(output, "text.txt")
 	assert.Contains(output, textContent)
 }
