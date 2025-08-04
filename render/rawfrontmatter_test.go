@@ -21,7 +21,8 @@ func TestRawFrontMatterCapture(t *testing.T) {
 	assert.NoError(err)
 	assert.Equal("layout=\"base.md\"", tmpl.RawFrontMatter)
 	assert.NotNil(tmpl.Config)
-	assert.Equal("base.md", tmpl.Config.Layout)
+	assert.Equal(1, len(tmpl.Config.Layout))
+	assert.Equal("base.md", tmpl.Config.Layout[0])
 	assert.Equal("Hello", tmpl.Body)
 
 	// Test complex frontmatter capture
@@ -29,7 +30,8 @@ func TestRawFrontMatterCapture(t *testing.T) {
 	assert.NoError(err)
 	assert.Equal("layout=\"base.md\"\nselect=\"*.go\"\ndirtree=\"cmd/;internal/\"", tmpl.RawFrontMatter)
 	assert.NotNil(tmpl.Config)
-	assert.Equal("base.md", tmpl.Config.Layout)
+	assert.Equal(1, len(tmpl.Config.Layout))
+	assert.Equal("base.md", tmpl.Config.Layout[0])
 	assert.Equal("*.go", tmpl.Config.Select)
 	assert.Equal("cmd/;internal/", tmpl.Config.Dirtree)
 	assert.Equal("Content", tmpl.Body)

@@ -242,7 +242,7 @@ OUTER-END`,
 	if tmpl.Config == nil {
 		tmpl.Config = &vibe.AppConfig{}
 	}
-	tmpl.Config.Layout = "layouts/main.md" // bare path => repo root FS
+	tmpl.Config.Layout = vibe.TemplateNames{"layouts/main.md"} // bare path => repo root FS
 
 	out, err := renderer.RenderTemplate(tmpl, data)
 	assert.NoError(err)
@@ -332,13 +332,15 @@ func TestLoadTemplateParsesConfig(t *testing.T) {
 	tmpl, err := ctx.LoadTemplate("foo.md", nil)
 	assert.NoError(err)
 	assert.NotNil(tmpl.Config)
-	assert.Equal("base.md", tmpl.Config.Layout)
+	assert.Equal(1, len(tmpl.Config.Layout))
+	assert.Equal("base.md", tmpl.Config.Layout[0])
 
 	// Test parsing of all frontmatter fields including dirtree
 	tmpl, err = ctx.LoadTemplate("bar.md", nil)
 	assert.NoError(err)
 	assert.NotNil(tmpl.Config)
-	assert.Equal("base.md", tmpl.Config.Layout)
+	assert.Equal(1, len(tmpl.Config.Layout))
+	assert.Equal("base.md", tmpl.Config.Layout[0])
 	assert.Equal("*.go", tmpl.Config.Select)
 	assert.Equal("cmd/;internal/", tmpl.Config.Dirtree)
 }

@@ -11,6 +11,7 @@ import (
 	"text/template"
 
 	"github.com/hayeah/fork2/internal/metrics"
+	"github.com/hayeah/fork2/vibe"
 )
 
 // countingWriter is an io.Writer that counts bytes written
@@ -89,7 +90,7 @@ func (r *Renderer) RenderPartialTo(w io.Writer, partialPath string, data Content
 
 	// Force no layout for partials
 	if tmpl.Config != nil {
-		tmpl.Config.Layout = ""
+		tmpl.Config.Layout = nil
 	}
 
 	// Render the template
@@ -216,7 +217,7 @@ func (r *Renderer) processFile(path string, data Content) (string, error) {
 
 // processFiles processes a list of files and writes their concatenated content to w
 // Each file's content is separated by at least one newline
-func (r *Renderer) processFiles(w io.Writer, files []string, data Content) error {
+func (r *Renderer) processFiles(w io.Writer, files vibe.TemplateNames, data Content) error {
 	if len(files) == 0 {
 		return nil
 	}
@@ -257,7 +258,7 @@ func (r *Renderer) renderTemplateInternal(
 
 	var layouts []string
 	if t.Config != nil {
-		layouts = splitSemicolon(t.Config.Layout)
+		layouts = t.Config.Layout
 	}
 	if depth+len(layouts) > 10 {
 		return fmt.Errorf("layout nesting too deep (max 10): %s", t.Path)
@@ -288,18 +289,14 @@ func (r *Renderer) renderTemplateInternal(
 	}
 
 	// ─── Process before files (with empty .Content) ─────────────────────────
-	var beforeFiles []string
-	if t.Config != nil {
-		beforeFiles = splitSemicolon(t.Config.Before)
-	}
-	if len(beforeFiles) > 0 {
+	if t.Config != nil && len(t.Config.Before) > 0 {
 		// Temporarily set empty content for before templates
 		prevContent := data.Content()
 		data.SetContent("")
 
 		// Use a counting writer to track if anything was written
 		cw := &countingWriter{w: w}
-		if err := r.processFiles(cw, beforeFiles, data); err != nil {
+		if err := r.processFiles(cw, t.Config.Before, data); err != nil {
 			return fmt.Errorf("error processing before files: %w", err)
 		}
 
@@ -372,18 +369,14 @@ func (r *Renderer) renderTemplateInternal(
 	}
 
 	// ─── Process after files (with empty .Content) ──────────────────────────
-	var afterFiles []string
-	if t.Config != nil {
-		afterFiles = splitSemicolon(t.Config.After)
-	}
-	if len(afterFiles) > 0 {
+	if t.Config != nil && len(t.Config.After) > 0 {
 		// Temporarily set empty content for after templates
 		prevContent := data.Content()
 		data.SetContent("")
 
 		// Use a counting writer to track if anything was written
 		cw := &countingWriter{w: w}
-		if err := r.processFiles(cw, afterFiles, data); err != nil {
+		if err := r.processFiles(cw, t.Config.After, data); err != nil {
 			return fmt.Errorf("error processing after files: %w", err)
 		}
 

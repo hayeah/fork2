@@ -185,7 +185,7 @@ func ProvideAppConfig(tmpl *render.Template, args OutCmd) (*vibe.AppConfig, erro
 		config.Mode = args.Mode
 	}
 	if args.Layout != "" {
-		config.Layout = args.Layout
+		config.Layout = vibe.TemplateNames{args.Layout}
 	}
 	if args.Select != "" {
 		config.Select = args.Select
@@ -198,8 +198,8 @@ func ProvideAppConfig(tmpl *render.Template, args OutCmd) (*vibe.AppConfig, erro
 	}
 
 	// Apply default layout if needed
-	if config.Layout == "" && config.Select != "" {
-		config.Layout = "files"
+	if len(config.Layout) == 0 && config.Select != "" {
+		config.Layout = vibe.TemplateNames{"files"}
 	}
 
 	return config, nil
