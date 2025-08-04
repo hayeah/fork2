@@ -135,7 +135,15 @@ func (ctx *Resolver) ResolvePartialPath(partialPath string, cur *Template) (fs.F
 	case strings.HasPrefix(partialPath, "./") || strings.HasPrefix(partialPath, "../") || partialPath == "." || partialPath == "..":
 		// Local template (relative to current template)
 		if currentTemplatePath == "" {
-			return nil, "", fmt.Errorf("cannot resolve relative path without currentTemplatePath")
+			// When no parent template exists, resolve relative paths from cwd
+			abs, err := filepath.Abs(partialPath)
+			if err != nil {
+				return nil, "", err
+			}
+			dir := filepath.Dir(abs)
+			base := filepath.Base(abs)
+			fsys := &CwdFS{Base: dir}
+			return ctx.resolveTemplateFile(base, fsys)
 		}
 		if currentTemplateFS == nil {
 			return nil, "", fmt.Errorf("cannot resolve relative path without currentTemplateFS")

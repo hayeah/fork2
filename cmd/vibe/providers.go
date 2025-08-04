@@ -140,9 +140,18 @@ func ProvideCounter(args OutCmd) (metrics.Counter, error) {
 }
 
 // ProvideFSList builds the filesystem stack for templates.
+// Search precedence: cwd, repo root, template paths, VIBE_PROMPTS, ~/.vibe, built-ins
 func ProvideFSList(env *AppEnv, args OutCmd) ([]fs.FS, error) {
 	root := string(env.RootPath)
-	partials := []fs.FS{os.DirFS(root)}
+	cwd, _ := os.Getwd()
+
+	// Start with current working directory
+	partials := []fs.FS{&render.CwdFS{Base: cwd}}
+
+	// Add repo root only if different from cwd
+	if filepath.Clean(root) != filepath.Clean(cwd) {
+		partials = append(partials, os.DirFS(root))
+	}
 
 	// Add any additional template paths from args
 	for _, path := range args.TemplatePaths {
