@@ -12,44 +12,48 @@ import (
 
 // Injectors from wire.go:
 
-func BuildOutPipeline(root string, args OutCmd) (*OutPipeline, error) {
-	appEnv, err := ProvideAppEnv(root, args)
+func initOutRunner(args OutCmd) (*OutRunner, error) {
+	v, err := ProvideFSList(args)
 	if err != nil {
 		return nil, err
 	}
-	directoryTree, err := ProvideDirectoryTreeService(appEnv)
+	template, err := ProvideEntryTemplate(args, v)
 	if err != nil {
 		return nil, err
 	}
-	v, err := ProvideFSList(appEnv, args)
+	appConfig, err := ProvideAppConfig(template, args)
 	if err != nil {
 		return nil, err
 	}
-	resolver := ProvideResolver(appEnv, v)
+	directoryTree, err := ProvideDirectoryTreeService(appConfig)
+	if err != nil {
+		return nil, err
+	}
+	resolver := ProvideResolver(appConfig, v)
 	counter, err := ProvideCounter(args)
 	if err != nil {
 		return nil, err
 	}
 	outputMetrics := ProvideMetrics(counter)
 	renderer := ProvideRenderer(resolver, outputMetrics)
-	fs, err := ProvideRootFS(appEnv)
+	fs, err := ProvideRootFS(appConfig)
 	if err != nil {
 		return nil, err
 	}
-	fileMapWriter := ProvideFileMapService(appEnv, fs, outputMetrics)
+	fileMapWriter := ProvideFileMapService(appConfig, fs, outputMetrics)
 	contentLoader := ProvideContentLoader()
-	template, err := ProvideTemplate(appEnv, resolver, args, v)
-	if err != nil {
-		return nil, err
-	}
 	outPipeline := &OutPipeline{
 		DT:       directoryTree,
 		Renderer: renderer,
 		FileMap:  fileMapWriter,
 		Metrics:  outputMetrics,
 		Loader:   contentLoader,
-		Env:      appEnv,
+		Config:   appConfig,
 		Template: template,
 	}
-	return outPipeline, nil
+	outRunner := &OutRunner{
+		Args:     args,
+		Pipeline: outPipeline,
+	}
+	return outRunner, nil
 }

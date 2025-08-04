@@ -20,7 +20,7 @@ func runRunner(t *testing.T, cmd OutCmd, root string) string {
 	// Add testdata/templates to the template search path
 	cmd.TemplatePaths = []string{"testdata/templates"}
 
-	runner, err := NewAskRunner(cmd)
+	runner, err := initOutRunner(cmd)
 	require.NoError(t, err)
 
 	if cmd.Output == "-" {

@@ -7,12 +7,6 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
-// RawFrontMatter represents the raw front matter content and tag
-type RawFrontMatter struct {
-	Content string
-	Tag     string
-}
-
 // ParseFrontMatter extracts front matter from the template content
 // Leading blank lines are skipped before looking for front matter delimiters
 func ParseFrontMatter(data string) (string, string, string, error) {

@@ -11,8 +11,7 @@ import (
 func TestProvideFSList_CwdFirst(t *testing.T) {
 	// Create test directories
 	tmpDir := t.TempDir()
-	repoRoot := filepath.Join(tmpDir, "repo")
-	workDir := filepath.Join(repoRoot, "subdir", "work")
+	workDir := filepath.Join(tmpDir, "subdir", "work")
 
 	if err := os.MkdirAll(workDir, 0755); err != nil {
 		t.Fatal(err)
@@ -29,23 +28,17 @@ func TestProvideFSList_CwdFirst(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Create app environment
-	env := &AppEnv{
-		RootPath:         RootPath(repoRoot),
-		WorkingDirectory: WorkingDirectory(workDir),
-	}
-
 	args := OutCmd{}
 
 	// Get filesystem list
-	fsList, err := ProvideFSList(env, args)
+	fsList, err := ProvideFSList(args)
 	if err != nil {
 		t.Fatalf("ProvideFSList failed: %v", err)
 	}
 
-	// Verify we have at least 2 filesystems (cwd and repo root)
-	if len(fsList) < 2 {
-		t.Fatalf("expected at least 2 filesystems, got %d", len(fsList))
+	// Verify we have at least 1 filesystem (cwd)
+	if len(fsList) < 1 {
+		t.Fatalf("expected at least 1 filesystem, got %d", len(fsList))
 	}
 
 	// First filesystem should be CwdFS
@@ -79,27 +72,20 @@ func TestProvideFSList_SameDirectory(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Create app environment where root and cwd are the same
-	env := &AppEnv{
-		RootPath:         RootPath(tmpDir),
-		WorkingDirectory: WorkingDirectory(tmpDir),
-	}
-
 	args := OutCmd{}
 
 	// Get filesystem list
-	fsList, err := ProvideFSList(env, args)
+	fsList, err := ProvideFSList(args)
 	if err != nil {
 		t.Fatalf("ProvideFSList failed: %v", err)
 	}
 
-	// Should still have CwdFS as first, but no duplicate for repo root
+	// Should still have CwdFS as first
 	if _, ok := fsList[0].(*render.CwdFS); !ok {
 		t.Errorf("expected first filesystem to be CwdFS, got %T", fsList[0])
 	}
 
 	// Count how many times we have a filesystem for tmpDir
-	// (Should be only once since cwd and root are the same)
 	dirFSCount := 0
 	for i, fs := range fsList {
 		switch fs.(type) {
@@ -128,17 +114,12 @@ func TestProvideFSList_TemplatePathsIncluded(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	env := &AppEnv{
-		RootPath:         RootPath(tmpDir),
-		WorkingDirectory: WorkingDirectory(tmpDir),
-	}
-
 	args := OutCmd{
 		TemplatePaths: []string{customPath1, customPath2},
 	}
 
 	// Get filesystem list
-	fsList, err := ProvideFSList(env, args)
+	fsList, err := ProvideFSList(args)
 	if err != nil {
 		t.Fatalf("ProvideFSList failed: %v", err)
 	}

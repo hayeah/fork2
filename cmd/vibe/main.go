@@ -46,7 +46,7 @@ func NewRunner(args Args) *Runner {
 func (r *Runner) Run() error {
 	switch {
 	case r.Args.Out != nil:
-		pickRunner, err := NewAskRunner(*r.Args.Out)
+		pickRunner, err := initOutRunner(*r.Args.Out)
 		if err != nil {
 			return err
 		}

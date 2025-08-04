@@ -10,6 +10,7 @@ import (
 	"github.com/hayeah/fork2/internal/metrics"
 	"github.com/hayeah/fork2/internal/selection"
 	"github.com/hayeah/fork2/render"
+	"github.com/hayeah/fork2/vibe"
 )
 
 // OutPipeline groups all services needed by the out command.
@@ -19,7 +20,7 @@ type OutPipeline struct {
 	FileMap  *FileMapWriter
 	Metrics  *metrics.OutputMetrics
 	Loader   ContentLoader
-	Env      *AppEnv
+	Config   *vibe.AppConfig
 
 	Template     *render.Template
 	ContentSpecs []string
@@ -119,7 +120,7 @@ func (d *outData) SelectedPaths() []string {
 
 // Run executes the rendering pipeline using args for configuration.
 func (p *OutPipeline) Run(out io.Writer) error {
-	dataMap, err := parseDataParams(p.Env.DataPairs)
+	dataMap, err := parseDataParams(p.Config.DataPairs)
 	if err != nil {
 		return err
 	}
@@ -138,8 +139,8 @@ func (p *OutPipeline) Run(out io.Writer) error {
 		return fmt.Errorf("template not set")
 	}
 
-	selectPattern := tmpl.FrontMatter.Select
-	dirTreePattern := tmpl.FrontMatter.Dirtree
+	selectPattern := p.Config.Select
+	dirTreePattern := p.Config.Dirtree
 
 	root := p.DT.RootPath
 
@@ -148,7 +149,7 @@ func (p *OutPipeline) Run(out io.Writer) error {
 		selectPattern:    selectPattern,
 		dirTreePattern:   dirTreePattern,
 		rootPath:         root,
-		WorkingDirectory: string(p.Env.WorkingDirectory),
+		WorkingDirectory: p.Config.WorkingDirectory,
 		ContentStr:       content,
 		Data:             dataMap,
 	}

@@ -120,8 +120,8 @@ func TestOutRunner_ErrorHandling(t *testing.T) {
 				Output:         "-",
 				TokenEstimator: "simple",
 			},
-			errPhase: "run",
-			errMsg:   "",
+			errPhase: "new",
+			errMsg:   "template \"nonexistent.md\" not found",
 		},
 	}
 
@@ -131,7 +131,7 @@ func TestOutRunner_ErrorHandling(t *testing.T) {
 			c.cmd.Root = "testdata/project"
 			c.cmd.TemplatePaths = []string{"testdata/templates"}
 
-			runner, err := NewAskRunner(c.cmd)
+			runner, err := initOutRunner(c.cmd)
 			if c.errPhase == "new" {
 				assert.Error(t, err)
 				if c.errMsg != "" {
@@ -202,7 +202,7 @@ func TestOutRunner_TokenEstimator(t *testing.T) {
 				TemplatePaths:  []string{"testdata/templates"},
 			}
 
-			runner, err := NewAskRunner(cmd)
+			runner, err := initOutRunner(cmd)
 			if tt.wantErr {
 				assert.Error(t, err)
 				return

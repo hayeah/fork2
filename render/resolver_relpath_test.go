@@ -61,8 +61,9 @@ func TestResolvePartialPath_RelativeWithoutParent(t *testing.T) {
 		},
 		{
 			name:        "parent dir reference without parent template",
-			partialPath: "..",
-			wantErr:     true, // Directory, not a file
+			partialPath: "../foo.md", // Try to reference a file in parent dir
+			wantContent: "foo content",
+			wantErr:     false,
 		},
 	}
 

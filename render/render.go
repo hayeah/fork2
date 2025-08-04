@@ -88,7 +88,9 @@ func (r *Renderer) RenderPartialTo(w io.Writer, partialPath string, data Content
 	}()
 
 	// Force no layout for partials
-	tmpl.FrontMatter.Layout = ""
+	if tmpl.Config != nil {
+		tmpl.Config.Layout = ""
+	}
 
 	// Render the template
 	return r.RenderTemplateTo(w, tmpl, data)
@@ -253,7 +255,10 @@ func (r *Renderer) renderTemplateInternal(
 		return fmt.Errorf("layout nesting too deep (max 10): %s", t.Path)
 	}
 
-	layouts := splitSemicolon(t.FrontMatter.Layout)
+	var layouts []string
+	if t.Config != nil {
+		layouts = splitSemicolon(t.Config.Layout)
+	}
 	if depth+len(layouts) > 10 {
 		return fmt.Errorf("layout nesting too deep (max 10): %s", t.Path)
 	}
@@ -283,7 +288,10 @@ func (r *Renderer) renderTemplateInternal(
 	}
 
 	// ─── Process before files (with empty .Content) ─────────────────────────
-	beforeFiles := splitSemicolon(t.FrontMatter.Before)
+	var beforeFiles []string
+	if t.Config != nil {
+		beforeFiles = splitSemicolon(t.Config.Before)
+	}
 	if len(beforeFiles) > 0 {
 		// Temporarily set empty content for before templates
 		prevContent := data.Content()
@@ -364,7 +372,10 @@ func (r *Renderer) renderTemplateInternal(
 	}
 
 	// ─── Process after files (with empty .Content) ──────────────────────────
-	afterFiles := splitSemicolon(t.FrontMatter.After)
+	var afterFiles []string
+	if t.Config != nil {
+		afterFiles = splitSemicolon(t.Config.After)
+	}
 	if len(afterFiles) > 0 {
 		// Temporarily set empty content for after templates
 		prevContent := data.Content()

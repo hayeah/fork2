@@ -53,7 +53,7 @@ RENDER TEST`,
 		"include_me.md": "INCLUDED",
 	})
 
-	ctx := NewResolver(repoFS)
+	ctx := NewResolver("", repoFS)
 	renderer := NewRenderer(ctx, nil)
 	assert := assert.New(t)
 
@@ -162,7 +162,7 @@ OUTER[{{ .Content }}]`,
 		"outer_after.md":  "OUTER_AFTER",
 	})
 
-	ctx := NewResolver(repoFS)
+	ctx := NewResolver("", repoFS)
 	renderer := NewRenderer(ctx, nil)
 	assert := assert.New(t)
 
@@ -208,7 +208,7 @@ TEST`,
 		"after_template.md":  "AFTER:{{ .Content }}",
 	})
 
-	ctx := NewResolver(repoFS)
+	ctx := NewResolver("", repoFS)
 	renderer := NewRenderer(ctx, nil)
 	assert := assert.New(t)
 
@@ -250,7 +250,7 @@ CONTENT`,
 		"invalid.md": "{{ .BadMethod }}",
 	})
 
-	ctx := NewResolver(repoFS)
+	ctx := NewResolver("", repoFS)
 	renderer := NewRenderer(ctx, nil)
 	assert := assert.New(t)
 
@@ -297,7 +297,7 @@ INDEX`,
 		"shared/nav.md":            "NAV",
 	})
 
-	ctx := NewResolver(repoFS)
+	ctx := NewResolver("", repoFS)
 	renderer := NewRenderer(ctx, nil)
 	assert := assert.New(t)
 
