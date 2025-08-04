@@ -19,6 +19,29 @@ import (
 //go:embed templates
 var systemTemplatesFS embed.FS
 
+// prependNoDuplicate prepends elements to a slice only if they don't already exist
+func prependNoDuplicate(list []string, elements ...string) []string {
+	result := make([]string, 0, len(elements)+len(list))
+
+	// Add new elements that don't exist in the list
+	for _, elem := range elements {
+		found := false
+		for _, existing := range list {
+			if existing == elem {
+				found = true
+				break
+			}
+		}
+		if !found {
+			result = append(result, elem)
+		}
+	}
+
+	// Append the original list
+	result = append(result, list...)
+	return result
+}
+
 // DefaultContentLoader loads content from various sources.
 type DefaultContentLoader struct {
 	specs []string
@@ -57,13 +80,10 @@ func ProvideRenderer(resolver *render.Resolver, m *metrics.OutputMetrics) *rende
 
 // ProvideEntryTemplate loads the entry template based on OutCmd arguments.
 func ProvideEntryTemplate(args OutCmd, fsList []fs.FS) (*render.Template, error) {
-	// decide which file the user wants to render
 	templatePath := args.Template
-	if templatePath == "" && args.Select != "" {
-		templatePath = "files"
-	}
+
 	if templatePath == "" {
-		return nil, nil // nothing to inspect
+		templatePath = "<empty>"
 	}
 
 	// Create a resolver without mode to load the template
@@ -197,10 +217,15 @@ func ProvideAppConfig(tmpl *render.Template, args OutCmd) (*vibe.AppConfig, erro
 		config.Content = args.Content
 	}
 
-	// Apply default layout if needed
-	if len(config.Layout) == 0 && config.Select != "" {
-		config.Layout = vibe.TemplateNames{"files"}
+	var autoTemplates vibe.TemplateNames
+
+	// Prepend special templates to Before list when files are selected
+	autoTemplates = append(autoTemplates, "__vibe")
+	if config.Select != "" {
+		autoTemplates = append(autoTemplates, "__files")
 	}
+
+	config.Before = vibe.TemplateNames(prependNoDuplicate(config.Before, autoTemplates...))
 
 	return config, nil
 }

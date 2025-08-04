@@ -145,6 +145,9 @@ func (p *OutPipeline) Run() error {
 		return fmt.Errorf("template not set")
 	}
 
+	// Set the AppConfig on the template so Before/After templates are processed
+	tmpl.Config = p.Config
+
 	selectPattern := p.Config.Select
 	dirTreePattern := p.Config.Dirtree
 

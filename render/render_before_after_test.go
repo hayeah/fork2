@@ -32,9 +32,9 @@ after = "third.md;fourth.md"
 ---
 MULTI CONTENT`,
 
-		// Template with bang prefix for rendering
+		// Template with rendering (no longer needs bang prefix)
 		"render_test.md": `---toml
-before = "!render_me.md"
+before = "render_me.md"
 after = "include_me.md"
 ---
 RENDER TEST`,
@@ -105,7 +105,7 @@ RENDER TEST`,
 		assert.Equal("MULTI CONTENT", lines[4])
 	})
 
-	t.Run("bang prefix for template rendering", func(t *testing.T) {
+	t.Run("template rendering in before/after", func(t *testing.T) {
 		tmpl, err := ctx.LoadTemplate("render_test.md", nil)
 		assert.NoError(err)
 
@@ -197,10 +197,10 @@ OUTER[{{ .Content }}]`,
 
 func TestBeforeAfterEmptyContent(t *testing.T) {
 	repoFS := createTestFS(map[string]string{
-		// Template with before/after that use .Content
+		// Template with before/after that use .Content (no longer needs bang prefix)
 		"test.md": `---toml
-before = "!before_template.md"
-after = "!after_template.md"
+before = "before_template.md"
+after = "after_template.md"
 ---
 TEST`,
 

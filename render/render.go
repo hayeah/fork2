@@ -200,19 +200,10 @@ func splitSemicolon(s string) []string {
 	return out
 }
 
-// processFile handles loading and processing a file based on bang prefix
-// If the path starts with !, it's rendered as a template
-// Otherwise, it's included as raw content
+// processFile renders a file as a template
 func (r *Renderer) processFile(path string, data Content) (string, error) {
-	// Check for bang prefix
-	if strings.HasPrefix(path, "!") {
-		// Remove the bang prefix and render as template
-		templatePath := strings.TrimPrefix(path, "!")
-		return r.RenderPartial(templatePath, data)
-	}
-
-	// No bang prefix - include as raw content
-	return r.Include(path)
+	// Always render as template
+	return r.RenderPartial(path, data)
 }
 
 // processFiles processes a list of files and writes their concatenated content to w
