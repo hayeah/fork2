@@ -41,9 +41,9 @@ func initOutRunner(args OutCmd) (*OutRunner, error) {
 		return nil, err
 	}
 	fileMapWriter := ProvideFileMapService(appConfig, fs, outputMetrics)
-	contentLoader := ProvideContentLoader()
+	contentLoader := ProvideContentLoader(appConfig)
 	outPipeline := &OutPipeline{
-		DT:       directoryTree,
+		DirTree:  directoryTree,
 		Renderer: renderer,
 		FileMap:  fileMapWriter,
 		Metrics:  outputMetrics,

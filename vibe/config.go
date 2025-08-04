@@ -7,6 +7,7 @@ type AppConfig struct {
 	RootPath         string
 	WorkingDirectory string
 	DataPairs        []string
+	Output           string // Output destination: '-' for stdout, file path, or empty for clipboard
 
 	// From template frontmatter (can be overridden by command-line)
 	Root          string   `toml:"root"`

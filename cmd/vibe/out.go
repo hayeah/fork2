@@ -1,9 +1,7 @@
 package main
 
 import (
-	"bytes"
 	"fmt"
-	"io"
 	"io/fs"
 	"log"
 	"net/url"
@@ -11,7 +9,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/atotto/clipboard"
 	"github.com/pkoukk/tiktoken-go"
 )
 
@@ -41,36 +38,7 @@ type OutRunner struct {
 
 // Run executes the file picking process
 func (r *OutRunner) Run() error {
-	var buf bytes.Buffer
-	var dest io.Writer
-	switch {
-	case r.Args.Output == "-":
-		dest = os.Stdout
-	case r.Args.Output != "":
-		file, err := os.Create(r.Args.Output)
-		if err != nil {
-			return fmt.Errorf("failed to create output file %s: %v", r.Args.Output, err)
-		}
-		defer file.Close()
-		dest = file
-	default:
-		dest = &buf
-	}
-
-	r.Pipeline.ContentSpecs = r.Args.Content
-
-	if err := r.Pipeline.Run(dest); err != nil {
-		return err
-	}
-
-	if r.Args.Output == "" {
-		if err := clipboard.WriteAll(buf.String()); err != nil {
-			return fmt.Errorf("failed to copy to clipboard: %v", err)
-		}
-		fmt.Fprintln(os.Stderr, "Output copied to clipboard")
-	}
-
-	return nil
+	return r.Pipeline.Run()
 }
 
 // parseDataParams parses data parameters from CLI flags into a map

@@ -19,14 +19,18 @@ import (
 //go:embed templates
 var systemTemplatesFS embed.FS
 
-// DefaultContentLoader implements ContentLoader using render.LoadContentSources.
-type DefaultContentLoader struct{}
-
-func (DefaultContentLoader) LoadSources(ctx context.Context, specs []string) (string, error) {
-	return render.LoadContentSources(ctx, specs)
+// DefaultContentLoader loads content from various sources.
+type DefaultContentLoader struct {
+	specs []string
 }
 
-func ProvideContentLoader() ContentLoader { return DefaultContentLoader{} }
+func (c *DefaultContentLoader) Content() (string, error) {
+	return render.LoadContentSources(context.Background(), c.specs)
+}
+
+func ProvideContentLoader(config *vibe.AppConfig) ContentLoader {
+	return &DefaultContentLoader{specs: config.Content}
+}
 
 // ProvideRootFS creates a filesystem abstraction for the repo root
 func ProvideRootFS(config *vibe.AppConfig) (fs.FS, error) {
@@ -160,6 +164,7 @@ func ProvideAppConfig(tmpl *render.Template, args OutCmd) (*vibe.AppConfig, erro
 		RootPath:         root,
 		WorkingDirectory: abs,
 		DataPairs:        args.Data,
+		Output:           args.Output,
 	}
 
 	// Merge template frontmatter if available
@@ -188,6 +193,9 @@ func ProvideAppConfig(tmpl *render.Template, args OutCmd) (*vibe.AppConfig, erro
 	if args.SelectDirTree != "" {
 		config.Dirtree = args.SelectDirTree
 	}
+	if len(args.Content) > 0 {
+		config.Content = args.Content
+	}
 
 	// Apply default layout if needed
 	if config.Layout == "" && config.Select != "" {
@@ -208,6 +216,6 @@ var wires = wire.NewSet(ProvideFSList,
 	ProvideDirectoryTreeService,
 	ProvideFileMapService,
 	ProvideContentLoader,
-	wire.Struct(new(OutPipeline), "DT", "Renderer", "FileMap", "Metrics", "Loader", "Config", "Template"),
+	wire.Struct(new(OutPipeline), "DirTree", "Renderer", "FileMap", "Metrics", "Loader", "Config", "Template"),
 	wire.Struct(new(OutRunner), "Args", "Pipeline"),
 )
