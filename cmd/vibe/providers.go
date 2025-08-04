@@ -16,7 +16,7 @@ import (
 	"github.com/hayeah/fork2/vibe"
 )
 
-//go:embed templates
+//go:embed all:templates
 var systemTemplatesFS embed.FS
 
 // prependNoDuplicate prepends elements to a slice only if they don't already exist

@@ -203,7 +203,12 @@ func splitSemicolon(s string) []string {
 // processFile renders a file as a template
 func (r *Renderer) processFile(path string, data Content) (string, error) {
 	// Always render as template
-	return r.RenderPartial(path, data)
+	content, err := r.RenderPartial(path, data)
+	if err != nil {
+		// Add more context to the error
+		return "", fmt.Errorf("error processing file %s: %w", path, err)
+	}
+	return content, nil
 }
 
 // processFiles processes a list of files and writes their concatenated content to w
