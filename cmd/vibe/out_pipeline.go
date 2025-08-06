@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"io"
 	"strings"
@@ -10,19 +9,19 @@ import (
 	"github.com/hayeah/fork2/internal/metrics"
 	"github.com/hayeah/fork2/internal/selection"
 	"github.com/hayeah/fork2/render"
+	"github.com/hayeah/fork2/vibe"
 )
 
 // OutPipeline groups all services needed by the out command.
 type OutPipeline struct {
-	DT       *DirectoryTree
+	DirTree  *DirectoryTree
 	Renderer *render.Renderer
 	FileMap  *FileMapWriter
 	Metrics  *metrics.OutputMetrics
 	Loader   ContentLoader
-	Env      *AppEnv
+	Config   *vibe.AppConfig
 
-	Template     *render.Template
-	ContentSpecs []string
+	Template *render.Template
 }
 
 // outData implements render.Content and exposes helpers for templates.
@@ -79,7 +78,7 @@ func (d *outData) FileMap() (string, error) {
 func (d *outData) RepoDirectoryTree() (string, error) {
 	d.treeOnce.Do(func() {
 		var buf strings.Builder
-		d.treeErr = d.pipeline.DT.GenerateDirectoryTree(&buf, d.dirTreePattern)
+		d.treeErr = d.pipeline.DirTree.GenerateDirectoryTree(&buf, d.dirTreePattern)
 		d.tree = buf.String()
 	})
 	return d.tree, d.treeErr
@@ -99,7 +98,7 @@ func (d *outData) getSelections() ([]selection.FileSelection, error) {
 		if d.selectPattern == "" {
 			return
 		}
-		d.selections, d.selectionsErr = d.pipeline.DT.SelectFiles(d.selectPattern)
+		d.selections, d.selectionsErr = d.pipeline.DirTree.SelectFiles(d.selectPattern)
 	})
 	return d.selections, d.selectionsErr
 }
@@ -117,20 +116,28 @@ func (d *outData) SelectedPaths() []string {
 	return d.selectedPaths
 }
 
-// Run executes the rendering pipeline using args for configuration.
-func (p *OutPipeline) Run(out io.Writer) error {
-	dataMap, err := parseDataParams(p.Env.DataPairs)
+// Output returns a WriterCloser for the configured output destination.
+func (p *OutPipeline) Output() (io.WriteCloser, error) {
+	return NewOutputWriter(p.Config.Output)
+}
+
+// Run executes the rendering pipeline.
+func (p *OutPipeline) Run() error {
+	// Create output writer
+	out, err := p.Output()
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	dataMap, err := parseDataParams(p.Config.DataPairs)
 	if err != nil {
 		return err
 	}
 
-	content := ""
-	if len(p.ContentSpecs) > 0 {
-		c, err := p.Loader.LoadSources(context.Background(), p.ContentSpecs)
-		if err != nil {
-			return fmt.Errorf("failed to load content: %w", err)
-		}
-		content = c
+	content, err := p.Loader.Content()
+	if err != nil {
+		return fmt.Errorf("failed to load content: %w", err)
 	}
 
 	tmpl := p.Template
@@ -138,17 +145,20 @@ func (p *OutPipeline) Run(out io.Writer) error {
 		return fmt.Errorf("template not set")
 	}
 
-	selectPattern := tmpl.FrontMatter.Select
-	dirTreePattern := tmpl.FrontMatter.Dirtree
+	// Set the AppConfig on the template so Before/After templates are processed
+	tmpl.Config = p.Config
 
-	root := p.DT.RootPath
+	selectPattern := p.Config.Select
+	dirTreePattern := p.Config.Dirtree
+
+	root := p.DirTree.RootPath
 
 	data := &outData{
 		pipeline:         p,
 		selectPattern:    selectPattern,
 		dirTreePattern:   dirTreePattern,
 		rootPath:         root,
-		WorkingDirectory: string(p.Env.WorkingDirectory),
+		WorkingDirectory: p.Config.WorkingDirectory,
 		ContentStr:       content,
 		Data:             dataMap,
 	}

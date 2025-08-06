@@ -44,7 +44,9 @@ func (r *LsRunner) Run() error {
 		if err != nil {
 			return err
 		}
-		pattern = templ.FrontMatter.Select
+		if templ.Config != nil {
+			pattern = templ.Config.Select
+		}
 	}
 
 	selections, err := r.DirTree.SelectFiles(pattern)

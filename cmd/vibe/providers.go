@@ -10,58 +10,59 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/google/wire"
 	"github.com/hayeah/fork2/internal/metrics"
 	"github.com/hayeah/fork2/render"
+	"github.com/hayeah/fork2/vibe"
 )
 
-//go:embed templates
+//go:embed all:templates
 var systemTemplatesFS embed.FS
 
-// RootPath is the path from which prompts and files are loaded.
-type RootPath string
+// prependNoDuplicate prepends elements to a slice only if they don't already exist
+func prependNoDuplicate(list []string, elements ...string) []string {
+	result := make([]string, 0, len(elements)+len(list))
 
-// WorkingDirectory is the absolute directory vibe was run from.
-type WorkingDirectory string
+	// Add new elements that don't exist in the list
+	for _, elem := range elements {
+		found := false
+		for _, existing := range list {
+			if existing == elem {
+				found = true
+				break
+			}
+		}
+		if !found {
+			result = append(result, elem)
+		}
+	}
 
-// AppEnv groups runtime environment values used by providers.
-type AppEnv struct {
-	RootPath         RootPath
-	WorkingDirectory WorkingDirectory
-	DataPairs        []string
-	Mode             string
+	// Append the original list
+	result = append(result, list...)
+	return result
 }
 
-// DefaultContentLoader implements ContentLoader using render.LoadContentSources.
-type DefaultContentLoader struct{}
-
-func (DefaultContentLoader) LoadSources(ctx context.Context, specs []string) (string, error) {
-	return render.LoadContentSources(ctx, specs)
+// DefaultContentLoader loads content from various sources.
+type DefaultContentLoader struct {
+	specs []string
 }
 
-func ProvideContentLoader() ContentLoader { return DefaultContentLoader{} }
+func (c *DefaultContentLoader) Content() (string, error) {
+	return render.LoadContentSources(context.Background(), c.specs)
+}
+
+func ProvideContentLoader(config *vibe.AppConfig) ContentLoader {
+	return &DefaultContentLoader{specs: config.Content}
+}
 
 // ProvideRootFS creates a filesystem abstraction for the repo root
-func ProvideRootFS(env *AppEnv) (fs.FS, error) {
-	return os.DirFS(string(env.RootPath)), nil
-}
-
-// ProvideAppEnv builds the runtime environment used by other providers.
-func ProvideAppEnv(root string, args OutCmd) (*AppEnv, error) {
-	abs, err := filepath.Abs(root)
-	if err != nil {
-		return nil, err
-	}
-	return &AppEnv{
-		RootPath:         RootPath(root),
-		WorkingDirectory: WorkingDirectory(abs),
-		DataPairs:        args.Data,
-		Mode:             args.Mode,
-	}, nil
+func ProvideRootFS(config *vibe.AppConfig) (fs.FS, error) {
+	return os.DirFS(config.RootPath), nil
 }
 
 // ProvideDirectoryTreeService constructs a DirectoryTree for the given root.
-func ProvideDirectoryTreeService(env *AppEnv) (*DirectoryTree, error) {
-	return NewDirectoryTree(string(env.RootPath)), nil
+func ProvideDirectoryTreeService(config *vibe.AppConfig) (*DirectoryTree, error) {
+	return NewDirectoryTree(config.RootPath), nil
 }
 
 // ProvideMetrics constructs OutputMetrics with the given counter.
@@ -69,61 +70,34 @@ func ProvideMetrics(counter metrics.Counter) *metrics.OutputMetrics {
 	return metrics.NewOutputMetrics(counter, runtime.NumCPU())
 }
 
-func ProvideFileMapService(env *AppEnv, rfs fs.FS, m *metrics.OutputMetrics) *FileMapWriter {
-	return NewWriteFileMap(rfs, string(env.RootPath), m)
+func ProvideFileMapService(config *vibe.AppConfig, rfs fs.FS, m *metrics.OutputMetrics) *FileMapWriter {
+	return NewWriteFileMap(rfs, config.RootPath, m)
 }
 
 func ProvideRenderer(resolver *render.Resolver, m *metrics.OutputMetrics) *render.Renderer {
 	return render.NewRenderer(resolver, m)
 }
 
-func ProvideTemplate(env *AppEnv, resolver *render.Resolver, args OutCmd, fsList []fs.FS) (*render.Template, error) {
-	// decide which file the user wants to render
+// ProvideEntryTemplate loads the entry template based on OutCmd arguments.
+func ProvideEntryTemplate(args OutCmd, fsList []fs.FS) (*render.Template, error) {
 	templatePath := args.Template
-	if templatePath == "" && args.Select != "" {
-		templatePath = "files"
-	}
+
 	if templatePath == "" {
-		return nil, nil // nothing to inspect
+		templatePath = "<empty>"
 	}
 
-	// templatePath = strings.TrimPrefix(templatePath, "./")
-
-	// Create a temporary resolver to load the template
-	// tempResolver := render.NewResolver(env.Mode, fsList...)
-	// renderer := render.NewRenderer(tempResolver, nil)
+	// Create a resolver without mode to load the template
+	resolver := render.NewResolver("", fsList...)
 	tmpl, err := resolver.LoadTemplate(templatePath, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	if env.Mode == "" && tmpl.FrontMatter.Mode != "" {
-		resolver.Mode = tmpl.FrontMatter.Mode
-	}
-
-	// Apply command-line overrides
-	if args.Layout != "" {
-		tmpl.FrontMatter.Layout = args.Layout
-	}
-	if args.Select != "" {
-		tmpl.FrontMatter.Select = args.Select
-	}
-	if args.SelectDirTree != "" {
-		tmpl.FrontMatter.Dirtree = args.SelectDirTree
-	}
-
-	if tmpl.FrontMatter.Layout == "" && tmpl.FrontMatter.Select != "" {
-		tmpl.FrontMatter.Layout = "files"
-	}
-
 	return tmpl, nil
 }
 
-func ProvideResolver(env *AppEnv, fsList []fs.FS) *render.Resolver {
-	// NOTE: ProvideTemplate will destructively update some of the resolver
-	// properties depending on template metadata.
-	mode := env.Mode
-	return render.NewResolver(mode, fsList...)
+func ProvideResolver(config *vibe.AppConfig, fsList []fs.FS) *render.Resolver {
+	return render.NewResolver(config.Mode, fsList...)
 }
 
 func ProvideCounter(args OutCmd) (metrics.Counter, error) {
@@ -134,24 +108,20 @@ func ProvideCounter(args OutCmd) (metrics.Counter, error) {
 			return &metrics.SimpleCounter{}, nil
 		}
 		return c, nil
-	default:
+	case "simple":
 		return &metrics.SimpleCounter{}, nil
+	default:
+		return nil, fmt.Errorf("unknown token estimator: %s", args.TokenEstimator)
 	}
 }
 
 // ProvideFSList builds the filesystem stack for templates.
-// Search precedence: cwd, repo root, template paths, VIBE_PROMPTS, ~/.vibe, built-ins
-func ProvideFSList(env *AppEnv, args OutCmd) ([]fs.FS, error) {
-	root := string(env.RootPath)
+// Search precedence: cwd, template paths, VIBE_PROMPTS, ~/.vibe, built-ins
+func ProvideFSList(args OutCmd) ([]fs.FS, error) {
 	cwd, _ := os.Getwd()
 
 	// Start with current working directory
 	partials := []fs.FS{&render.CwdFS{Base: cwd}}
-
-	// Add repo root only if different from cwd
-	if filepath.Clean(root) != filepath.Clean(cwd) {
-		partials = append(partials, os.DirFS(root))
-	}
 
 	// Add any additional template paths from args
 	for _, path := range args.TemplatePaths {
@@ -187,3 +157,90 @@ func ProvideFSList(env *AppEnv, args OutCmd) ([]fs.FS, error) {
 
 	return partials, nil
 }
+
+// ProvideAppConfig merges template frontmatter with command-line arguments to create the final AppConfig.
+func ProvideAppConfig(tmpl *render.Template, args OutCmd) (*vibe.AppConfig, error) {
+	// Resolve root in order: args.Root, template root (if any), or cwd
+	var root string
+	if args.Root != "" {
+		root = args.Root
+	} else if tmpl != nil && tmpl.Config != nil && tmpl.Config.Root != "" {
+		root = tmpl.Config.Root
+	} else {
+		var err error
+		root, err = os.Getwd()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get current directory: %w", err)
+		}
+	}
+
+	abs, err := filepath.Abs(root)
+	if err != nil {
+		return nil, err
+	}
+
+	// Start with empty config
+	config := &vibe.AppConfig{
+		RootPath:         root,
+		WorkingDirectory: abs,
+		DataPairs:        args.Data,
+		Output:           args.Output,
+	}
+
+	// Merge template frontmatter if available
+	if tmpl != nil && tmpl.Config != nil {
+		config.Root = tmpl.Config.Root
+		config.TemplatePaths = tmpl.Config.TemplatePaths
+		config.Content = tmpl.Config.Content
+		config.Mode = tmpl.Config.Mode
+		config.Layout = tmpl.Config.Layout
+		config.Select = tmpl.Config.Select
+		config.Dirtree = tmpl.Config.Dirtree
+		config.Before = tmpl.Config.Before
+		config.After = tmpl.Config.After
+	}
+
+	// Override with command-line arguments
+	if args.Mode != "" {
+		config.Mode = args.Mode
+	}
+	if args.Layout != "" {
+		config.Layout = vibe.TemplateNames{args.Layout}
+	}
+	if args.Select != "" {
+		config.Select = args.Select
+	}
+	if args.SelectDirTree != "" {
+		config.Dirtree = args.SelectDirTree
+	}
+	if len(args.Content) > 0 {
+		config.Content = args.Content
+	}
+
+	var autoTemplates vibe.TemplateNames
+
+	// Prepend special templates to Before list when files are selected
+	autoTemplates = append(autoTemplates, "__vibe")
+	if config.Select != "" {
+		autoTemplates = append(autoTemplates, "__files")
+	}
+
+	config.Before = vibe.TemplateNames(prependNoDuplicate(config.Before, autoTemplates...))
+
+	return config, nil
+}
+
+var wires = wire.NewSet(ProvideFSList,
+	ProvideEntryTemplate,
+	ProvideAppConfig,
+	ProvideRootFS,
+	ProvideCounter,
+	ProvideMetrics,
+	ProvideResolver,
+	ProvideRenderer,
+	ProvideDirectoryTreeService,
+	ProvideFileMapService,
+	ProvideContentLoader,
+	wire.Struct(new(OutPipeline), "DirTree", "Renderer", "FileMap", "Metrics", "Loader", "Config", "Template"),
+	wire.Struct(new(OutRunner), "Args", "Pipeline"),
+)

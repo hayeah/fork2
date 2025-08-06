@@ -1,26 +1,17 @@
 package render
 
 import (
+	"github.com/hayeah/fork2/vibe"
 	"io/fs"
 )
 
-// FrontMatter contains metadata parsed from template frontmatter
-type FrontMatter struct {
-	Layout  string `toml:"layout"`
-	Select  string `toml:"select"`
-	Dirtree string `toml:"dirtree"`
-	Before  string `toml:"before"`
-	After   string `toml:"after"`
-	Mode    string `toml:"mode"`
-}
-
 // Template represents a template with its content and metadata
 type Template struct {
-	Path           string      // repo-relative
-	Body           string      // content with front-matter stripped
-	FrontMatter    FrontMatter // parsed TOML front-matter (zero if none)
-	RawFrontMatter string      // full unparsed front-matter block, empty when none
-	FS             fs.FS       // filesystem where the template was found
+	Path           string          // repo-relative
+	Body           string          // content with front-matter stripped
+	Config         *vibe.AppConfig // parsed TOML front-matter (nil if none)
+	RawFrontMatter string          // full unparsed front-matter block, empty when none
+	FS             fs.FS           // filesystem where the template was found
 }
 
 func NewTemplate(content string) (*Template, error) {
@@ -29,9 +20,10 @@ func NewTemplate(content string) (*Template, error) {
 		return nil, err
 	}
 
-	var meta FrontMatter
+	var config *vibe.AppConfig
 	if rawFM != "" {
-		if err := ParseToml(rawFM, &meta); err != nil {
+		config = &vibe.AppConfig{}
+		if err := ParseToml(rawFM, config); err != nil {
 			return nil, err
 		}
 	}
@@ -39,7 +31,7 @@ func NewTemplate(content string) (*Template, error) {
 	return &Template{
 		Path:           "",
 		Body:           body,
-		FrontMatter:    meta,
+		Config:         config,
 		RawFrontMatter: rawFM,
 		FS:             nil,
 	}, nil

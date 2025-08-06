@@ -1,8 +1,6 @@
 package main
 
-import "context"
-
-// ContentLoader loads text from a set of sources.
+// ContentLoader loads text from configured sources.
 type ContentLoader interface {
-	LoadSources(ctx context.Context, specs []string) (string, error)
+	Content() (string, error)
 }

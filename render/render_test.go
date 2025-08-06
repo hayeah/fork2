@@ -8,6 +8,7 @@ import (
 	"testing/fstest"
 
 	"github.com/hayeah/fork2/internal/assert"
+	"github.com/hayeah/fork2/vibe"
 )
 
 //--------------------------------- Helper utilities ---------------------------------
@@ -53,7 +54,7 @@ func TestResolvePartialPath(t *testing.T) {
 		"components/shared/footer.md":   "footer template",
 	})
 
-	ctx := NewResolver(repoFS, systemFS)
+	ctx := NewResolver("", repoFS, systemFS)
 	assert := assert.New(t)
 
 	cases := []struct {
@@ -69,7 +70,7 @@ func TestResolvePartialPath(t *testing.T) {
 		{name: "local template", currentPath: "templates/main.md", partialPath: "./local/helper", wantFS: repoFS, wantFile: "templates/local/helper"},
 		{name: "relative up one", currentPath: "templates/subdir/page.md", partialPath: "../local/helper", wantFS: repoFS, wantFile: "templates/local/helper"},
 		{name: "relative across tree", currentPath: "templates/subdir/page.md", partialPath: "../../components/shared/footer.md", wantFS: repoFS, wantFile: "components/shared/footer.md"},
-		{name: "dot-slash without cur template (fallback to bare path)", currentPath: "", partialPath: "./components/shared/footer.md", wantFS: repoFS, wantFile: "components/shared/footer.md"},
+		// Removed test case - "./path" without current template should resolve relative to CWD, not as bare path
 		{name: "bare path (implicit .md)", partialPath: "components/shared/footer", wantFS: repoFS, wantFile: "components/shared/footer.md"},
 		{name: "explicit .md remains unchanged", partialPath: "components/shared/footer.md", wantFS: repoFS, wantFile: "components/shared/footer.md"},
 	}
@@ -103,7 +104,7 @@ func TestRelativePathResolution(t *testing.T) {
 		"templates/shared/footer.md":    "shared footer",
 	})
 
-	ctx := NewResolver(repoFS)
+	ctx := NewResolver("", repoFS)
 	assert := assert.New(t)
 
 	cases := []struct {
@@ -150,7 +151,7 @@ func TestPartialRendering(t *testing.T) {
 		"templates/local/helper": "Local Helper that uses {{ partial \"@common/header\" }}",
 	})
 
-	ctx := NewResolver(repoFS, systemFS)
+	ctx := NewResolver("", repoFS, systemFS)
 	renderer := NewRenderer(ctx, nil)
 	assert := assert.New(t)
 
@@ -218,7 +219,7 @@ INNER-END`,
 OUTER-END`,
 	})
 
-	ctx := NewResolver(repoFS, systemFS)
+	ctx := NewResolver("", repoFS, systemFS)
 	renderer := NewRenderer(ctx, nil)
 
 	data := &struct {
@@ -238,7 +239,10 @@ OUTER-END`,
 	// Load the content template, bolt on a layout, and render.
 	tmpl, err := ctx.LoadTemplate("templates/user.md", nil)
 	assert.NoError(err)
-	tmpl.FrontMatter.Layout = "layouts/main.md" // bare path => repo root FS
+	if tmpl.Config == nil {
+		tmpl.Config = &vibe.AppConfig{}
+	}
+	tmpl.Config.Layout = vibe.TemplateNames{"layouts/main.md"} // bare path => repo root FS
 
 	out, err := renderer.RenderTemplate(tmpl, data)
 	assert.NoError(err)
@@ -269,7 +273,7 @@ func TestLayoutCycleDetection(t *testing.T) {
 		"f.md": "---toml\nlayout = \"c.md\"\n---\nF", // f -> c (cycle through multi-layout)
 	})
 
-	ctx := NewResolver(repoFS)
+	ctx := NewResolver("", repoFS)
 	renderer := NewRenderer(ctx, nil)
 	assert := assert.New(t)
 
@@ -301,7 +305,7 @@ func TestLayoutDeepNestingLimit(t *testing.T) {
 	}
 
 	repoFS := createTestFS(files)
-	ctx := NewResolver(repoFS)
+	ctx := NewResolver("", repoFS)
 	renderer := NewRenderer(ctx, nil)
 	assert := assert.New(t)
 
@@ -315,26 +319,30 @@ func TestLayoutDeepNestingLimit(t *testing.T) {
 	assert.Contains(err.Error(), "layout nesting too deep")
 }
 
-func TestLoadTemplateParsesFrontMatter(t *testing.T) {
+func TestLoadTemplateParsesConfig(t *testing.T) {
 	repoFS := createTestFS(map[string]string{
 		"foo.md":  "---toml\nlayout=\"base.md\"\n---\nHello",
 		"bar.md":  "---toml\nlayout=\"base.md\"\nselect=\"*.go\"\ndirtree=\"cmd/;internal/\"\n---\nContent",
 		"base.md": "Base {{ .Content }}",
 	})
-	ctx := NewResolver(repoFS)
+	ctx := NewResolver("", repoFS)
 	assert := assert.New(t)
 
 	// Test basic layout parsing
 	tmpl, err := ctx.LoadTemplate("foo.md", nil)
 	assert.NoError(err)
-	assert.Equal("base.md", tmpl.FrontMatter.Layout)
+	assert.NotNil(tmpl.Config)
+	assert.Equal(1, len(tmpl.Config.Layout))
+	assert.Equal("base.md", tmpl.Config.Layout[0])
 
 	// Test parsing of all frontmatter fields including dirtree
 	tmpl, err = ctx.LoadTemplate("bar.md", nil)
 	assert.NoError(err)
-	assert.Equal("base.md", tmpl.FrontMatter.Layout)
-	assert.Equal("*.go", tmpl.FrontMatter.Select)
-	assert.Equal("cmd/;internal/", tmpl.FrontMatter.Dirtree)
+	assert.NotNil(tmpl.Config)
+	assert.Equal(1, len(tmpl.Config.Layout))
+	assert.Equal("base.md", tmpl.Config.Layout[0])
+	assert.Equal("*.go", tmpl.Config.Select)
+	assert.Equal("cmd/;internal/", tmpl.Config.Dirtree)
 }
 
 // TestTemplatePrecedenceOrder verifies that when the same template exists in multiple
@@ -369,7 +377,7 @@ func TestTemplatePrecedenceOrder(t *testing.T) {
 	})
 
 	// Create resolver with all layers in the correct order
-	ctx := NewResolver(repoFS, vibePromptsFS, userVibeFS, systemFS)
+	ctx := NewResolver("", repoFS, vibePromptsFS, userVibeFS, systemFS)
 	renderer := NewRenderer(ctx, nil)
 	assert := assert.New(t)
 
@@ -414,7 +422,7 @@ func TestInclude(t *testing.T) {
 		"templates/current/local.txt": "LOCAL",
 	})
 
-	ctx := NewResolver(repoFS, systemFS)
+	ctx := NewResolver("", repoFS, systemFS)
 	renderer := NewRenderer(ctx, nil)
 	assert := assert.New(t)
 

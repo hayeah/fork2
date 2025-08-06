@@ -1,19 +1,14 @@
 package main
 
 import (
-	"bytes"
 	"fmt"
-	"io"
 	"io/fs"
 	"log"
 	"net/url"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 
-	"github.com/atotto/clipboard"
-	"github.com/hayeah/fork2/internal/metrics"
 	"github.com/pkoukk/tiktoken-go"
 )
 
@@ -37,112 +32,13 @@ type OutCmd struct {
 
 // OutRunner encapsulates the state and behavior for the file picker
 type OutRunner struct {
-	Args           OutCmd
-	RootPath       string
-	DirTree        *DirectoryTree
-	TokenEstimator TokenEstimator
-	Data           map[string]string
-	Metrics        *metrics.OutputMetrics
-}
-
-// NewAskRunner creates and initializes a new PickRunner
-func NewAskRunner(cmdArgs OutCmd) (*OutRunner, error) {
-	// Use cmdArgs.Root if specified, otherwise use current directory
-	root := "."
-	if cmdArgs.Root != "" {
-		root = cmdArgs.Root
-	}
-
-	info, err := os.Stat(root)
-	if err != nil {
-		return nil, fmt.Errorf("error accessing %s: %v", root, err)
-	}
-
-	if !info.IsDir() {
-		return nil, fmt.Errorf("not a directory: %s", root)
-	}
-
-	// Select the token estimator based on the flag
-	var tokenEstimator TokenEstimator
-	switch cmdArgs.TokenEstimator {
-	case "tiktoken":
-		tokenEstimator = estimateTokenCountTiktoken
-	case "simple":
-		tokenEstimator = estimateTokenCountSimple
-	default:
-		return nil, fmt.Errorf("unknown token estimator: %s", cmdArgs.TokenEstimator)
-	}
-
-	// Parse data parameters (key=value pairs)
-	data, err := parseDataParams(cmdArgs.Data)
-	if err != nil {
-		return nil, err
-	}
-
-	// Initialize metrics counter based on token estimator
-	var counter metrics.Counter
-	switch cmdArgs.TokenEstimator {
-	case "tiktoken":
-		counter, err = metrics.NewTiktokenCounter("gpt-3.5-turbo")
-		if err != nil {
-			// Fall back to simple counter on error
-			counter = &metrics.SimpleCounter{}
-		}
-	default:
-		counter = &metrics.SimpleCounter{}
-	}
-
-	r := &OutRunner{
-		Args:           cmdArgs,
-		RootPath:       root,
-		TokenEstimator: tokenEstimator,
-		Data:           data,
-		Metrics:        metrics.NewOutputMetrics(counter, runtime.NumCPU()),
-	}
-
-	return r, nil
+	Args     OutCmd
+	Pipeline *OutPipeline
 }
 
 // Run executes the file picking process
 func (r *OutRunner) Run() error {
-	// Gather files/dirs
-	r.DirTree = NewDirectoryTree(r.RootPath)
-
-	var buf bytes.Buffer
-	var dest io.Writer
-	switch {
-	case r.Args.Output == "-":
-		dest = os.Stdout
-	case r.Args.Output != "":
-		file, err := os.Create(r.Args.Output)
-		if err != nil {
-			return fmt.Errorf("failed to create output file %s: %v", r.Args.Output, err)
-		}
-		defer file.Close()
-		dest = file
-	default:
-		dest = &buf
-	}
-
-	pipe, err := BuildOutPipeline(r.RootPath, r.Args)
-	if err != nil {
-		return err
-	}
-
-	pipe.ContentSpecs = r.Args.Content
-
-	if err := pipe.Run(dest); err != nil {
-		return err
-	}
-
-	if r.Args.Output == "" {
-		if err := clipboard.WriteAll(buf.String()); err != nil {
-			return fmt.Errorf("failed to copy to clipboard: %v", err)
-		}
-		fmt.Fprintln(os.Stderr, "Output copied to clipboard")
-	}
-
-	return nil
+	return r.Pipeline.Run()
 }
 
 // parseDataParams parses data parameters from CLI flags into a map

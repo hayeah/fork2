@@ -100,12 +100,6 @@ func (ctx *Resolver) ResolvePartialPath(partialPath string, cur *Template) (fs.F
 		currentTemplateFS = cur.FS
 	}
 
-	// Allow "./path" as repo-root shorthand when no template is yet in play.
-	if strings.HasPrefix(partialPath, "./") && currentTemplatePath == "" {
-		cleaned := strings.TrimPrefix(partialPath, "./")
-		return ctx.ResolvePartialPath(cleaned, cur) // tail-recurse as a bare path
-	}
-
 	switch {
 	case filepath.IsAbs(partialPath):
 		// Absolute path - use OS filesystem directly
@@ -164,6 +158,10 @@ func (ctx *Resolver) ResolvePartialPath(partialPath string, cur *Template) (fs.F
 		}
 
 		// Search through all filesystems
-		return ctx.resolveTemplateFile(partialPath, ctx.Partials...)
+		fsys, path, err := ctx.resolveTemplateFile(partialPath, ctx.Partials...)
+		if err != nil {
+			return nil, "", fmt.Errorf("template %q not found in any filesystem", partialPath)
+		}
+		return fsys, path, nil
 	}
 }
