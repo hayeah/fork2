@@ -40,46 +40,60 @@ func NewResolver(mode string, partials ...fs.FS) *Resolver {
 	return &Resolver{Partials: partials, Mode: mode}
 }
 
-// resolveTemplateFile checks for an exact match and, only if no
-// extension is present, falls back to the ".md" variant.
-// It searches through all provided filesystems in order.
+// resolveTemplateFile resolves a template path to a filesystem and path.
+// It searches through all provided filesystems in order and applies the following rules:
+//
+// Rules based on file extension:
+// Paths with .md extension (e.g., "plan.md"):
+//   - Must match exactly "plan.md"
+//   - Search each filesystem for exact path
+//   - Return error if not found in any filesystem
+//
+// Paths without extension (e.g., "plan"):
+//   - If mode is set (e.g., mode="cc"), try in order:
+//     a. "{base}.{mode}" (e.g., "plan.cc")
+//     b. "{base}.{mode}.md" (e.g., "plan.cc.md")
+//   - Then try:
+//     c. "{base}" exact path (e.g., "plan")
+//     d. "{base}.md" as fallback (e.g., "plan.md")
+//   - Search each filesystem with all variants before moving to next
+//   - Return error if not found in any filesystem
 func (r *Resolver) resolveTemplateFile(base string, filesystems ...fs.FS) (fs.FS, string, error) {
-	for _, fsys := range filesystems {
-		// If mode is set, try mode-specific variant first
-		if r.Mode != "" {
-			// For files with extensions, insert mode before the extension
-			ext := filepath.Ext(base)
-			if ext != "" {
-				modeVariant := base[:len(base)-len(ext)] + "." + r.Mode + ext
-				if _, err := fs.Stat(fsys, modeVariant); err == nil {
-					return fsys, modeVariant, nil
-				}
-			} else {
-				// For files without extensions, try mode variant with .md extension first
-				modeVariant := base + "." + r.Mode + ".md"
-				if _, err := fs.Stat(fsys, modeVariant); err == nil {
-					return fsys, modeVariant, nil
-				}
-				// Then try mode variant without .md extension
-				modeVariant = base + "." + r.Mode
-				if _, err := fs.Stat(fsys, modeVariant); err == nil {
-					return fsys, modeVariant, nil
-				}
-			}
-		}
+	ext := filepath.Ext(base)
 
-		// exact path fallback
-		if _, err := fs.Stat(fsys, base); err == nil {
-			return fsys, base, nil
+	// Determine search paths based on extension
+	var searchPaths []string
+	switch {
+	case ext == ".md":
+		// .md files require exact match only
+		searchPaths = []string{base}
+	case ext == "":
+		// No extension: try mode variants, exact, then .md fallback
+		searchPaths = []string{}
+		if r.Mode != "" {
+			searchPaths = append(searchPaths,
+				base+"."+r.Mode,       // plan.{mode}
+				base+"."+r.Mode+".md", // plan.{mode}.md
+			)
 		}
-		// no extension → try ".md"
-		if filepath.Ext(base) == "" {
-			alt := base + ".md"
-			if _, err := fs.Stat(fsys, alt); err == nil {
-				return fsys, alt, nil
+		searchPaths = append(searchPaths,
+			base,       // plan
+			base+".md", // plan.md
+		)
+	default:
+		// Other extensions: exact match only
+		searchPaths = []string{base}
+	}
+
+	// Search through filesystems
+	for _, fsys := range filesystems {
+		for _, path := range searchPaths {
+			if _, err := fs.Stat(fsys, path); err == nil {
+				return fsys, path, nil
 			}
 		}
 	}
+
 	return nil, "", fmt.Errorf("template %q not found in any filesystem", base)
 }
 
@@ -90,6 +104,11 @@ func (r *Resolver) resolveTemplateFile(base string, filesystems ...fs.FS) (fs.FS
 // 3. Repo Root Template @common/header - use the first FS in Partials
 // 4. Local Template ./helpers/buttons - use the same FS as the current template
 // 5. Bare path common/header - search all FS in order until found
+//
+// Mode-specific behavior:
+// - Paths with .md extension (e.g., "plan.md") require exact match; error if not found
+// - Paths with other extensions ignore mode variants and search all filesystems
+// - Paths WITHOUT extensions (e.g., "plan") try mode variants first (plan.cc.md, plan.cc) then fall back to defaults
 // Callers may omit the `.md` extension; the resolver will look for both *name* and *name.md*, but only when *name* has no extension.
 func (ctx *Resolver) ResolvePartialPath(partialPath string, cur *Template) (fs.FS, string, error) {
 	// Derive curPath/curFS from cur (if cur == nil, pass empty string / nil)
