@@ -78,7 +78,7 @@ func (d *outData) FileMap() (string, error) {
 func (d *outData) RepoDirectoryTree() (string, error) {
 	d.treeOnce.Do(func() {
 		var buf strings.Builder
-		d.treeErr = d.pipeline.DirTree.GenerateDirectoryTree(&buf, d.dirTreePattern)
+		d.treeErr = d.pipeline.DirTree.GenerateDirectoryTree(&buf, d.selectPattern, d.dirTreePattern)
 		d.tree = buf.String()
 	})
 	return d.tree, d.treeErr

@@ -1,0 +1,232 @@
+package main
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/hayeah/fork2/internal/assert"
+)
+
+func TestNewRunner(t *testing.T) {
+	assert := assert.New(t)
+
+	// Create a temporary directory for testing
+	tempDir := t.TempDir()
+
+	// Test cases
+	tests := []struct {
+		name        string
+		args        NewCmd
+		expectError bool
+		setup       func() string
+		validate    func(string) bool
+	}{
+		{
+			name: "Create from default template",
+			args: NewCmd{
+				Target: "test-task",
+			},
+			expectError: false,
+			setup: func() string {
+				return tempDir
+			},
+			validate: func(path string) bool {
+				// Check if file exists
+				_, err := os.Stat(path)
+				if err != nil {
+					return false
+				}
+
+				// Check if file name contains timestamp and task name
+				fileName := filepath.Base(path)
+				return strings.Contains(fileName, ".test-task.md")
+			},
+		},
+		{
+			name: "Create with copy flag",
+			args: NewCmd{
+				Copy:   "template.md",
+				Target: "copied-task",
+			},
+			expectError: false,
+			setup: func() string {
+				// Create a template file
+				templatePath := filepath.Join(tempDir, "template.md")
+				content := "# layout = \"test\"\n# select = \"test\"\n"
+				err := os.WriteFile(templatePath, []byte(content), 0644)
+				if err != nil {
+					t.Fatalf("Failed to create template file: %v", err)
+				}
+				return tempDir
+			},
+			validate: func(path string) bool {
+				// Check if file exists
+				_, err := os.Stat(path)
+				if err != nil {
+					return false
+				}
+
+				// Check if file name contains timestamp and task name
+				fileName := filepath.Base(path)
+				return strings.Contains(fileName, ".copied-task.md")
+			},
+		},
+		{
+			name: "Create from existing file",
+			args: NewCmd{
+				Target: "existing.md",
+			},
+			expectError: false,
+			setup: func() string {
+				// Create an existing file
+				existingPath := filepath.Join(tempDir, "existing.md")
+				content := "# layout = \"existing\"\n# select = \"existing\"\n"
+				err := os.WriteFile(existingPath, []byte(content), 0644)
+				if err != nil {
+					t.Fatalf("Failed to create existing file: %v", err)
+				}
+				return tempDir
+			},
+			validate: func(path string) bool {
+				// Check if file exists
+				_, err := os.Stat(path)
+				if err != nil {
+					return false
+				}
+
+				// Check if file name is the same as target
+				fileName := filepath.Base(path)
+				return fileName == "existing.md"
+			},
+		},
+		{
+			name: "Create with frontmatter containing commit placeholder",
+			args: NewCmd{
+				Copy:   "template-with-commit.md",
+				Target: "frontmatter-test",
+			},
+			expectError: false,
+			setup: func() string {
+				// Create a template file with frontmatter containing commit placeholder
+				templatePath := filepath.Join(tempDir, "template-with-commit.md")
+				content := "---toml\nlayout = \"plan\"\nselect = \"cmd\"\ncommit = \"deadbeef\"\n---\n\nThis is the body content.\n"
+				err := os.WriteFile(templatePath, []byte(content), 0644)
+				if err != nil {
+					t.Fatalf("Failed to create template file: %v", err)
+				}
+				return tempDir
+			},
+			validate: func(path string) bool {
+				// Check if file exists
+				_, err := os.Stat(path)
+				if err != nil {
+					return false
+				}
+
+				// Read the file content
+				content, err := os.ReadFile(path)
+				if err != nil {
+					return false
+				}
+
+				// Get current commit hash
+				commitHash := currentCommit()
+
+				// Check if the commit placeholder was replaced
+				return strings.Contains(string(content), "commit = \""+commitHash+"\"")
+			},
+		},
+		{
+			name: "Create with commented out commit placeholder",
+			args: NewCmd{
+				Copy:   "template-with-commented-commit.md",
+				Target: "commented-commit-test",
+			},
+			expectError: false,
+			setup: func() string {
+				// Create a template file with frontmatter containing commented commit placeholder
+				templatePath := filepath.Join(tempDir, "template-with-commented-commit.md")
+				content := "---toml\nlayout = \"plan\"\nselect = \"cmd\"\n# commit = \"deadbeef\"\n---\n\nThis is the body content.\n"
+				err := os.WriteFile(templatePath, []byte(content), 0644)
+				if err != nil {
+					t.Fatalf("Failed to create template file: %v", err)
+				}
+				return tempDir
+			},
+			validate: func(path string) bool {
+				// Check if file exists
+				_, err := os.Stat(path)
+				if err != nil {
+					return false
+				}
+
+				// Read the file content
+				content, err := os.ReadFile(path)
+				if err != nil {
+					return false
+				}
+
+				// Get current commit hash
+				commitHash := currentCommit()
+
+				// Check if the commit placeholder was replaced but still commented
+				return strings.Contains(string(content), "# commit = \""+commitHash+"\"")
+			},
+		},
+		{
+			name: "Error with no target and no copy",
+			args: NewCmd{},
+			expectError: true,
+			setup: func() string {
+				return tempDir
+			},
+			validate: func(path string) bool {
+				return true // Not used for error case
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Setup test environment
+			rootPath := tt.setup()
+
+			// Create runner
+			runner, err := NewNewRunner(tt.args, rootPath)
+
+			if tt.expectError {
+				assert.Error(err)
+				return
+			}
+
+			assert.NoError(err)
+
+			// Run the command
+			err = runner.Run()
+			assert.NoError(err)
+
+			// Determine expected output path
+			var expectedPath string
+			if strings.HasSuffix(tt.args.Target, ".md") && fileExists(filepath.Join(rootPath, tt.args.Target)) {
+				expectedPath = filepath.Join(rootPath, tt.args.Target)
+			} else {
+				timestamp := time.Now().Format("2006-01-02T15-04")
+				dasherizedName := dasherize(tt.args.Target)
+				fileName := timestamp + "." + dasherizedName + ".md"
+
+				if tt.args.Copy != "" {
+					copyDir := filepath.Dir(filepath.Join(rootPath, tt.args.Copy))
+					expectedPath = filepath.Join(copyDir, fileName)
+				} else {
+					expectedPath = filepath.Join(rootPath, fileName)
+				}
+			}
+
+			// Validate the result
+			assert.True(tt.validate(expectedPath), "Validation failed for %s", expectedPath)
+		})
+	}
+}

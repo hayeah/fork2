@@ -1,0 +1,411 @@
+diff --git a/cmd/vibe/install_vscode_tasks.go b/cmd/vibe/install_vscode_tasks.go
+index d709b57..ddaf72c 100644
+--- a/cmd/vibe/install_vscode_tasks.go
++++ b/cmd/vibe/install_vscode_tasks.go
+@@ -1,37 +1,39 @@
+ package main
+
+ import (
+ 	_ "embed"
+ 	"encoding/json"
+ 	"fmt"
+ 	"io/ioutil"
+ 	"os"
+ 	"path/filepath"
+ 	"strings"
+
+ 	"github.com/tailscale/hujson"
++
++	"github.com/hayeah/fork2/internal/hujsonutil"
+ )
+
+ //go:embed tasks.jsonc
+ var tasksJSONCContent []byte
+
+ // InstallVSCodeTasksCmd represents the install:vscode:tasks subcommand
+ type InstallVSCodeTasksCmd struct {
+ 	// No additional flags needed for this command
+ }
+
+ // InstallVSCodeTasksRunner handles the installation of VS Code tasks
+ type InstallVSCodeTasksRunner struct {
+ 	RootPath string
+ }
+
+ // NewInstallVSCodeTasksRunner creates a new runner for installing VS Code tasks
+ func NewInstallVSCodeTasksRunner(rootPath string) *InstallVSCodeTasksRunner {
+ 	return &InstallVSCodeTasksRunner{
+ 		RootPath: rootPath,
+ 	}
+ }
+
+ // Run executes the installation of VS Code tasks
+ func (r *InstallVSCodeTasksRunner) Run() error {
+ 	// Resolve the destination path
+@@ -100,153 +102,99 @@ func (r *InstallVSCodeTasksRunner) Run() error {
+ // loadJSONCBytes parses JSONC bytes into a hujson.Value
+ func loadJSONCBytes(data []byte) (*hujson.Value, error) {
+ 	ast, err := hujson.Parse(data)
+ 	if err != nil {
+ 		return nil, err
+ 	}
+ 	return &ast, nil
+ }
+
+ // loadJSONC loads a JSONC file into a hujson.Value
+ func loadJSONC(path string) (*hujson.Value, error) {
+ 	data, err := ioutil.ReadFile(path)
+ 	if err != nil {
+ 		return nil, err
+ 	}
+ 	return loadJSONCBytes(data)
+ }
+
+ // saveJSON saves a hujson.Value to a file
+ func saveJSON(path string, val *hujson.Value) error {
+ 	return ioutil.WriteFile(path, val.Pack(), 0644)
+ }
+
+ // mergeJSON merges two JSON values, preserving comments
+ func mergeJSON(dest, src *hujson.Value) (*hujson.Value, error) {
+-	// Work on standardized clones so that comments in the original values
+-	// are preserved. The clones are used only for unmarshalling into Go
+-	// structures that the JSON patch library can operate on.
+-	destStd := dest.Clone()
++	destClone := dest.Clone()
++	destWrapper := hujsonutil.NewValue(&destClone)
++
++	// Standardize clones for unmarshalling.
++	destStd := destClone.Clone()
+ 	destStd.Standardize()
+ 	srcStd := src.Clone()
+ 	srcStd.Standardize()
+
+-	// Extract tasks and inputs from both files
+ 	var destObj, srcObj map[string]interface{}
+ 	if err := json.Unmarshal(destStd.Pack(), &destObj); err != nil {
+ 		return nil, err
+ 	}
+ 	if err := json.Unmarshal(srcStd.Pack(), &srcObj); err != nil {
+ 		return nil, err
+ 	}
+
+-	// Get tasks arrays
+-	destTasks, destHasTasks := destObj["tasks"].([]interface{})
++	destTasks, _ := destObj["tasks"].([]interface{})
+ 	srcTasks, srcHasTasks := srcObj["tasks"].([]interface{})
+-
+-	// Get inputs arrays
+-	destInputs, destHasInputs := destObj["inputs"].([]interface{})
++	destInputs, _ := destObj["inputs"].([]interface{})
+ 	srcInputs, srcHasInputs := srcObj["inputs"].([]interface{})
+
+-	// Create patch operations
+-	var patchOps []map[string]interface{}
+-
+-	// Handle tasks
+ 	if srcHasTasks {
+-		if !destHasTasks {
+-			// If dest doesn't have tasks, add the entire array
+-			patchOps = append(patchOps, map[string]interface{}{
+-				"op":    "add",
+-				"path":  "/tasks",
+-				"value": srcTasks,
+-			})
+-		} else {
+-			// Merge tasks, avoiding duplicates
+-			destTasksMap := toMapSlice(destTasks, "label")
+-
+-			for _, task := range srcTasks {
+-				taskMap := task.(map[string]interface{})
+-				label := taskMap["label"].(string)
+-				if _, exists := destTasksMap[label]; !exists {
+-					patchOps = append(patchOps, map[string]interface{}{
+-						"op":    "add",
+-						"path":  "/tasks/-",
+-						"value": task,
+-					})
++		destTasksMap := toMapSlice(destTasks, "label")
++		for _, task := range srcTasks {
++			m := task.(map[string]interface{})
++			label := m["label"].(string)
++			if _, exists := destTasksMap[label]; !exists {
++				if err := destWrapper.InsertToArray("/tasks", m); err != nil {
++					return nil, err
+ 				}
+ 			}
+ 		}
+ 	}
+
+-	// Handle inputs
+ 	if srcHasInputs {
+-		if !destHasInputs {
+-			// If dest doesn't have inputs, add the entire array
+-			patchOps = append(patchOps, map[string]interface{}{
+-				"op":    "add",
+-				"path":  "/inputs",
+-				"value": srcInputs,
+-			})
+-		} else {
+-			// Merge inputs, avoiding duplicates
+-			// srcInputsMap not used directly as we iterate through srcInputs
+-			destInputsMap := toMapSlice(destInputs, "id")
+-
+-			for _, input := range srcInputs {
+-				inputMap := input.(map[string]interface{})
+-				id := inputMap["id"].(string)
+-				if _, exists := destInputsMap[id]; !exists {
+-					patchOps = append(patchOps, map[string]interface{}{
+-						"op":    "add",
+-						"path":  "/inputs/-",
+-						"value": input,
+-					})
++		destInputsMap := toMapSlice(destInputs, "id")
++		for _, input := range srcInputs {
++			m := input.(map[string]interface{})
++			id := m["id"].(string)
++			if _, exists := destInputsMap[id]; !exists {
++				if err := destWrapper.InsertToArray("/inputs", m); err != nil {
++					return nil, err
+ 				}
+ 			}
+ 		}
+ 	}
+
+-	// If no patches needed, return the original
+-	if len(patchOps) == 0 {
+-		return dest, nil
+-	}
+-
+-	// Convert patch operations to JSON
+-	patchBytes, err := json.Marshal(patchOps)
+-	if err != nil {
+-		return nil, err
+-	}
+-
+-	// Clone the destination to avoid modifying it if patch fails
+-	destClone := dest.Clone()
+-
+-	// Apply the patch
+-	if err := destClone.Patch(patchBytes); err != nil {
+-		return nil, err
+-	}
+-
+-	return &destClone, nil
++	return destWrapper.Value, nil
+ }
+
+ // toMapSlice converts a slice of maps to a map keyed by the specified field
+ func toMapSlice(slice []interface{}, keyField string) map[string]interface{} {
+ 	result := make(map[string]interface{})
+ 	for _, item := range slice {
+ 		if m, ok := item.(map[string]interface{}); ok {
+ 			if key, ok := m[keyField].(string); ok {
+ 				result[key] = item
+ 			}
+ 		}
+ 	}
+ 	return result
+ }
+
+ // previewJSON prints a preview of the JSON value
+ func previewJSON(val *hujson.Value) {
+ 	fmt.Println(string(val.Pack()))
+ }
+
+ // promptConfirmation asks the user for confirmation
+ func promptConfirmation(prompt string) bool {
+ 	fmt.Printf("%s (y/N): ", prompt)
+ 	var response string
+ 	fmt.Scanln(&response)
+diff --git a/go.mod b/go.mod
+index c7d8ad2..5577bf6 100644
+--- a/go.mod
++++ b/go.mod
+@@ -1,34 +1,34 @@
+ module github.com/hayeah/fork2
+
+ go 1.24.1
+
+ require (
+ 	github.com/BurntSushi/toml v1.5.0
+ 	github.com/alexflint/go-arg v1.4.3
+ 	github.com/atotto/clipboard v0.1.4
+ 	github.com/go-git/go-billy/v5 v5.6.2
+ 	github.com/go-git/go-git/v5 v5.14.0
+ 	github.com/google/wire v0.6.0
+ 	github.com/pkoukk/tiktoken-go v0.1.7
+ 	github.com/stretchr/testify v1.10.0
++	github.com/tailscale/hujson v0.0.0-20250226034555-ec1d1c113d33
+ 	golang.org/x/term v0.31.0
+ )
+
+ require (
+ 	github.com/alexflint/go-scalar v1.1.0 // indirect
+ 	github.com/cyphar/filepath-securejoin v0.4.1 // indirect
+ 	github.com/davecgh/go-spew v1.1.1 // indirect
+ 	github.com/dlclark/regexp2 v1.10.0 // indirect
+ 	github.com/go-git/gcfg v1.5.1-0.20230307220236-3a3c6141e376 // indirect
+ 	github.com/google/subcommands v1.2.0 // indirect
+ 	github.com/google/uuid v1.3.0 // indirect
+ 	github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99 // indirect
+ 	github.com/pmezard/go-difflib v1.0.0 // indirect
+-	github.com/tailscale/hujson v0.0.0-20250226034555-ec1d1c113d33 // indirect
+ 	golang.org/x/mod v0.14.0 // indirect
+ 	golang.org/x/net v0.35.0 // indirect
+ 	golang.org/x/sys v0.32.0 // indirect
+ 	golang.org/x/tools v0.17.0 // indirect
+ 	gopkg.in/warnings.v0 v0.1.2 // indirect
+ 	gopkg.in/yaml.v3 v3.0.1 // indirect
+ )
+diff --git a/internal/hujsonutil/value.go b/internal/hujsonutil/value.go
+new file mode 100644
+index 0000000..3f56237
+--- /dev/null
++++ b/internal/hujsonutil/value.go
+@@ -0,0 +1,54 @@
++package hujsonutil
++
++import (
++	"encoding/json"
++	"fmt"
++
++	"github.com/tailscale/hujson"
++)
++
++// Value wraps hujson.Value to provide convenience helpers.
++type Value struct {
++	*hujson.Value
++}
++
++// NewValue wraps a hujson.Value.
++func NewValue(v *hujson.Value) *Value {
++	return &Value{Value: v}
++}
++
++// InsertToArray inserts value at the end of the array located at path.
++// The path uses JSON Pointer syntax. If the array does not exist, it is created.
++// Returns an error if the path points to a non-array value.
++func (v *Value) InsertToArray(path string, val any) error {
++	if v.Value == nil {
++		return fmt.Errorf("nil Value")
++	}
++
++	// Marshal the inserted value so we can parse it as HuJSON.
++	b, err := json.Marshal(val)
++	if err != nil {
++		return err
++	}
++	elem, err := hujson.Parse(b)
++	if err != nil {
++		return err
++	}
++
++	// See if the array exists.
++	existing := v.Find(path)
++	if existing != nil {
++		if _, ok := existing.Value.(*hujson.Array); !ok {
++			return fmt.Errorf("path %s is not an array", path)
++		}
++		patch := fmt.Sprintf(`[{"op":"add","path":"%s/-","value":%s}]`, path, elem.Pack())
++		return v.Patch([]byte(patch))
++	}
++
++	// Create the array and insert the element.
++	patch := fmt.Sprintf(`[`+
++		`{"op":"add","path":"%s","value":[]},`+
++		`{"op":"add","path":"%s/-","value":%s}`+
++		`]`, path, path, elem.Pack())
++	return v.Patch([]byte(patch))
++}
+diff --git a/internal/hujsonutil/value_test.go b/internal/hujsonutil/value_test.go
+new file mode 100644
+index 0000000..bc35054
+--- /dev/null
++++ b/internal/hujsonutil/value_test.go
+@@ -0,0 +1,85 @@
++package hujsonutil
++
++import (
++	"encoding/json"
++	"testing"
++
++	"github.com/stretchr/testify/assert"
++	"github.com/tailscale/hujson"
++)
++
++func TestInsertToArrayCreate(t *testing.T) {
++	assert := assert.New(t)
++
++	v, err := hujson.Parse([]byte(`{"foo":"bar"}`))
++	assert.NoError(err)
++
++	w := NewValue(&v)
++	err = w.InsertToArray("/items", 1)
++	assert.NoError(err)
++
++	vStd := w.Clone()
++	vStd.Standardize()
++
++	var obj map[string]interface{}
++	err = json.Unmarshal(vStd.Pack(), &obj)
++	assert.NoError(err)
++
++	arr, ok := obj["items"].([]interface{})
++	assert.True(ok)
++	assert.Equal([]interface{}{float64(1)}, arr)
++}
++
++func TestInsertToArrayAppend(t *testing.T) {
++	assert := assert.New(t)
++
++	v, err := hujson.Parse([]byte(`{"items":[1]}`))
++	assert.NoError(err)
++
++	w := NewValue(&v)
++	err = w.InsertToArray("/items", 2)
++	assert.NoError(err)
++
++	vStd := w.Clone()
++	vStd.Standardize()
++	var obj map[string]interface{}
++	err = json.Unmarshal(vStd.Pack(), &obj)
++	assert.NoError(err)
++
++	arr, ok := obj["items"].([]interface{})
++	assert.True(ok)
++	assert.Equal([]interface{}{float64(1), float64(2)}, arr)
++}
++
++func TestInsertToArrayNested(t *testing.T) {
++	assert := assert.New(t)
++
++	v, err := hujson.Parse([]byte(`{"a":{}}`))
++	assert.NoError(err)
++
++	w := NewValue(&v)
++	err = w.InsertToArray("/a/b", "x")
++	assert.NoError(err)
++
++	vStd := w.Clone()
++	vStd.Standardize()
++	var obj map[string]interface{}
++	err = json.Unmarshal(vStd.Pack(), &obj)
++	assert.NoError(err)
++
++	a := obj["a"].(map[string]interface{})
++	arr, ok := a["b"].([]interface{})
++	assert.True(ok)
++	assert.Equal([]interface{}{"x"}, arr)
++}
++
++func TestInsertToArrayNonArray(t *testing.T) {
++	assert := assert.New(t)
++
++	v, err := hujson.Parse([]byte(`{"items": {}}`))
++	assert.NoError(err)
++
++	w := NewValue(&v)
++	err = w.InsertToArray("/items", 1)
++	assert.Error(err)
++}

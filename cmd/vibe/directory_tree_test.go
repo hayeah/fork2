@@ -6,7 +6,6 @@ import (
 	setpkg "github.com/hayeah/fork2/internal/set"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -64,18 +63,16 @@ func TestDirectoryTree_GenerateDirectoryTree(t *testing.T) {
 	assert.NotNil(dt)
 
 	var buf bytes.Buffer
-	err = dt.GenerateDirectoryTree(&buf, "")
+	err = dt.GenerateDirectoryTree(&buf, "", "")
 	assert.NoError(err)
 	output := buf.String()
 	fmt.Println(output)
 
 	// Check for the expected directory structure
-	assert.Contains(output, strings.TrimSpace(`
-└── hello/
-    ├── a.txt
-    └── world/
-        └── b.txt
-`))
+	assert.Contains(output, "  hello/")
+	assert.Contains(output, "    a.txt")
+	assert.Contains(output, "    world/")
+	assert.Contains(output, "      b.txt")
 
 	// Since LoadDirectoryTree now always deals with relative paths,
 	// we should still see the absolute path in the output

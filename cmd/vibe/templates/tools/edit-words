@@ -1,0 +1,24 @@
+{{ .Content }}
+
+# Tool: Edit Text
+
+You may edit text by replacing a string with a new string.
+
+Each edit searches for a short unique string, and replace it with a new string. For each edit, output a markdown fence block, with the `edit` tag.
+
+IMPORTANT: the string you search for MUST be unique.
+
+```edit
+- I should just tell it to do the work, and assume that it'll do a good job, without my having to describe in painstaking details what "a good job" means.
++ I can simply ask it to do the work and trust it will deliver, without painstakingly defining what 'a good job' means.
+```
+
+```edit
+- Indeed, worse than redundant, my rules now seem counter-productive.
++ Worse than redundant, my rules now seem counterproductive.
+```
+
+```edit
+- ChatGPT o3 can follow my rules too well and ends up doing worse, because my rules aren't very good to begin with.
++ ChatGPT o3 follows those rules so faithfully that the output sometimes suffers, mainly because the rules themselves were not great.
+```

@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	selection "github.com/hayeah/fork2/internal/selection"
@@ -159,42 +160,50 @@ func (dt *DirectoryTree) Filter(pattern string) ([]item, error) {
 }
 
 // GenerateDirectoryTree writes a tree-like directory structure to w based on dt.
-func (dt *DirectoryTree) GenerateDirectoryTree(w io.Writer, pattern string) error {
-	diagram, err := NewDirectoryTreeDiagram(dt, pattern)
-	if err != nil {
-		return err
-	}
-	return diagram.Generate(w)
+func (dt *DirectoryTree) GenerateDirectoryTree(w io.Writer, selectPattern string, selectDirPattern string) error {
+	diagram := NewDirectoryTreeDiagram(dt)
+	return diagram.Generate(w, selectPattern, selectDirPattern)
 }
 
 // DirectoryTreeDiagram handles the generation of tree diagrams from directory items.
 type DirectoryTreeDiagram struct {
 	RootPath string
-	Items    []item
+	dt       *DirectoryTree
 }
 
 // NewDirectoryTreeDiagram creates a new DirectoryTreeDiagram from a DirectoryTree.
-func NewDirectoryTreeDiagram(dt *DirectoryTree, pattern string) (*DirectoryTreeDiagram, error) {
-	var items []item
-	var err error
-
-	if pattern == "" {
-		items, err = dt.dirItems()
-	} else {
-		items, err = dt.Filter(pattern)
-	}
-
-	if err != nil {
-		return nil, err
-	}
-
+func NewDirectoryTreeDiagram(dt *DirectoryTree) *DirectoryTreeDiagram {
 	return &DirectoryTreeDiagram{
 		RootPath: dt.RootPath,
-		Items:    items,
-	}, nil
+		dt:       dt,
+	}
 }
 
-func (dtd *DirectoryTreeDiagram) Generate(w io.Writer) error {
+func (dtd *DirectoryTreeDiagram) Generate(w io.Writer, selectPattern string, selectDirPattern string) error {
+	// Get items based on selectDirPattern
+	var items []item
+	var err error
+	if selectDirPattern == "" {
+		items, err = dtd.dt.dirItems()
+	} else {
+		items, err = dtd.dt.Filter(selectDirPattern)
+	}
+	if err != nil {
+		return err
+	}
+
+	// Get selected files based on selectPattern
+	selectedSet := setpkg.NewSet[string]()
+	if selectPattern != "" {
+		selections, err := dtd.dt.SelectFiles(selectPattern)
+		if err != nil {
+			return err
+		}
+		for _, sel := range selections {
+			selectedSet.Add(sel.Path)
+		}
+	}
+
 	// treeNode represents a node in the directory tree.
 	type treeNode struct {
 		path     string // Relative path
@@ -216,7 +225,7 @@ func (dtd *DirectoryTreeDiagram) Generate(w io.Writer) error {
 	nodeMap["."] = rootNode
 
 	// Build the tree structure from the directory items.
-	for _, item := range dtd.Items {
+	for _, item := range items {
 		if item.Path == "" || item.Path == "." {
 			continue
 		}
@@ -241,9 +250,9 @@ func (dtd *DirectoryTreeDiagram) Generate(w io.Writer) error {
 		}
 	}
 
-	// Define the recursive function to write the tree.
-	var writeTreeNode func(node *treeNode, prefix string, isLast bool) error
-	writeTreeNode = func(node *treeNode, prefix string, isLast bool) error {
+	// Define the recursive function to write the tree with two-space indentation.
+	var writeTreeNode func(node *treeNode, depth int) error
+	writeTreeNode = func(node *treeNode, depth int) error {
 		// Print the root node with its absolute path.
 		if node.path == "." {
 			absPath, err := filepath.Abs(dtd.RootPath)
@@ -255,9 +264,16 @@ func (dtd *DirectoryTreeDiagram) Generate(w io.Writer) error {
 				return err
 			}
 		} else {
-			connector := "├── "
-			if isLast {
-				connector = "└── "
+			// Build indentation: two spaces per depth level
+			indent := ""
+			if depth > 0 {
+				indent = strings.Repeat("  ", depth-1)
+			}
+
+			// Last indentation step is " >" for selected files, "  " otherwise
+			lastStep := "  "
+			if !node.isDir && selectedSet.Contains(node.path) {
+				lastStep = " >"
 			}
 
 			// Add a trailing slash for directories
@@ -266,29 +282,20 @@ func (dtd *DirectoryTreeDiagram) Generate(w io.Writer) error {
 				displayName += "/"
 			}
 
-			_, err := fmt.Fprintln(w, prefix+connector+displayName)
+			_, err := fmt.Fprintln(w, indent+lastStep+displayName)
 			if err != nil {
 				return err
 			}
 		}
 
 		// Recursively print each child.
-		for i, child := range node.children {
-			isLastChild := i == len(node.children)-1
-			newPrefix := prefix
-			if node.path != "." {
-				if isLast {
-					newPrefix += "    "
-				} else {
-					newPrefix += "│   "
-				}
-			}
-			if err := writeTreeNode(child, newPrefix, isLastChild); err != nil {
+		for _, child := range node.children {
+			if err := writeTreeNode(child, depth+1); err != nil {
 				return err
 			}
 		}
 		return nil
 	}
 
-	return writeTreeNode(rootNode, "", true)
+	return writeTreeNode(rootNode, 0)
 }

@@ -1,0 +1,27 @@
+	- you are to communicate how you want to implement this feature, without writing the code out completely.
+	- the point of this implementation plan is to give the user a chance to feedback on how the code may be structured, and which libraries to use
+	- libraries you want to use
+		- give examples code of the main functions that might be useful
+		- give possible alternatives
+	- give an overview of code implementation
+		- only give type definitions and function/method signatures
+		- for classes or structs, give them associated method signatures
+		- give the important ones
+	- give a few examples using the top level code API to implement this feature
+		- give example outputs
+
+## Repo Directory Tree
+
+{{ .RepoDirectoryTree}}
+
+## Selected Files
+
+{{ .FileMap }}
+
+# Repo Wide Instructions
+
+{{ .RepoPrompts }}
+
+# User Task
+
+{{ block "main" . }}{{ end }}

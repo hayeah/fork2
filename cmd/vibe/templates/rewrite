@@ -1,0 +1,7 @@
+```
+layout = "./files"
+```
+
+{{.Content}}
+
+Please give me complete rewrites of the changed files.

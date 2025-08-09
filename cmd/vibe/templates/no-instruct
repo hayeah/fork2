@@ -1,0 +1,12 @@
+Use the background information provided below to help you answer user's query.
+
+- Repo Directory Tree
+- Selected Files
+
+## Repo Directory Tree
+
+{{ .RepoDirectoryTree}}
+
+## Selected Files
+
+{{ .FileMap }}
