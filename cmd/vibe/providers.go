@@ -86,8 +86,8 @@ func ProvideEntryTemplate(args OutCmd, fsList []fs.FS) (*render.Template, error)
 		templatePath = "<empty>"
 	}
 
-	// Create a resolver without mode to load the template
-	resolver := render.NewResolver("", fsList...)
+	// Create a resolver with mode to load the template
+	resolver := render.NewResolver(args.Mode, fsList...)
 	tmpl, err := resolver.LoadTemplate(templatePath, nil)
 	if err != nil {
 		return nil, err
