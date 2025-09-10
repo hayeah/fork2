@@ -29,8 +29,15 @@ func (r *Resolver) LoadTemplate(path string, cur *Template) (*Template, error) {
 		return nil, err
 	}
 
-	// Set the original path (not the resolved file path) as the template path
-	tmpl.Path = path
+	// For relative paths, we need to store the resolved path for correct subsequent relative resolution
+	// For other paths (system, repo, bare), we can keep the original
+	if strings.HasPrefix(path, "./") || strings.HasPrefix(path, "../") {
+		// Keep the resolved file path for relative paths
+		tmpl.Path = filePath
+	} else {
+		// Keep the original path for non-relative paths
+		tmpl.Path = path
+	}
 
 	return tmpl, nil
 }
